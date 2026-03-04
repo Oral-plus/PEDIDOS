@@ -1,0 +1,148 @@
+name: skypagos
+description: "Portal de pedidos ORAL-PLUS"
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.1.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP y utilidades
+  http: ^1.1.0
+  cupertino_icons: ^1.0.2
+  intl: ^0.20.2
+
+  permission_handler: ^12.0.1
+
+  # Comprobante de pedido (PDF)
+  pdf: ^3.10.7
+  path_provider: ^2.1.2
+  open_file: ^3.3.2
+  geolocator: ^14.0.2
+  geocoding: ^4.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/ENCABEZADOS/Icon-512.png
+    - assets/logo.png
+    - assets/Oral-plus-logo.png
+    - assets/logo-pagos.png
+    #ENCABEZADOS
+    - assets/ENCABEZADOS/SEDA.png
+    - assets/ENCABEZADOS/CEPILLOEN.png
+    - assets/ENCABEZADOS/CREMA.png
+    - assets/ENCABEZADOS/ENJUAGE.png
+    - assets/ENCABEZADOS/KIT.png
+    - assets/ENCABEZADOS/NIÑOS.png
+    #Cepillos
+    - assets/Videos/VIDEO.mp4
+    - assets/CEPILLOS/cep-ultra-duo-media-suave.png
+    - assets/CEPILLOS/CALIPSOKIT.png
+    - assets/CEPILLOS/RISTRACEPILLORIGINAL12.png
+    - assets/CEPILLOS/RISTRACEPILLO.png
+    - assets/CEPILLOS/ORIGINAL.png
+    - assets/CEPILLOS/CEPILLOCALIPSO.png
+    - assets/CEPILLOS/CEPILLOTEEN.png
+    - assets/CEPILLOS/CEPILLOWAVINESS.png
+    - assets/CEPILLOS/CEPMODEL400.png
+    - assets/CEPILLOS/CEPMODELX5.png
+    - assets/CEPILLOS/KITDAKOPTA.png
+    - assets/CEPILLOS/CEPILLOCUIDADOTOTAL.png
+    - assets/CEPILLOS/CEPILLOCUIDADOTOTAL2.png
+    - assets/CEPILLOS/CEPILLOMODEL400.png
+    - assets/CEPILLOS/CEPILLOMODEL4003.png
+    - assets/CEPILLOS/CEPILLODUODACOTA.png
+    - assets/CEPILLOS/KITDACOTA.png
+    - assets/CEPILLOS/CEPILLODACOTA.png
+    - assets/CEPILLOS/CEPILLOMODEL4005.png
+    - assets/CEPILLOS/CEPILLOCUIDADOTOTAL3.png
+    - assets/CEPILLOS/CALIPSO5.png
+    - assets/CEPILLOS/CALIPSO3.png
+    - assets/CEPILLOS/CEPILLOWAVINES.png
+    - assets/CEPILLOS/RISTRAWAVINESS12.png
+    - assets/CEPILLOS/CEPILLOULTRADUOSUAVE.png
+    - assets/CEPILLOS/CEPILLOULTRAINDIVIDUAL.png
+    #CREMAS
+    - assets/CREMAS/CARBONACTIVADO30.png
+    - assets/CREMAS/CARBONACTIVADO70.png
+    - assets/CREMAS/CARBONACTIVADO90.png
+    - assets/CREMAS/COOLMINT30.png
+    - assets/CREMAS/COOLMINT70.png
+    - assets/CREMAS/CUATRI30.png
+    - assets/CREMAS/CUATRI151.png
+    - assets/CREMAS/CREMA23.png
+    - assets/CREMAS/TOTAL30.png
+    - assets/CREMAS/TOTAL70.png
+    - assets/CREMAS/TOTAL90.png
+    - assets/CREMAS/COLMINT90.png
+    - assets/CREMAS/COOLMINTCREMA.png
+    #ENJUAGUES
+    - assets/ENJUAGES/AMARRECUIDADOTOTAL.png
+    - assets/ENJUAGES/CUIDADOTOTAL180.png
+    - assets/ENJUAGES/CUIDADOTOTAL300.png
+    - assets/ENJUAGES/CUIDADOTOTAL500.png
+    - assets/ENJUAGES/CUIDADOTOTAL1000.png
+    - assets/ENJUAGES/FLUOR30.png
+    - assets/ENJUAGES/FLUOR180.png
+    - assets/ENJUAGES/FLUOR300.png
+    - assets/ENJUAGES/FLUOR500.png
+    - assets/ENJUAGES/FLUOR1000.png
+    - assets/ENJUAGES/CARBONACTIVADO.png
+    - assets/ENJUAGES/CARBON1.png
+    - assets/ENJUAGES/ODONTO.png
+    - assets/ENJUAGES/FLUORMULTIPLE.png
+    - assets/ENJUAGES/TOTALMULTIPLE.png
+    - assets/ENJUAGES/AMARRECARBON.png
+    - assets/ENJUAGES/ZERO1000.png
+    - assets/ENJUAGES/ZERO500.png
+    - assets/ENJUAGES/ZERO180.png
+    - assets/ENJUAGES/ZERO300.png
+    #NIÑOS
+    - assets/NIÑOS/NIÑOS300.png
+    - assets/NIÑOS/TUTTI300.png
+    - assets/NIÑOS/KITJUNIOR.png
+    - assets/NIÑOS/NIÑOSVARIOS.png
+    - assets/NIÑOS/CEPILLOJUNIOR.png
+    - assets/NIÑOS/OFERTAJUNIOR.png
+    - assets/NIÑOS/CREMADENTALCHICLE.png
+    - assets/NIÑOS/CREMASINFLUORNINA.png
+    - assets/NIÑOS/ORIGINALFLEXNINOS.png
+    - assets/NIÑOS/CHILDREN.png
+    - assets/NIÑOS/CEPILLOBONITE.png
+    - assets/NIÑOS/GOLNIÑO.png
+    - assets/NIÑOS/BABYPANDA.png
+    - assets/NIÑOS/SPACEDUO.png
+    - assets/NIÑOS/KITNIÑOS.png
+    - assets/NIÑOS/CREMANINOS.png
+    - assets/NIÑOS/SINFLUOR.png
+    #SEDA
+    - assets/SEDAS/1.png
+    - assets/SEDAS/CUIDADOTOTAL230.png
+    - assets/SEDAS/TOTALYERBABUENAFLUOR230M.png
+    - assets/SEDAS/CUIDADOTOTAL50.png
+    - assets/SEDAS/SEDA12.png
+    - assets/SEDAS/CUIDADOTOTAL30.png
+    - assets/SEDAS/SEDACONCERA200.png
+    - assets/SEDAS/SEDACONCERA100.png
+    - assets/SEDAS/FLUOR230.png
+    - assets/SEDAS/CAJAX12.png
+    #KITS
+    - assets/KITS/VIAJERO.png
+    - assets/KITS/KITIGIENEORAL.png
+    - assets/KITS/TOTALCERRADO.png
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/ENCABEZADOS/Icon-512.png"
