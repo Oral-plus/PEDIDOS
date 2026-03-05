@@ -19,16 +19,17 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
   String? _error;
   String _filtroEstado = 'TODOS';
   final TextEditingController _searchController = TextEditingController();
+  String? _baseUrl;
 
-  static const _blue = Color(0xFF1A56DB);
-  static const _blueLight = Color(0xFF3B82F6);
+  static const _blue = Color(0xFF1A1A2E);
+  static const _blueLight = Color(0xFF374151);
   static const _bg = Color(0xFFF8FAFC);
   static const _white = Color(0xFFFFFFFF);
   static const _textDark = Color(0xFF111827);
   static const _textMuted = Color(0xFF6B7280);
   static const _border = Color(0xFFE5E7EB);
 
-  static const _baseUrl = 'http://localhost:3000';
+  static const _baseUrls = ['http://localhost:3000', 'http://10.0.2.2:3000', 'http://192.168.2.244:3000'];
 
   @override
   void initState() {
@@ -43,17 +44,80 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
     super.dispose();
   }
 
+  Future<String> _obtenerUrlBase() async {
+    if (_baseUrl != null) return _baseUrl!;
+    for (final url in _baseUrls) {
+      try {
+        final res = await http.get(Uri.parse('$url/api/test'), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 5));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>? ?? {};
+          if (data['success'] == true) {
+            _baseUrl = url;
+            return url;
+          }
+        }
+      } catch (_) {}
+    }
+    _baseUrl = _baseUrls.first;
+    return _baseUrl!;
+  }
+
+  dynamic _get(dynamic map, String keySnake, String keyCamel) {
+    if (map == null || map is! Map) return null;
+    final m = Map<String, dynamic>.from(map as Map);
+    return m[keySnake] ?? m[keyCamel];
+  }
+
   Future<Map<String, dynamic>?> _obtenerDetallePedido(String numeroPedido) async {
     if (numeroPedido.isEmpty) return null;
     try {
+      final base = await _obtenerUrlBase();
       final encoded = Uri.encodeComponent(numeroPedido);
-      final url = '$_baseUrl/api/orders/detail/$encoded';
+      final url = '$base/api/orders/detail/$encoded';
       final res = await http.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
       final data = jsonDecode(res.body) as Map<String, dynamic>;
-      if (res.statusCode == 200 && data['success'] == true) {
-        return data['data'] as Map<String, dynamic>?;
+      if (res.statusCode != 200 || data['success'] != true) return null;
+
+      // Soportar ambos formatos: api/server.js { pedido, detalle } o API-EASY { data: { pedido, productos } }
+      dynamic pedidoRaw = data['pedido'];
+      List<dynamic> detalleRaw = data['detalle'] as List<dynamic>? ?? [];
+      if (pedidoRaw == null && data['data'] != null) {
+        final inner = data['data'] as Map<String, dynamic>;
+        pedidoRaw = inner['pedido'];
+        detalleRaw = inner['productos'] as List<dynamic>? ?? [];
       }
-    } catch (_) {}
+      if (pedidoRaw == null) return null;
+
+      final p = Map<String, dynamic>.from(pedidoRaw as Map);
+      final pedido = {
+        'numeroPedido': _get(p, 'numero_pedido', 'numeroPedido'),
+        'codigoCliente': _get(p, 'codigo_cliente', 'codigoCliente'),
+        'nombreCliente': _get(p, 'nombre_cliente', 'nombreCliente'),
+        'cedulaCliente': _get(p, 'cedula_cliente', 'cedulaCliente'),
+        'direccion': _get(p, 'direccion', 'direccion'),
+        'telefono': _get(p, 'telefono', 'telefono'),
+        'correo': _get(p, 'correo', 'correo'),
+        'subtotal': _get(p, 'subtotal', 'subtotal'),
+        'iva': _get(p, 'iva', 'iva'),
+        'total': _get(p, 'total', 'total'),
+        'observaciones': _get(p, 'observaciones', 'observaciones'),
+        'estado': _get(p, 'estado', 'estado'),
+        'vendedor': _get(p, 'vendedor', 'vendedor'),
+        'fechaCreacion': _get(p, 'fecha_creacion', 'fechaCreacion'),
+      };
+      final productos = detalleRaw.map((e) {
+        final d = Map<String, dynamic>.from(e as Map);
+        return {
+          'nombre': d['nombre_producto'] ?? d['nombre'],
+          'cantidad': d['cantidad'],
+          'precioUnitario': d['precio_unitario'] ?? d['precioUnitario'],
+          'totalLinea': d['total_linea'] ?? d['totalLinea'],
+        };
+      }).toList();
+      return {'pedido': pedido, 'productos': productos};
+    } catch (e) {
+      debugPrint('Error cargando detalle: $e');
+    }
     return null;
   }
 
@@ -70,7 +134,11 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
     Navigator.of(context).pop();
     if (detail == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo cargar el detalle del pedido'), backgroundColor: Colors.red),
+        SnackBar(
+          content: const Text('Error al cargar los detalles del pedido. Verifica la conexión con el servidor.'),
+          backgroundColor: Colors.red,
+          action: SnackBarAction(label: 'Reintentar', textColor: Colors.white, onPressed: () => _mostrarDetallePedido(numeroPedido)),
+        ),
       );
       return;
     }
@@ -304,8 +372,9 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
 
     setState(() { _isLoading = true; _error = null; });
     try {
+      final base = await _obtenerUrlBase();
       final encoded = Uri.encodeComponent(nombre);
-      final url = '$_baseUrl/api/orders/vendedor/$encoded';
+      final url = '$base/api/orders/vendedor/$encoded';
       final res = await http.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
       final data = jsonDecode(res.body) as Map<String, dynamic>;
 

@@ -46,18 +46,18 @@ extension ResponsiveContext on BuildContext {
   }
 }
 
-// Colores elegantes estilo Apple con mejoras para profesionalismo
-const Color primaryBlue = Color(0xFF007AFF);
-const Color secondaryBlue = Color(0xFF5AC8FA);
-const Color lightBlue = Color(0xFFADD8E6);
-const Color darkBlue = Color(0xFF0051D5);
+// Colores elegantes: blanco y negro (esquema refinado)
+const Color primaryBlue = Color(0xFF1A1A2E);   // Negro principal para acentos
+const Color secondaryBlue = Color(0xFF374151);  // Gris oscuro secundario
+const Color lightBlue = Color(0xFFF5F5F7);      // Blanco grisáceo claro
+const Color darkBlue = Color(0xFF111827);       // Negro para textos importantes
 const Color accentColor = Color(0xFFFF9500);
 const Color greenColor = Color(0xFF34C759);
-const Color backgroundColor = Color(0xFFF2F2F7);
+const Color backgroundColor = Color(0xFFFAFAFA); // Blanco neutro
 const Color cardBackground = Color(0xFFFFFFFF);
-const Color textPrimary = Color(0xFF000000);
-const Color textSecondary = Color(0xFF8E8E93);
-const Color elegantGray = Color(0xFFF2F2F7);
+const Color textPrimary = Color(0xFF1A1A2E);
+const Color textSecondary = Color(0xFF6B7280);
+const Color elegantGray = Color(0xFFF0F0F2);
 const Color glassColor = Color(0xFFFFFFFF);
 
 // Global utility: formatea precio tal cual viene de la API (sin modificar)
@@ -3875,16 +3875,14 @@ class _ProductsTabState extends State<ProductsTab>
   }
 
   void _showTextureSelectionDialog(Map<String, dynamic> product) {
-    // ✅ VERIFICAR DISPONIBILIDAD ANTES DE MOSTRAR OPCIONES
     final codigoSap = product['codigoSap'] ?? '';
     final disponible = product['disponible'] ?? true;
 
     if (!disponible) {
-      _addToCart(product); // Esto mostrará el mensaje de no disponible
+      _addToCart(product);
       return;
     }
 
-    // Si el producto no tiene opciones de textura, agregar directamente
     if (product['hasTextureOptions'] != true) {
       _addToCart(product);
       return;
@@ -3893,56 +3891,75 @@ class _ProductsTabState extends State<ProductsTab>
     showDialog(
       context: context,
       barrierDismissible: true,
+      barrierColor: Colors.black45,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 24),
         child: Container(
           constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.9,
-            maxHeight: MediaQuery.of(context).size.height * 0.75,
+            maxWidth: MediaQuery.of(context).size.width * 0.92,
+            maxHeight: MediaQuery.of(context).size.height * 0.82,
           ),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: primaryBlue.withOpacity(0.15), width: 1),
+            borderRadius: BorderRadius.circular(32),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
-                blurRadius: 24,
+                color: primaryBlue.withOpacity(0.06),
+                blurRadius: 48,
+                offset: const Offset(0, 24),
+              ),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 32,
                 offset: const Offset(0, 12),
               ),
             ],
           ),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Header elegante blanco puro con detalle azul sutil
                 Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: primaryBlue.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(16),
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(32, 32, 32, 24),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(
+                      bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1),
+                    ),
                   ),
                   child: Column(
                     children: [
-                      Icon(Icons.tune_rounded, color: primaryBlue, size: 32),
-                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: lightBlue,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: primaryBlue.withOpacity(0.15), width: 2),
+                        ),
+                        child: Icon(Icons.design_services_rounded, color: primaryBlue, size: 32),
+                      ),
+                      const SizedBox(height: 20),
                       Text(
-                        'Seleccionar Opción',
+                        'Selecciona tu opción',
                         style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
                           color: textPrimary,
+                          letterSpacing: -0.3,
                         ),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         product['title']!,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 15,
                           color: textSecondary,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
+                          height: 1.3,
                         ),
                         textAlign: TextAlign.center,
                         maxLines: 2,
@@ -3951,56 +3968,41 @@ class _ProductsTabState extends State<ProductsTab>
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
-                _buildEnhancedTextureOption(
-                          product['category'] == 'Cepillos'
-                              ? 'Media'
-                              : product['textura']!,
+                // Opciones con diseño blanco y acentos azules
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+                    child: Column(
+                      children: [
+                        _buildEnhancedTextureOption(
+                          product['category'] == 'Cepillos' ? 'Media' : product['textura']!,
                           _getTextureDescription(
-                              product['category'] == 'Cepillos'
-                                  ? 'Media'
-                                  : product['textura']!,
-                              product['category']),
+                            product['category'] == 'Cepillos' ? 'Media' : product['textura']!,
+                            product['category'],
+                          ),
                           product['codigoSap']!,
                           primaryBlue,
                           () {
-                            final productWithTexture =
-                                Map<String, dynamic>.from(product);
-                            productWithTexture['textura'] =
-                                product['category'] == 'Cepillos'
-                                    ? 'Media'
-                                    : product['textura'];
-                            productWithTexture['codigoSap'] =
-                                product['codigoSap'];
+                            final productWithTexture = Map<String, dynamic>.from(product);
+                            productWithTexture['textura'] = product['category'] == 'Cepillos' ? 'Media' : product['textura'];
+                            productWithTexture['codigoSap'] = product['codigoSap'];
                             Navigator.pop(context);
                             _addToCart(productWithTexture);
                           },
                         ),
-                        SizedBox(height: context.responsive(16)),
+                        const SizedBox(height: 16),
                         _buildEnhancedTextureOption(
-                          product['category'] == 'Cepillos'
-                              ? 'Suave'
-                              : product['texturaAlternativa']!,
+                          product['category'] == 'Cepillos' ? 'Suave' : product['texturaAlternativa']!,
                           _getTextureDescription(
-                              product['category'] == 'Cepillos'
-                                  ? 'Suave'
-                                  : product['texturaAlternativa']!,
-                              product['category']),
-                          product['category'] == 'Cepillos'
-                              ? product['codigoSapSuave']!
-                              : product['codigoSapAlternativo']!,
+                            product['category'] == 'Cepillos' ? 'Suave' : product['texturaAlternativa']!,
+                            product['category'],
+                          ),
+                          product['category'] == 'Cepillos' ? product['codigoSapSuave']! : product['codigoSapAlternativo']!,
                           secondaryBlue,
                           () {
-                            final productWithTexture =
-                                Map<String, dynamic>.from(product);
-                            productWithTexture['textura'] =
-                                product['category'] == 'Cepillos'
-                                    ? 'Suave'
-                                    : product['texturaAlternativa'];
-                            productWithTexture['codigoSap'] =
-                                product['category'] == 'Cepillos'
-                                    ? product['codigoSapSuave']
-                                    : product['codigoSapAlternativo'];
+                            final productWithTexture = Map<String, dynamic>.from(product);
+                            productWithTexture['textura'] = product['category'] == 'Cepillos' ? 'Suave' : product['texturaAlternativa'];
+                            productWithTexture['codigoSap'] = product['category'] == 'Cepillos' ? product['codigoSapSuave'] : product['codigoSapAlternativo'];
                             Navigator.pop(context);
                             _addToCart(productWithTexture);
                           },
@@ -4009,6 +4011,10 @@ class _ProductsTabState extends State<ProductsTab>
                     ),
                   ),
                 ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -4050,34 +4056,38 @@ class _ProductsTabState extends State<ProductsTab>
       String codigoSap, Color accentColor, VoidCallback onTap) {
     final precioSAP = _obtenerPrecioSAP(codigoSap);
     final disponible = _productoDisponible(codigoSap);
+    final isPrimary = accentColor == primaryBlue;
 
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
         color: disponible
-            ? accentColor.withOpacity(0.06)
-            : Colors.grey.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(context.responsive(16)),
+            ? (isPrimary ? lightBlue.withOpacity(0.6) : Colors.white)
+            : elegantGray.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(context.responsive(18)),
         border: Border.all(
             color: disponible
-                ? accentColor.withOpacity(0.4)
-                : Colors.grey.withOpacity(0.4),
+                ? primaryBlue.withOpacity(isPrimary ? 0.25 : 0.15)
+                : Colors.grey.withOpacity(0.3),
             width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: disponible
-                ? accentColor.withOpacity(0.1)
-                : Colors.grey.withOpacity(0.1),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
+            color: disponible ? primaryBlue.withOpacity(0.06) : Colors.transparent,
+            blurRadius: 20, offset: const Offset(0, 6),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 12, offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(context.responsive(16)),
+          borderRadius: BorderRadius.circular(context.responsive(18)),
           onTap: disponible ? onTap : null,
+          splashColor: primaryBlue.withOpacity(0.1),
+          highlightColor: primaryBlue.withOpacity(0.05),
           child: Opacity(
             opacity: disponible ? 1.0 : 0.5,
             child: Padding(
@@ -4087,27 +4097,19 @@ class _ProductsTabState extends State<ProductsTab>
                   Container(
                     padding: EdgeInsets.all(context.responsive(12)),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: disponible
-                            ? [
-                                accentColor.withOpacity(0.2),
-                                accentColor.withOpacity(0.1)
-                              ]
-                            : [
-                                Colors.grey.withOpacity(0.2),
-                                Colors.grey.withOpacity(0.1)
-                              ],
-                      ),
+                      color: disponible
+                          ? (isPrimary ? primaryBlue.withOpacity(0.1) : lightBlue)
+                          : elegantGray,
                       borderRadius:
                           BorderRadius.circular(context.responsive(12)),
                     ),
                     child: Icon(
-                      disponible ? Icons.check_circle_outline : Icons.block,
-                      color: disponible ? accentColor : Colors.grey,
-                      size: context.responsive(24),
+                      disponible ? Icons.check_circle_outline_rounded : Icons.block_rounded,
+                      color: disponible ? primaryBlue : Colors.grey,
+                      size: context.responsive(26),
                     ),
                   ),
-                  SizedBox(width: context.responsive(16)),
+                  SizedBox(width: context.responsive(18)),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4120,8 +4122,8 @@ class _ProductsTabState extends State<ProductsTab>
                                 texture,
                                 style: TextStyle(
                                   fontSize: context.clampFont(16, 20, 18),
-                                  fontWeight: FontWeight.w800,
-                                  color: disponible ? accentColor : Colors.grey,
+                                  fontWeight: FontWeight.w700,
+                                  color: disponible ? textPrimary : Colors.grey,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -4129,12 +4131,12 @@ class _ProductsTabState extends State<ProductsTab>
                             Container(
                               padding: EdgeInsets.symmetric(
                                 horizontal: context.responsive(10),
-                                vertical: context.responsive(4),
+                                vertical: context.responsive(5),
                               ),
                               decoration: BoxDecoration(
                                 color: disponible
-                                    ? accentColor.withOpacity(0.15)
-                                    : Colors.grey.withOpacity(0.15),
+                                    ? primaryBlue.withOpacity(0.08)
+                                    : Colors.grey.withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(
                                     context.responsive(8)),
                               ),
@@ -4143,7 +4145,7 @@ class _ProductsTabState extends State<ProductsTab>
                                 style: TextStyle(
                                   fontSize: context.clampFont(10, 14, 12),
                                   fontWeight: FontWeight.w700,
-                                  color: disponible ? accentColor : Colors.grey,
+                                  color: disponible ? primaryBlue : Colors.grey,
                                 ),
                               ),
                             ),
@@ -4639,22 +4641,27 @@ class _ProductPreviewDialogState extends State<ProductPreviewDialog>
     showDialog(
       context: context,
       barrierDismissible: true,
+      barrierColor: Colors.black45,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 24),
         child: Container(
           constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.9,
-            maxHeight: MediaQuery.of(context).size.height * 0.75,
+            maxWidth: MediaQuery.of(context).size.width * 0.92,
+            maxHeight: MediaQuery.of(context).size.height * 0.82,
           ),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: primaryBlue.withOpacity(0.15), width: 1),
+            borderRadius: BorderRadius.circular(32),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
-                blurRadius: 24,
+                color: primaryBlue.withOpacity(0.06),
+                blurRadius: 48,
+                offset: const Offset(0, 24),
+              ),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 32,
                 offset: const Offset(0, 12),
               ),
             ],
@@ -4665,30 +4672,42 @@ class _ProductPreviewDialogState extends State<ProductPreviewDialog>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: primaryBlue.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(16),
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(
+                      bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1),
+                    ),
                   ),
                   child: Column(
                     children: [
-                      Icon(Icons.tune_rounded, color: primaryBlue, size: 32),
-                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: lightBlue,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: primaryBlue.withOpacity(0.15), width: 2),
+                        ),
+                        child: Icon(Icons.design_services_rounded, color: primaryBlue, size: 32),
+                      ),
+                      const SizedBox(height: 20),
                       Text(
-                        'Seleccionar Opción',
+                        'Selecciona tu opción',
                         style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
                           color: textPrimary,
+                          letterSpacing: -0.3,
                         ),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         product['title']!,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 15,
                           color: textSecondary,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
+                          height: 1.3,
                         ),
                         textAlign: TextAlign.center,
                         maxLines: 2,
@@ -4796,34 +4815,38 @@ class _ProductPreviewDialogState extends State<ProductPreviewDialog>
       String codigoSap, Color accentColor, VoidCallback onTap) {
     final precioSAP = _obtenerPrecioSAP(codigoSap);
     final disponible = _productoDisponible(codigoSap);
+    final isPrimary = accentColor == primaryBlue;
 
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
         color: disponible
-            ? accentColor.withOpacity(0.06)
-            : Colors.grey.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(context.responsive(16)),
+            ? (isPrimary ? lightBlue.withOpacity(0.6) : Colors.white)
+            : elegantGray.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(context.responsive(18)),
         border: Border.all(
             color: disponible
-                ? accentColor.withOpacity(0.4)
-                : Colors.grey.withOpacity(0.4),
+                ? primaryBlue.withOpacity(isPrimary ? 0.25 : 0.15)
+                : Colors.grey.withOpacity(0.3),
             width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: disponible
-                ? accentColor.withOpacity(0.1)
-                : Colors.grey.withOpacity(0.1),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
+            color: disponible ? primaryBlue.withOpacity(0.06) : Colors.transparent,
+            blurRadius: 20, offset: const Offset(0, 6),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 12, offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(context.responsive(16)),
+          borderRadius: BorderRadius.circular(context.responsive(18)),
           onTap: disponible ? onTap : null,
+          splashColor: primaryBlue.withOpacity(0.1),
+          highlightColor: primaryBlue.withOpacity(0.05),
           child: Opacity(
             opacity: disponible ? 1.0 : 0.5,
             child: Padding(
@@ -4833,27 +4856,19 @@ class _ProductPreviewDialogState extends State<ProductPreviewDialog>
                   Container(
                     padding: EdgeInsets.all(context.responsive(12)),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: disponible
-                            ? [
-                                accentColor.withOpacity(0.2),
-                                accentColor.withOpacity(0.1)
-                              ]
-                            : [
-                                Colors.grey.withOpacity(0.2),
-                                Colors.grey.withOpacity(0.1)
-                              ],
-                      ),
+                      color: disponible
+                          ? (isPrimary ? primaryBlue.withOpacity(0.1) : lightBlue)
+                          : elegantGray,
                       borderRadius:
                           BorderRadius.circular(context.responsive(12)),
                     ),
                     child: Icon(
-                      disponible ? Icons.check_circle_outline : Icons.block,
-                      color: disponible ? accentColor : Colors.grey,
-                      size: context.responsive(24),
+                      disponible ? Icons.check_circle_outline_rounded : Icons.block_rounded,
+                      color: disponible ? primaryBlue : Colors.grey,
+                      size: context.responsive(26),
                     ),
                   ),
-                  SizedBox(width: context.responsive(16)),
+                  SizedBox(width: context.responsive(18)),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4866,8 +4881,8 @@ class _ProductPreviewDialogState extends State<ProductPreviewDialog>
                                 texture,
                                 style: TextStyle(
                                   fontSize: context.clampFont(16, 20, 18),
-                                  fontWeight: FontWeight.w800,
-                                  color: disponible ? accentColor : Colors.grey,
+                                  fontWeight: FontWeight.w700,
+                                  color: disponible ? textPrimary : Colors.grey,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -4875,12 +4890,12 @@ class _ProductPreviewDialogState extends State<ProductPreviewDialog>
                             Container(
                               padding: EdgeInsets.symmetric(
                                 horizontal: context.responsive(10),
-                                vertical: context.responsive(4),
+                                vertical: context.responsive(5),
                               ),
                               decoration: BoxDecoration(
                                 color: disponible
-                                    ? accentColor.withOpacity(0.15)
-                                    : Colors.grey.withOpacity(0.15),
+                                    ? primaryBlue.withOpacity(0.08)
+                                    : Colors.grey.withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(
                                     context.responsive(8)),
                               ),
@@ -4889,7 +4904,7 @@ class _ProductPreviewDialogState extends State<ProductPreviewDialog>
                                 style: TextStyle(
                                   fontSize: context.clampFont(10, 14, 12),
                                   fontWeight: FontWeight.w700,
-                                  color: disponible ? accentColor : Colors.grey,
+                                  color: disponible ? primaryBlue : Colors.grey,
                                 ),
                               ),
                             ),
