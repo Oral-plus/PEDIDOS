@@ -1,12 +1,22 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Colores inspirados en iOS con elegancia moderna
-  static const Color primaryColor = Color(0xFF007AFF); // iOS Blue
-  static const Color secondaryColor = Color(0xFF5AC8FA); // iOS Light Blue
-  static const Color accentColor = Color(0xFF34C759); // iOS Green
-  static const Color errorColor = Color(0xFFFF3B30); // iOS Red
-  static const Color warningColor = Color(0xFFFF9500); // iOS Orange
+  // Colores principales
+  static const Color primaryColor = Color(0xFF000000); // Negro Principal
+  static const Color secondaryColor = Color(0xFF333333); // Gris Oscuro
+  static const Color accentColor = Color(0xFFFF9500); // Naranja acento
+  static const Color errorColor = Color(0xFFFF3B30);
+  static const Color successColor = Color(0xFF34C759); // Verde de xito
+  
+  // Colores adicionales elegantes
+  static const Color primaryBlue = Color(0xFF1A56DB);   // Profesional Blue
+  static const Color secondaryBlue = Color(0xFF3B82F6);  // Light Blue/Accent
+  static const Color darkBlue = Color(0xFF111827);       // Text Dark
+  static const Color lightBlue = Color(0xFFEFF6FF);      // Blue Background light
+  static const Color elegantGray = Color(0xFFF9FAFB);    // Subtle Background
+  
+  static const Color textPrimary = Color(0xFF1A1A2E);
+  static const Color textSecondary = Color(0xFF6B7280);
   
   // Colores de fondo con sistema de capas iOS
   static const Color backgroundColor = Color(0xFFF2F2F7); // iOS System Background
@@ -298,25 +308,174 @@ class AppTheme {
   
   // Tema oscuro para completar la experiencia iOS
   static ThemeData get darkTheme {
+    const Color darkBackgroundColor = Color(0xFF000000);
+    const Color darkSurfaceColor = Color(0xFF1C1C1E);
+    const Color darkPrimaryColor = Color(0xFFFFFFFF); // Blanco como color primario en modo oscuro
+    const Color darkTextPrimary = Color(0xFFFFFFFF);
+    const Color darkTextSecondary = Color(0xFFEBEBF5);
+    const Color darkTextTertiary = Color(0x99EBEBF5);
+    const Color darkSeparator = Color(0x545458A6);
+    const Color darkBorder = Color(0xFF38383A);
+
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      primaryColor: const Color(0xFF0A84FF), // iOS Blue Dark
-      scaffoldBackgroundColor: const Color(0xFF000000), // iOS System Background Dark
+      primaryColor: darkPrimaryColor, // iOS Blue Dark
+      scaffoldBackgroundColor: darkBackgroundColor, // iOS System Background Dark
       fontFamily: 'SF Pro Display',
       
       colorScheme: const ColorScheme.dark(
-        primary: Color(0xFF0A84FF),
+        primary: darkPrimaryColor,
         secondary: Color(0xFF64D2FF),
-        surface: Color(0xFF1C1C1E),
+        surface: darkSurfaceColor,
         error: Color(0xFFFF453A),
         onPrimary: Colors.white,
         onSecondary: Colors.black,
-        onSurface: Colors.white,
+        onSurface: darkTextPrimary,
         onError: Colors.white,
       ),
       
-      // Continuar con la configuración del tema oscuro...
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+          minimumSize: const Size(0, 50),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(25),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.41,
+          ),
+        ),
+      ),
+      
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: darkPrimaryColor,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          textStyle: const TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w400,
+            letterSpacing: -0.41,
+          ),
+        ),
+      ),
+      
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: darkSurfaceColor,
+        hintStyle: const TextStyle(
+          color: darkTextTertiary,
+          fontSize: 17,
+          fontWeight: FontWeight.w400,
+          letterSpacing: -0.41,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(
+            color: darkBorder,
+            width: 0.5,
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(
+            color: darkBorder,
+            width: 0.5,
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(
+            color: darkPrimaryColor,
+            width: 2,
+          ),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(
+            color: errorColor,
+            width: 1,
+          ),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(
+            color: errorColor,
+            width: 2,
+          ),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 16,
+        ),
+      ),
+      
+      dividerTheme: const DividerThemeData(
+        color: darkSeparator,
+        thickness: 0.5,
+        space: 1,
+      ),
+      
+      listTileTheme: const ListTileThemeData(
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        minLeadingWidth: 32,
+        iconColor: darkTextSecondary,
+        textColor: darkTextPrimary,
+        titleTextStyle: TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w400,
+          color: darkTextPrimary,
+          letterSpacing: -0.41,
+        ),
+        subtitleTextStyle: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w400,
+          color: darkTextSecondary,
+          letterSpacing: -0.24,
+        ),
+      ),
+      
+      textTheme: const TextTheme(
+        headlineLarge: TextStyle(fontSize: 34, fontWeight: FontWeight.bold, color: darkTextPrimary, letterSpacing: 0.37, height: 1.12),
+        headlineMedium: TextStyle(fontSize: 28, fontWeight: FontWeight.w400, color: darkTextPrimary, letterSpacing: 0.36, height: 1.14),
+        headlineSmall: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: darkTextPrimary, letterSpacing: 0.35, height: 1.16),
+        titleLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: darkTextPrimary, letterSpacing: 0.38, height: 1.20),
+        titleMedium: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: darkTextPrimary, letterSpacing: -0.41, height: 1.29),
+        titleSmall: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: darkTextPrimary, letterSpacing: -0.32, height: 1.31),
+        bodyLarge: TextStyle(fontSize: 17, fontWeight: FontWeight.w400, color: darkTextPrimary, letterSpacing: -0.41, height: 1.29),
+        bodyMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: darkTextPrimary, letterSpacing: -0.32, height: 1.31),
+        bodySmall: TextStyle(fontSize: 15, fontWeight: FontWeight.w400, color: darkTextSecondary, letterSpacing: -0.24, height: 1.33),
+        labelLarge: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: darkTextSecondary, letterSpacing: -0.08, height: 1.38),
+        labelMedium: TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: darkTextSecondary, letterSpacing: 0, height: 1.33),
+        labelSmall: TextStyle(fontSize: 11, fontWeight: FontWeight.w400, color: darkTextTertiary, letterSpacing: 0.07, height: 1.36),
+      ),
+      
+      iconTheme: const IconThemeData(
+        color: darkTextSecondary,
+        size: 24,
+      ),
+      
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) => Colors.white),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return accentColor;
+          return const Color(0xFF39393D);
+        }),
+      ),
+      
+      sliderTheme: const SliderThemeData(
+        activeTrackColor: darkPrimaryColor,
+        inactiveTrackColor: Color(0xFF39393D),
+        thumbColor: Colors.white,
+        overlayColor: Color(0x33FFFFFF),
+        trackHeight: 4,
+      ),
     );
   }
 }

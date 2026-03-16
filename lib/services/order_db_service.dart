@@ -73,7 +73,7 @@ class OrderDbService {
           'codigo': item.codigoSap,
           'nombre': item.title,
           'textura': item.textura ?? 'Media',
-          'precio': item.numericPrice,
+          'precio': item.price,
           'cantidad': item.quantity,
           'total': item.totalPrice,
         });

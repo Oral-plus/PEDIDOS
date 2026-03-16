@@ -2,7 +2,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'login_screen.dart';
+import 'package:provider/provider.dart';
+import '../providers/session_provider.dart';
+import '../utils/theme.dart';
+import '../utils/price_utils.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -17,10 +20,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
   String? _error;
   String _filtroEstado = 'TODOS';
 
-  static const _blue = Color(0xFF1A56DB);
-  static const _bg = Color(0xFFF8FAFC);
-  static const _textDark = Color(0xFF111827);
-  static const _textMuted = Color(0xFF6B7280);
+  static const _textDark = AppTheme.primaryBlue;
+  static const _textMuted = AppTheme.secondaryBlue;
   static const _border = Color(0xFFE5E7EB);
 
   static const _baseUrl = 'http://localhost:3000';
@@ -32,13 +33,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Future<void> _cargarPedidos() async {
-    final codigo = ClientSession().codigoCliente;
+    final codigo = context.read<SessionProvider>().codigoCliente;
     if (codigo.isEmpty) {
-      setState(() { _isLoading = false; _error = 'Sin cliente seleccionado'; });
+      if (mounted) setState(() { _isLoading = false; _error = 'Sin cliente seleccionado'; });
       return;
     }
 
-    setState(() { _isLoading = true; _error = null; });
+    if (mounted) setState(() { _isLoading = true; _error = null; });
     try {
       final url = '$_baseUrl/api/orders?cliente=$codigo';
       final res = await http.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
@@ -70,16 +71,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
-  String _fmtMoney(dynamic v) => '\$${NumberFormat('#,##0', 'es_CO').format((v as num?)?.toInt() ?? 0)}';
+  String _fmtMoney(dynamic v) => PriceUtils.formatPriceDisplay((v as num?)?.toDouble() ?? 0.0);
 
   Color _estadoColor(String estado) {
     switch (estado.toUpperCase()) {
       case 'PENDIENTE': return const Color(0xFFF59E0B);
-      case 'CONFIRMADO': return _blue;
+      case 'CONFIRMADO': return AppTheme.primaryBlue;
       case 'EN_PROCESO': case 'EN PROCESO': return const Color(0xFF8B5CF6);
       case 'ENVIADO': return const Color(0xFF06B6D4);
-      case 'ENTREGADO': return const Color(0xFF059669);
-      case 'CANCELADO': return const Color(0xFFDC2626);
+      case 'ENTREGADO': return AppTheme.successColor;
+      case 'CANCELADO': return AppTheme.errorColor;
       default: return _textMuted;
     }
   }
@@ -104,14 +105,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
         _filterChips(),
         Expanded(
           child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: _blue))
+              ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryBlue))
               : _error != null
                   ? _errorWidget()
                   : _pedidosFiltrados.isEmpty
                       ? _emptyWidget()
                       : RefreshIndicator(
                           onRefresh: _cargarPedidos,
-                          color: _blue,
+                          color: AppTheme.primaryBlue,
                           child: ListView.separated(
                             physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
                             padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
@@ -148,7 +149,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 onTap: _cargarPedidos,
                 child: Container(
                   width: 40, height: 40,
-                  decoration: BoxDecoration(color: _bg, borderRadius: BorderRadius.circular(12), border: Border.all(color: _border)),
+                  decoration: BoxDecoration(color: AppTheme.backgroundColor, borderRadius: BorderRadius.circular(12), border: Border.all(color: _border)),
                   child: const Icon(Icons.refresh_rounded, color: _textMuted, size: 20),
                 ),
               ),
@@ -170,7 +171,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         child: Row(
           children: filtros.map((f) {
             final isActive = _filtroEstado == f;
-            final color = f == 'TODOS' ? _blue : _estadoColor(f);
+            final color = f == 'TODOS' ? AppTheme.primaryBlue : _estadoColor(f);
             return Padding(
               padding: const EdgeInsets.only(right: 8),
               child: GestureDetector(
@@ -245,7 +246,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 const SizedBox(width: 16),
                 _miniStat(Icons.inventory_2_outlined, '${p['totalUnidades'] ?? 0} unidades'),
                 const Spacer(),
-                Text(_fmtMoney(p['total']), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _blue)),
+                Text(_fmtMoney(p['total']), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.primaryBlue)),
               ],
             ),
           ),
@@ -291,7 +292,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: _cargarPedidos,
-            style: ElevatedButton.styleFrom(backgroundColor: _blue, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryBlue, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
             child: const Text('Reintentar'),
           ),
         ],

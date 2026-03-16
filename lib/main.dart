@@ -1,15 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'screens/splash_screen.dart';
 import 'utils/app_assets.dart';
 import 'utils/theme.dart';
+import 'providers/session_provider.dart';
+import 'providers/cart_provider.dart';
 // © 2025 Autor: SKY - Todos los derechos reservados.
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   rootBundle.load(AppAssets.logo).ignore();
-  runApp(const SkyPagosApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => SessionProvider()),
+        ChangeNotifierProvider(create: (_) => CartProvider()),
+      ],
+      child: const SkyPagosApp(),
+    ),
+  );
 }
 
 class SkyPagosApp extends StatelessWidget {

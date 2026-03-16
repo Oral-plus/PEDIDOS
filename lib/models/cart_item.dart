@@ -3,8 +3,8 @@ import 'package:intl/intl.dart';
 class CartItem {
   final String id;
   final String title;
-  final String price;
-  final String originalPrice;
+  final double price;
+  final double originalPrice;
   final String image;
   final String description;
   final String codigoSap;
@@ -23,61 +23,49 @@ class CartItem {
     this.quantity = 1,
   });
 
-  // Precio numérico para cálculos (soporta formato US 1,234.56 y CO 1.234,56)
-  double get numericPrice {
-    try {
-      String s = price.replaceAll(RegExp(r'[^\d.,]'), '').trim();
-      if (s.isEmpty) return 0.0;
-      if (s.contains(',') && s.contains('.')) {
-        if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
-          s = s.replaceAll('.', '').replaceAll(',', '.');
-        } else {
-          s = s.replaceAll(',', '');
-        }
-      } else if (s.contains(',')) {
-        s = s.replaceAll(',', '.');
-      } else if (s.contains('.')) {
-        String after = s.substring(s.lastIndexOf('.') + 1);
-        if (after.length > 2) s = s.replaceAll('.', '');
+  /// Helper para normalizar strings de precios a double
+  static double parsePrice(dynamic val) {
+    if (val is num) return val.toDouble();
+    if (val == null) return 0.0;
+    
+    String s = val.toString().replaceAll(RegExp(r'[^\d.,]'), '').trim();
+    if (s.isEmpty) return 0.0;
+    if (s.contains(',') && s.contains('.')) {
+      if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+        s = s.replaceAll('.', '').replaceAll(',', '.');
+      } else {
+        s = s.replaceAll(',', '');
       }
-      return double.tryParse(s) ?? 0.0;
-    } catch (e) {
-      return 0.0;
+    } else if (s.contains(',')) {
+      s = s.replaceAll(',', '.');
+    } else if (s.contains('.')) {
+      String after = s.substring(s.lastIndexOf('.') + 1);
+      if (after.length > 2) s = s.replaceAll('.', '');
     }
-  }
-
-  // Precio original numérico
-  double get numericOriginalPrice {
-    try {
-      if (originalPrice.isEmpty) return 0.0;
-      final cleanPrice = originalPrice.replaceAll(RegExp(r'[^\d.]'), '');
-      return double.tryParse(cleanPrice) ?? 0.0;
-    } catch (e) {
-      return 0.0;
-    }
+    return double.tryParse(s) ?? 0.0;
   }
 
   // Precio total del item (con IVA)
-  double get totalPrice => numericPrice * quantity;
+  double get totalPrice => price * quantity;
 
   // Precio sin IVA (API devuelve precio con IVA, despejamos)
-  double get numericPriceSinIVA => numericPrice / 1.19;
-  double get totalPriceSinIVA => numericPriceSinIVA * quantity;
+  double get priceSinIVA => price / 1.19;
+  double get totalPriceSinIVA => priceSinIVA * quantity;
   double get totalIVA => totalPrice - totalPriceSinIVA;
 
   // Precio total original del item
-  double get totalOriginalPrice => numericOriginalPrice * quantity;
+  double get totalOriginalPrice => originalPrice * quantity;
 
   // Descuento por item
   double get discount {
-    if (numericOriginalPrice <= 0) return 0.0;
-    return numericOriginalPrice - numericPrice;
+    if (originalPrice <= 0) return 0.0;
+    return originalPrice - price;
   }
 
   // Porcentaje de descuento
   double get discountPercentage {
-    if (numericOriginalPrice <= 0) return 0.0;
-    return (discount / numericOriginalPrice) * 100;
+    if (originalPrice <= 0) return 0.0;
+    return (discount / originalPrice) * 100;
   }
 
   // Descuento total del item (descuento por unidad * cantidad)
@@ -88,13 +76,13 @@ class CartItem {
 
   // Precio formateado para mostrar (con decimales correctos)
   String get formattedPrice {
-    return '\$${NumberFormat('#,##0.00', 'es_CO').format(numericPrice)}';
+    return '\$${NumberFormat('#,##0.00', 'es_CO').format(price)}';
   }
 
   // Precio original formateado
   String get formattedOriginalPrice {
-    if (numericOriginalPrice <= 0) return '';
-    return '\$${NumberFormat('#,##0.00', 'es_CO').format(numericOriginalPrice)}';
+    if (originalPrice <= 0) return '';
+    return '\$${NumberFormat('#,##0.00', 'es_CO').format(originalPrice)}';
   }
 
   // Precio total formateado
@@ -104,7 +92,7 @@ class CartItem {
 
   // Precio sin IVA formateado
   String get formattedPriceSinIVA {
-    return '\$${NumberFormat('#,##0.00', 'es_CO').format(numericPriceSinIVA)}';
+    return '\$${NumberFormat('#,##0.00', 'es_CO').format(priceSinIVA)}';
   }
 
   String get formattedTotalPriceSinIVA {
@@ -140,7 +128,6 @@ class CartItem {
       'codigoSap': codigoSap,
       'textura': textura,
       'quantity': quantity,
-      'numericPrice': numericPrice,
       'totalPrice': totalPrice,
       'discount': discount,
       'hasDiscount': hasDiscount,
@@ -152,8 +139,8 @@ class CartItem {
     return CartItem(
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
-      price: json['price']?.toString() ?? '\$0',
-      originalPrice: json['originalPrice']?.toString() ?? '',
+      price: parsePrice(json['price']),
+      originalPrice: parsePrice(json['originalPrice']),
       image: json['image']?.toString() ?? '',
       description: json['description']?.toString() ?? '',
       codigoSap: json['codigoSap']?.toString() ?? '',
@@ -166,8 +153,8 @@ class CartItem {
   CartItem copyWith({
     String? id,
     String? title,
-    String? price,
-    String? originalPrice,
+    double? price,
+    double? originalPrice,
     String? image,
     String? description,
     String? codigoSap,
@@ -209,7 +196,7 @@ class CartItem {
     return id.isNotEmpty && 
            title.isNotEmpty && 
            codigoSap.isNotEmpty && 
-           numericPrice > 0 && 
+           price > 0 && 
            quantity > 0;
   }
 
@@ -249,8 +236,8 @@ CartItem Debug Info:
   ID: $id
   Title: $title
   CodigoSAP: $codigoSap
-  Price: $price (Numeric: $numericPrice)
-  Original Price: $originalPrice (Numeric: $numericOriginalPrice)
+  Price: $price
+  Original Price: $originalPrice
   Quantity: $quantity
   Total Price: $formattedTotalPrice
   Discount: $formattedDiscount ($formattedDiscountPercentage)

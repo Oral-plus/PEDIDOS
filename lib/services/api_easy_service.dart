@@ -1,5 +1,4 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'api_client.dart';
 
 /// Servicio para conectar con API-EASY (auth + clientes por vendor)
 class ApiEasyService {
@@ -48,27 +47,24 @@ class ApiEasyService {
   /// Body: { usuario, password }
   Future<Map<String, dynamic>> login(String usuario, String password) async {
     try {
-      final res = await http
-          .post(
-            Uri.parse('$baseUrl/api/auth/login'),
-            headers: _headers,
-            body: jsonEncode({'usuario': usuario, 'password': password}),
-          )
-          .timeout(const Duration(seconds: 15));
+      final res = await ApiClient.post(
+        '/api/auth/login',
+        body: {'usuario': usuario, 'password': password},
+        customBaseUrl: baseUrl,
+        timeout: const Duration(seconds: 15),
+      );
 
-      final data = jsonDecode(res.body) as Map<String, dynamic>? ?? {};
-
-      if (res.statusCode == 200 && data['success'] == true) {
-        final d = data['data'] as Map<String, dynamic>? ?? {};
+      if (res['success'] == true) {
+        final d = res['data'] as Map<String, dynamic>? ?? {};
         _token = d['token']?.toString();
         _usuario = d['usuario'] as Map<String, dynamic>?;
         _loginUsuario = usuario;
-        return {'success': true, 'message': data['message'] ?? 'Inicio de sesión exitoso'};
+        return {'success': true, 'message': res['message'] ?? 'Inicio de sesión exitoso'};
       }
 
       return {
         'success': false,
-        'message': data['message']?.toString() ?? 'Usuario o contraseña incorrectos',
+        'message': res['message']?.toString() ?? 'Usuario o contraseña incorrectos',
       };
     } catch (e) {
       return {'success': false, 'message': 'Error de conexión: ${e.toString()}'};
@@ -82,28 +78,28 @@ class ApiEasyService {
     }
 
     try {
-      final res = await http
-          .get(Uri.parse('$baseUrl/api/clientes'), headers: _headers)
-          .timeout(const Duration(seconds: 15));
+      final res = await ApiClient.get(
+        '/api/clientes',
+        customBaseUrl: baseUrl,
+        headers: _headers,
+        timeout: const Duration(seconds: 15),
+      );
 
-      final data = jsonDecode(res.body) as Map<String, dynamic>? ?? {};
-
-      if (res.statusCode == 200 && data['success'] == true) {
-        final list = data['data'] as List<dynamic>? ?? [];
-        return {'success': true, 'data': list, 'total': data['total'] ?? list.length};
-      }
-
-      if (res.statusCode == 401) {
-        clearSession();
-        return {'success': false, 'message': 'Sesión expirada', 'data': <dynamic>[]};
+      if (res['success'] == true) {
+        final list = res['data'] as List<dynamic>? ?? [];
+        return {'success': true, 'data': list, 'total': res['total'] ?? list.length};
       }
 
       return {
         'success': false,
-        'message': data['message']?.toString() ?? 'Error al cargar clientes',
+        'message': res['message']?.toString() ?? 'Error al cargar clientes',
         'data': <dynamic>[],
       };
     } catch (e) {
+      if (e.toString().contains('401')) {
+        clearSession();
+        return {'success': false, 'message': 'Sesión expirada', 'data': <dynamic>[]};
+      }
       return {'success': false, 'message': 'Error: ${e.toString()}', 'data': <dynamic>[]};
     }
   }
@@ -113,14 +109,15 @@ class ApiEasyService {
     if (_token == null || _token!.isEmpty) return null;
 
     try {
-      final res = await http
-          .get(Uri.parse('$baseUrl/api/clientes/$codigo'), headers: _headers)
-          .timeout(const Duration(seconds: 10));
+      final res = await ApiClient.get(
+        '/api/clientes/$codigo',
+        customBaseUrl: baseUrl,
+        headers: _headers,
+        timeout: const Duration(seconds: 10),
+      );
 
-      final data = jsonDecode(res.body) as Map<String, dynamic>? ?? {};
-
-      if (res.statusCode == 200 && data['success'] == true) {
-        return data['data'] as Map<String, dynamic>?;
+      if (res['success'] == true) {
+        return res['data'] as Map<String, dynamic>?;
       }
       return null;
     } catch (_) {
@@ -133,14 +130,15 @@ class ApiEasyService {
     if (_token == null || _token!.isEmpty) return null;
 
     try {
-      final res = await http
-          .get(Uri.parse('$baseUrl/api/clientes/cartera/$codigo'), headers: _headers)
-          .timeout(const Duration(seconds: 15));
+      final res = await ApiClient.get(
+        '/api/clientes/cartera/$codigo',
+        customBaseUrl: baseUrl,
+        headers: _headers,
+        timeout: const Duration(seconds: 15),
+      );
 
-      final data = jsonDecode(res.body) as Map<String, dynamic>? ?? {};
-
-      if (res.statusCode == 200 && data['success'] == true) {
-        return data['data'] as Map<String, dynamic>?;
+      if (res['success'] == true) {
+        return res['data'] as Map<String, dynamic>?;
       }
       return null;
     } catch (_) {

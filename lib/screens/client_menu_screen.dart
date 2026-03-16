@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_easy_service.dart';
 import '../utils/app_assets.dart';
+import '../utils/theme.dart';
+import 'package:provider/provider.dart';
+import '../providers/session_provider.dart';
 import 'login_screen.dart';
 import 'dashboard_screen.dart';
 import 'vendor_orders_screen.dart';
@@ -32,17 +35,17 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
   List<Map<String, dynamic>> _clientesFiltrados = [];
   bool _showSearch = false;
 
-  static const Color _blue = Color(0xFF1A56DB);
-  static const Color _blueLight = Color(0xFF3B82F6);
-  static const Color _bluePale = Color(0xFFDBEAFE);
-  static const Color _bg = Color(0xFFF8FAFC);
-  static const Color _white = Color(0xFFFFFFFF);
-  static const Color _textDark = Color(0xFF111827);
-  static const Color _textBody = Color(0xFF374151);
-  static const Color _textMuted = Color(0xFF9CA3AF);
-  static const Color _border = Color(0xFFE5E7EB);
-  static const Color _success = Color(0xFF059669);
-  static const Color _danger = Color(0xFFDC2626);
+  static Color get _blue => AppTheme.primaryBlue;
+  static Color get _blueLight => AppTheme.secondaryBlue;
+  static Color get _bluePale => AppTheme.lightBlue;
+  static Color get _bg => AppTheme.backgroundColor;
+  static const Color _white = Colors.white;
+  static Color get _textDark => AppTheme.darkBlue;
+  static Color get _textBody => AppTheme.textPrimary;
+  static Color get _textMuted => AppTheme.textSecondary;
+  static Color get _border => AppTheme.borderColor;
+  static Color get _success => AppTheme.successColor;
+  static Color get _danger => AppTheme.errorColor;
   static const Color _dangerBg = Color(0xFFFEF2F2);
 
   @override
@@ -105,7 +108,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
 
   void _redirectToLogin() {
     _api.clearSession();
-    ClientSession().clear();
+    context.read<SessionProvider>().clear();
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(pageBuilder: (_, __, ___) => const LoginScreen(), transitionsBuilder: (_, a, __, c) => FadeTransition(opacity: a, child: c), transitionDuration: const Duration(milliseconds: 400)),
       (route) => false,
@@ -133,7 +136,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
 
     final sap = _clienteDetalleSAP;
     final c = _clienteSeleccionado!;
-    ClientSession().setClienteData(
+    context.read<SessionProvider>().setClienteData(
       codigo: codigo,
       nombre: sap?['nombre']?.toString() ?? c['nombre']?.toString() ?? c['cardName']?.toString() ?? '',
       direccion: sap?['direccion']?.toString() ?? '',
@@ -162,8 +165,8 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
       builder: (ctx) => AlertDialog(
         backgroundColor: _white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Cerrar sesión', style: TextStyle(color: _textDark, fontWeight: FontWeight.w700, fontSize: 18)),
-        content: const Text('¿Deseas salir del portal de pedidos?', style: TextStyle(color: _textBody, fontSize: 14)),
+        title: Text('Cerrar sesión', style: TextStyle(color: _textDark, fontWeight: FontWeight.w700, fontSize: 18)),
+        content: Text('¿Deseas salir del portal de pedidos?', style: TextStyle(color: _textBody, fontSize: 14)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancelar', style: TextStyle(color: _textMuted))),
           ElevatedButton(
@@ -191,7 +194,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
 
   @override
   Widget build(BuildContext context) {
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.dark,
       systemNavigationBarColor: _bg,
@@ -272,7 +275,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                   decoration: BoxDecoration(color: _bluePale, borderRadius: BorderRadius.circular(12)),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: Padding(padding: const EdgeInsets.all(6), child: Image.asset(AppAssets.logo, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.medical_services_rounded, size: 22, color: _blue))),
+                    child: Padding(padding: const EdgeInsets.all(6), child: Image.asset(AppAssets.logo, fit: BoxFit.contain, errorBuilder: (_, __, ___) => Icon(Icons.medical_services_rounded, size: 22, color: _blue))),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -280,7 +283,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('ORAL-PLUS', style: TextStyle(color: _textDark, fontSize: 17, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+                      Text('ORAL-PLUS', style: TextStyle(color: _textDark, fontSize: 17, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
                       Text('Portal de Pedidos', style: TextStyle(color: _blueLight.withOpacity(0.8), fontSize: 12, fontWeight: FontWeight.w500)),
                     ],
                   ),
@@ -316,7 +319,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                       children: [
                         Text(
                           nombreCompleto.isNotEmpty ? nombreCompleto : 'Vendedor',
-                          style: const TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w700),
+                          style: TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w700),
                           maxLines: 1, overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
@@ -337,7 +340,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                         borderRadius: BorderRadius.circular(10),
                         boxShadow: [BoxShadow(color: _blue.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 3))],
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.receipt_long_rounded, color: Colors.white, size: 16),
@@ -371,11 +374,11 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Selecciona un cliente', style: TextStyle(color: _textDark, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+        Text('Selecciona un cliente', style: TextStyle(color: _textDark, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
         const SizedBox(height: 6),
         Text(
           _isLoadingClientes ? 'Cargando clientes disponibles...' : '${_clientes.length} clientes disponibles',
-          style: const TextStyle(color: _textMuted, fontSize: 14),
+          style: TextStyle(color: _textMuted, fontSize: 14),
         ),
       ],
     );
@@ -412,24 +415,24 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                     Expanded(
                       child: TextField(
                         controller: _searchController,
-                        style: const TextStyle(color: _textDark, fontSize: 15, fontWeight: FontWeight.w500),
+                        style: TextStyle(color: _textDark, fontSize: 15, fontWeight: FontWeight.w500),
                         onTap: () => setState(() => _showSearch = true),
                         decoration: InputDecoration(
                           hintText: _isLoadingClientes ? 'Cargando clientes...' : 'Buscar por nombre o código...',
-                          hintStyle: const TextStyle(color: _textMuted, fontSize: 14, fontWeight: FontWeight.w400),
+                          hintStyle: TextStyle(color: _textMuted, fontSize: 14, fontWeight: FontWeight.w400),
                           border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero,
                         ),
                       ),
                     ),
                     if (_isLoadingClientes)
-                      const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _blueLight))
+                      SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _blueLight))
                     else if (_searchController.text.isNotEmpty)
                       GestureDetector(
                         onTap: () { _searchController.clear(); setState(() => _showSearch = false); },
                         child: Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(color: _bg, shape: BoxShape.circle),
-                          child: const Icon(Icons.close_rounded, color: _textMuted, size: 14),
+                          child: Icon(Icons.close_rounded, color: _textMuted, size: 14),
                         ),
                       ),
                   ],
@@ -485,7 +488,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                     decoration: BoxDecoration(color: _blueLight.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                                    child: const Icon(Icons.check_rounded, color: _blueLight, size: 16),
+                                    child: Icon(Icons.check_rounded, color: _blueLight, size: 16),
                                   ),
                               ],
                             ),
@@ -501,7 +504,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                   child: Column(children: [
                     Icon(Icons.search_off_rounded, color: _textMuted.withOpacity(0.3), size: 40),
                     const SizedBox(height: 10),
-                    const Text('Sin resultados', style: TextStyle(color: _textMuted, fontSize: 14, fontWeight: FontWeight.w500)),
+                    Text('Sin resultados', style: TextStyle(color: _textMuted, fontSize: 14, fontWeight: FontWeight.w500)),
                   ]),
                 ),
             ],
@@ -517,9 +520,9 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
       decoration: BoxDecoration(color: _dangerBg, borderRadius: BorderRadius.circular(14), border: Border.all(color: _danger.withOpacity(0.15))),
       child: Row(children: [
         Container(width: 36, height: 36, decoration: BoxDecoration(color: _danger.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-          child: const Icon(Icons.error_outline_rounded, color: _danger, size: 19)),
+          child: Icon(Icons.error_outline_rounded, color: _danger, size: 19)),
         const SizedBox(width: 12),
-        Expanded(child: Text(_errorMessage!, style: const TextStyle(color: _danger, fontSize: 13, fontWeight: FontWeight.w500))),
+        Expanded(child: Text(_errorMessage!, style: TextStyle(color: _danger, fontSize: 13, fontWeight: FontWeight.w500))),
         GestureDetector(
           onTap: _cargarClientes,
           child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), decoration: BoxDecoration(color: _blue, borderRadius: BorderRadius.circular(8)),
@@ -650,7 +653,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(label, style: TextStyle(color: _textMuted, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.3)),
           const SizedBox(height: 2),
-          Text(value.length > 45 ? '${value.substring(0, 45)}...' : value, style: const TextStyle(color: _textDark, fontSize: 13, fontWeight: FontWeight.w500), maxLines: 2, overflow: TextOverflow.ellipsis),
+          Text(value.length > 45 ? '${value.substring(0, 45)}...' : value, style: TextStyle(color: _textDark, fontSize: 13, fontWeight: FontWeight.w500), maxLines: 2, overflow: TextOverflow.ellipsis),
         ])),
       ]),
     );
@@ -662,7 +665,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
       child: Container(
         height: 58,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [_blue, _blueLight], begin: Alignment.centerLeft, end: Alignment.centerRight),
+          gradient: LinearGradient(colors: [_blue, _blueLight], begin: Alignment.centerLeft, end: Alignment.centerRight),
           borderRadius: BorderRadius.circular(16),
           boxShadow: [BoxShadow(color: _blue.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8))],
         ),

@@ -1,16 +1,18 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
 import '../models/cart_item.dart';
 import '../services/api_easy_service.dart';
 import '../services/order_db_service.dart';
 import '../services/Datos_service.dart';
 import '../services/order_receipt_service.dart';
 import '../utils/app_assets.dart';
+import '../utils/theme.dart';
+import '../utils/price_utils.dart';
+import '../providers/session_provider.dart';
 import 'loading_overlay.dart';
-import 'login_screen.dart';
 
 class CheckoutScreen extends StatefulWidget {
   final List<CartItem> cartItems;
@@ -43,16 +45,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isGettingLocation = false;
   String? _locationError;
 
-  static const _blue = Color(0xFF1A56DB);
-  // ignore: unused_field
-  static const _blueLight = Color(0xFF3B82F6);
-  static const _bg = Color(0xFFF8FAFC);
-  static const _textDark = Color(0xFF111827);
-  static const _textMuted = Color(0xFF6B7280);
-  static const _success = Color(0xFF059669);
-  static const _error = Color(0xFFDC2626);
-  static const _border = Color(0xFFE5E7EB);
-
   @override
   void initState() {
     super.initState();
@@ -69,10 +61,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     super.dispose();
   }
 
-  String _fmt(num price) => NumberFormat('#,##0', 'es_CO').format(price);
-
   List<CartItem> get _validItems =>
-      widget.cartItems.where((i) => i.numericPrice > 0).toList();
+      widget.cartItems.where((i) => i.price > 0).toList();
 
   double get _total =>
       _validItems.fold(0.0, (s, i) => s + i.totalPrice);
@@ -93,7 +83,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       final code = widget.codigoCliente.isNotEmpty
           ? widget.codigoCliente
-          : ClientSession().codigoCliente;
+          : context.read<SessionProvider>().codigoCliente;
       if (code.isNotEmpty && mounted) {
         _cedulaController.text = code;
         await _searchUser(code, silent: true);
@@ -114,10 +104,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _telefonoController.text = data['phone']?.toString() ?? '';
         _direccionController.text = data['address']?.toString() ?? '';
         setState(() => _clientFoundInSAP = true);
-        if (!silent) _snack('Cliente verificado', _success);
+        if (!silent) _snack('Cliente verificado', AppTheme.successColor);
       } else {
         setState(() => _clientFoundInSAP = false);
-        if (!silent) _snack('Cliente no encontrado', _error);
+        if (!silent) _snack('Cliente no encontrado', AppTheme.errorColor);
       }
     } catch (_) {
       if (mounted) setState(() => _clientFoundInSAP = false);
@@ -150,8 +140,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 15)),
       );
 
-      // Guardar solo coordenadas (lat, lng). No usar reverse-geocode: la dirección
-      // del dispositivo sería la del vendedor, no del cliente.
       final coords = '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
 
       if (mounted) {
@@ -170,20 +158,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Future<void> _processOrder() async {
     if (!_formKey.currentState!.validate()) return;
     if (!_acceptTerms) {
-      _snack('Acepta los términos para continuar', _error);
+      _snack('Acepta los términos para continuar', AppTheme.errorColor);
       return;
     }
     if (_validItems.isEmpty) {
-      _snack('No hay productos válidos', _error);
+      _snack('No hay productos válidos', AppTheme.errorColor);
       return;
     }
 
     setState(() => _isProcessingOrder = true);
     try {
-      // No auto-rellenar con GPS: la ubicación del dispositivo es del vendedor, no del cliente.
-      // La dirección debe venir de SAP o ingresarse manualmente.
-
-      final session = ClientSession();
+      final session = context.read<SessionProvider>();
       final vendedorNombre = ApiEasyService().usuario?['nombre']?.toString().trim() ?? '';
       final vendedor = vendedorNombre.isNotEmpty
           ? vendedorNombre
@@ -195,9 +180,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         nombre: _nombreController.text.trim(),
         correo: _emailController.text.trim(),
         telefono: _telefonoController.text.trim(),
-        direccion: _direccionController.text.trim().isEmpty
-            ? null
-            : _direccionController.text.trim(),
+        direccion: _direccionController.text.trim().isEmpty ? null : _direccionController.text.trim(),
         observaciones: '',
         codigoCliente: widget.codigoCliente,
         vendedor: vendedor,
@@ -212,49 +195,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     } catch (e) {
       if (mounted) {
-        _snack(e.toString().replaceAll('Exception: ', ''), _error);
+        _snack(e.toString().replaceAll('Exception: ', ''), AppTheme.errorColor);
       }
     } finally {
       if (mounted) setState(() => _isProcessingOrder = false);
-    }
-  }
-
-  // ── Receipts ──
-
-  Future<void> _downloadPdf(Map<String, dynamic> result) async {
-    try {
-      await OrderReceiptService.generateAndSavePdf(
-        clientName: _nombreController.text.trim(),
-        cedula: _cedulaController.text.trim(),
-        email: _emailController.text.trim(),
-        telefono: _telefonoController.text.trim(),
-        items: _validItems,
-        total: _total,
-        docNum: result['docNum']?.toString(),
-        docEntry: result['docEntry']?.toString(),
-      );
-      if (mounted) _snack('PDF descargado', _success);
-    } catch (e, st) {
-      debugPrint('Error al generar PDF: $e\n$st');
-      if (mounted) _snack('Error al generar PDF', _error);
-    }
-  }
-
-  Future<void> _downloadExcel(Map<String, dynamic> result) async {
-    try {
-      await OrderReceiptService.generateAndSaveCsv(
-        clientName: _nombreController.text.trim(),
-        cedula: _cedulaController.text.trim(),
-        email: _emailController.text.trim(),
-        telefono: _telefonoController.text.trim(),
-        items: _validItems,
-        total: _total,
-        docNum: result['docNum']?.toString(),
-        docEntry: result['docEntry']?.toString(),
-      );
-      if (mounted) _snack('Excel descargado', _success);
-    } catch (e) {
-      if (mounted) _snack('Error al generar Excel', _error);
     }
   }
 
@@ -268,14 +212,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     ));
   }
 
-  // ══════════════════════════════════════
-  //  BUILD
-  // ══════════════════════════════════════
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: AppTheme.backgroundColor,
       body: _isLoadingUserData
           ? _loading()
           : LoadingOverlay(
@@ -314,27 +254,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  // ── Loading splash ──
-
   Widget _loading() {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          AppAssets.logoImage(width: 100, height: 40),
-          const SizedBox(height: 24),
           const SizedBox(
-            width: 36, height: 36,
-            child: CircularProgressIndicator(strokeWidth: 3, color: _blue),
+            width: 42, height: 42,
+            child: CircularProgressIndicator(strokeWidth: 3, color: AppTheme.primaryBlue),
           ),
           const SizedBox(height: 16),
-          const Text('Cargando datos del cliente...', style: TextStyle(color: _textMuted, fontSize: 14)),
+          const Text('Preparando checkout...', style: TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
         ],
       ),
     );
   }
-
-  // ── App Bar ──
 
   Widget _appBar() {
     return Container(
@@ -342,49 +276,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       child: SafeArea(
         bottom: false,
         child: Container(
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: _border, width: 1)),
-          ),
+          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppTheme.borderColor, width: 1))),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
-              GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(
-                    color: _bg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _border),
-                  ),
-                  child: const Icon(Icons.arrow_back_ios_new, size: 18, color: _textDark),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.arrow_back_ios_new, size: 18, color: AppTheme.darkBlue),
+                style: IconButton.styleFrom(
+                  backgroundColor: AppTheme.elegantGray,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
-              const SizedBox(width: 14),
-              AppAssets.logoImage(width: 100, height: 32),
-              const SizedBox(width: 14),
+              const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Checkout', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _textDark, letterSpacing: -0.5)),
-                    Text(
-                      '${_validItems.length} producto${_validItems.length == 1 ? '' : 's'}',
-                      style: const TextStyle(fontSize: 12, color: _textMuted),
-                    ),
+                    const Text('Finalizar Pedido', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.darkBlue, letterSpacing: -0.5)),
+                    Text('${_validItems.length} items seleccionados', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
                   ],
                 ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: _blue.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '\$${_fmt(_total)}',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _blue),
-                ),
+                decoration: BoxDecoration(color: AppTheme.primaryBlue.withOpacity(0.08), borderRadius: BorderRadius.circular(12)),
+                child: Text(PriceUtils.formatPriceDisplay(_total), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.primaryBlue)),
               ),
             ],
           ),
@@ -393,47 +310,30 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  // ── Products card ──
-
   Widget _productsCard() {
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _border),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppTheme.borderColor)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 18, 20, 12),
             child: Row(
               children: [
-                Icon(Icons.receipt_long_rounded, size: 20, color: _blue.withOpacity(0.7)),
-                const SizedBox(width: 10),
-                const Text('Resumen del pedido', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _textDark)),
+                Icon(Icons.receipt_long_rounded, size: 20, color: AppTheme.primaryBlue),
+                SizedBox(width: 10),
+                Text('Resumen del pedido', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.darkBlue)),
               ],
             ),
           ),
-          const Divider(height: 1, color: _border),
+          const Divider(height: 1, color: AppTheme.borderColor),
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: _validItems.length,
-            separatorBuilder: (_, __) => const Divider(height: 1, indent: 20, endIndent: 20, color: _border),
+            separatorBuilder: (_, __) => const Divider(height: 1, indent: 20, endIndent: 20, color: AppTheme.borderColor),
             itemBuilder: (_, i) => _productRow(_validItems[i]),
-          ),
-          const Divider(height: 1, color: _border),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Subtotal', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textMuted)),
-                Text('\$${_fmt(_total)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _textDark)),
-              ],
-            ),
           ),
         ],
       ),
@@ -448,10 +348,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: Container(
-              width: 52, height: 52,
-              color: _bg,
-              child: Image.asset(item.image, fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Icon(Icons.shopping_bag_outlined, color: _textMuted, size: 24)),
+              width: 52, height: 52, color: AppTheme.elegantGray,
+              child: Image.asset(item.image, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.shopping_bag_outlined, color: AppTheme.textSecondary, size: 24)),
             ),
           ),
           const SizedBox(width: 14),
@@ -459,20 +357,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textDark), maxLines: 2, overflow: TextOverflow.ellipsis),
+                Text(item.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.darkBlue), maxLines: 2, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    _badge('x${item.quantity}', _blue),
+                    _badge('x${item.quantity}', AppTheme.primaryBlue),
                     const SizedBox(width: 6),
-                    _badge(item.codigoSap, _textMuted),
+                    _badge(item.codigoSap, AppTheme.textSecondary),
                   ],
                 ),
               ],
             ),
           ),
           const SizedBox(width: 12),
-          Text('\$${_fmt(item.totalPrice)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _textDark)),
+          Text(PriceUtils.formatPriceDisplay(item.totalPrice), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.darkBlue)),
         ],
       ),
     );
@@ -481,23 +379,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Widget _badge(String text, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
       child: Text(text, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
     );
   }
 
-  // ── Client card ──
-
   Widget _clientCard() {
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _border),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppTheme.borderColor)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -505,77 +394,35 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
             child: Row(
               children: [
-                Icon(
-                  _clientFoundInSAP ? Icons.verified_rounded : Icons.person_outline_rounded,
-                  size: 20,
-                  color: _clientFoundInSAP ? _success : _blue.withOpacity(0.7),
-                ),
+                Icon(_clientFoundInSAP ? Icons.verified_rounded : Icons.person_outline_rounded, size: 20, color: _clientFoundInSAP ? AppTheme.successColor : AppTheme.primaryBlue),
                 const SizedBox(width: 10),
-                const Expanded(
-                  child: Text('Datos del cliente', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _textDark)),
-                ),
-                if (_clientFoundInSAP)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(color: _success.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                    child: const Text('Verificado', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _success)),
-                  ),
-                if (_isSearchingUser)
-                  const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _blue)),
+                const Expanded(child: Text('Datos del cliente', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.darkBlue))),
+                if (_isSearchingUser) const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryBlue)),
               ],
             ),
           ),
-          const Divider(height: 1, color: _border),
+          const Divider(height: 1, color: AppTheme.borderColor),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            padding: const EdgeInsets.all(20),
             child: Column(
               children: [
                 _field(_cedulaController, 'Código de cliente', Icons.credit_card_rounded,
                   readOnly: false,
-                  suffix: IconButton(
-                    icon: const Icon(Icons.search_rounded, color: _blue, size: 20),
-                    onPressed: () => _searchUser(_cedulaController.text.trim()),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Requerido';
-                    if (v.trim().length < 5) return 'Código inválido';
-                    return null;
-                  },
+                  suffix: IconButton(icon: const Icon(Icons.search_rounded, color: AppTheme.primaryBlue, size: 20), onPressed: () => _searchUser(_cedulaController.text.trim())),
+                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Requerido' : null,
                   onSubmitted: (v) => _searchUser(v.trim()),
                 ),
                 const SizedBox(height: 14),
-                _field(_nombreController, 'Nombre completo', Icons.person_outline_rounded,
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Requerido' : null),
+                _field(_nombreController, 'Nombre completo', Icons.person_outline_rounded, validator: (v) => (v == null || v.trim().isEmpty) ? 'Requerido' : null),
                 const SizedBox(height: 14),
-                _field(_emailController, 'Correo electrónico', Icons.email_outlined,
-                  keyboard: TextInputType.emailAddress,
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Requerido';
-                    if (!RegExp(r'^[\w\-.]+@([\w\-]+\.)+[\w\-]{2,4}$').hasMatch(v)) return 'Correo inválido';
-                    return null;
-                  }),
+                _field(_emailController, 'Correo electrónico', Icons.email_outlined, keyboard: TextInputType.emailAddress,
+                  validator: (v) => (v == null || !v.contains('@')) ? 'Correo inválido' : null),
                 const SizedBox(height: 14),
                 _field(_telefonoController, 'Teléfono', Icons.phone_outlined, keyboard: TextInputType.phone),
                 const SizedBox(height: 14),
-                _field(
-                  _direccionController, 'Dirección del cliente o coordenadas (GPS)', Icons.location_on_outlined,
-                  readOnly: false,
-                  suffix: _isGettingLocation
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _blue)),
-                        )
-                      : IconButton(
-                          icon: const Icon(Icons.my_location_rounded, color: _blue, size: 20),
-                          onPressed: _getDeviceLocation,
-                          tooltip: 'Obtener ubicación GPS',
-                        ),
-                ),
-                if (_locationError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6, left: 4),
-                    child: Text(_locationError!, style: const TextStyle(fontSize: 12, color: _error)),
-                  ),
+                _field(_direccionController, 'Ubicación (GPS)', Icons.location_on_outlined, readOnly: false,
+                  suffix: _isGettingLocation ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryBlue)))
+                  : IconButton(icon: const Icon(Icons.my_location_rounded, color: AppTheme.primaryBlue, size: 20), onPressed: _getDeviceLocation)),
               ],
             ),
           ),
@@ -584,68 +431,91 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  Widget _field(
-    TextEditingController controller,
-    String label,
-    IconData icon, {
-    bool readOnly = true,
-    TextInputType? keyboard,
-    String? Function(String?)? validator,
-    Widget? suffix,
-    void Function(String)? onSubmitted,
-  }) {
+  Widget _field(TextEditingController controller, String label, IconData icon, {bool readOnly = true, TextInputType? keyboard, String? Function(String?)? validator, Widget? suffix, void Function(String)? onSubmitted}) {
     return TextFormField(
-      controller: controller,
-      readOnly: readOnly,
-      keyboardType: keyboard,
-      validator: validator,
-      onFieldSubmitted: onSubmitted,
-      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: _textDark),
+      controller: controller, readOnly: readOnly, keyboardType: keyboard, validator: validator, onFieldSubmitted: onSubmitted,
+      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppTheme.darkBlue),
       decoration: InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: _textMuted, fontSize: 14),
-        prefixIcon: Icon(icon, color: _blue.withOpacity(0.6), size: 20),
-        suffixIcon: suffix,
-        filled: true,
-        fillColor: readOnly ? const Color(0xFFF9FAFB) : Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _border)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _border)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _blue, width: 1.5)),
-        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _error)),
+        labelText: label, labelStyle: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        prefixIcon: Icon(icon, color: AppTheme.primaryBlue.withOpacity(0.5), size: 18),
+        suffixIcon: suffix, filled: true, fillColor: readOnly ? AppTheme.elegantGray : Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.borderColor)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.borderColor)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primaryBlue, width: 1.5)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
     );
   }
-
-  // ── Terms ──
 
   Widget _termsRow() {
     return GestureDetector(
       onTap: () => setState(() => _acceptTerms = !_acceptTerms),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _acceptTerms ? _blue.withOpacity(0.3) : _border),
-        ),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: _acceptTerms ? AppTheme.primaryBlue.withOpacity(0.3) : AppTheme.borderColor)),
         child: Row(
           children: [
-            SizedBox(
-              width: 24, height: 24,
-              child: Checkbox(
-                value: _acceptTerms,
-                onChanged: (v) => setState(() => _acceptTerms = v ?? false),
-                activeColor: _blue,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-              ),
+            Checkbox(value: _acceptTerms, onChanged: (v) => setState(() => _acceptTerms = v ?? false), activeColor: AppTheme.primaryBlue),
+            const SizedBox(width: 10),
+            const Expanded(child: Text('Confirmo que los datos son correctos y autorizo el procesamiento.', style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4))),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _totalBar() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(color: AppTheme.primaryBlue.withOpacity(0.05), borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.15))),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Text('Total a pagar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.darkBlue)),
+          Text(PriceUtils.formatPriceDisplay(_total), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: AppTheme.primaryBlue)),
+        ],
+      ),
+    );
+  }
+
+  Widget _confirmButton() {
+    return SizedBox(
+      height: 56, width: double.infinity,
+      child: ElevatedButton(
+        onPressed: _canProcess ? _processOrder : null,
+        style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryBlue, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), elevation: 0),
+        child: _isProcessingOrder ? const CircularProgressIndicator(color: Colors.white)
+        : const Text('Confirmar Pedido', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+      ),
+    );
+  }
+
+  void _showSuccessDialog(Map<String, dynamic> result) {
+    showDialog(
+      context: context, barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.check_circle_rounded, color: AppTheme.successColor, size: 64),
+            const SizedBox(height: 16),
+            const Text('¡Pedido Exitoso!', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            Text('Nº Documento: ${result['docNum'] ?? '—'}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _actionIcon(Icons.picture_as_pdf_rounded, 'PDF', () => _downloadPdf(result)),
+                _actionIcon(Icons.table_view_rounded, 'Excel', () => _downloadExcel(result)),
+              ],
             ),
-            const SizedBox(width: 14),
-            const Expanded(
-              child: Text(
-                'Confirmo que los datos son correctos y autorizo el procesamiento del pedido.',
-                style: TextStyle(fontSize: 13, color: _textMuted, height: 1.4),
-              ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () { Navigator.pop(ctx); Navigator.pop(context); },
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.darkBlue, minimumSize: const Size(double.infinity, 50)),
+              child: const Text('Volver al inicio'),
             ),
           ],
         ),
@@ -653,180 +523,30 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  // ── Total bar ──
-
-  Widget _totalBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-      decoration: BoxDecoration(
-        color: _blue.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _blue.withOpacity(0.15)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Text('Total a pagar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _textDark)),
-          Text('\$${_fmt(_total)}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: _blue)),
-        ],
-      ),
-    );
-  }
-
-  // ── Confirm button ──
-
-  Widget _confirmButton() {
-    return SizedBox(
-      height: 56,
-      child: ElevatedButton(
-        onPressed: _canProcess ? _processOrder : null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _blue,
-          disabledBackgroundColor: Colors.grey.shade300,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
-        child: _isProcessingOrder
-            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(_canProcess ? Icons.shopping_cart_checkout_rounded : Icons.info_outline_rounded, size: 22),
-                  const SizedBox(width: 10),
-                  Text(
-                    _canProcess ? 'Confirmar pedido' : 'Completa los datos',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                  ),
-                ],
-              ),
-      ),
-    );
-  }
-
-  // ── Success dialog ──
-
-  void _showSuccessDialog(Map<String, dynamic> result) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 72, height: 72,
-                  decoration: BoxDecoration(color: _success.withOpacity(0.1), shape: BoxShape.circle),
-                  child: const Icon(Icons.check_rounded, color: _success, size: 38),
-                ),
-                const SizedBox(height: 20),
-                const Text('Pedido registrado', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: _textDark)),
-                const SizedBox(height: 8),
-                Text(
-                  result['message']?.toString() ?? 'Tu pedido ha sido procesado correctamente.',
-                  style: const TextStyle(fontSize: 14, color: _textMuted, height: 1.4),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                _infoCard(result),
-                const SizedBox(height: 20),
-                _receiptButtons(result),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity, height: 50,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      final nav = Navigator.of(ctx, rootNavigator: true);
-                      nav.pop();
-                      if (mounted) {
-                        Navigator.of(context).popUntil((route) => route.isFirst);
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _blue,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                    child: const Text('Continuar comprando', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _infoCard(Map<String, dynamic> result) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _bg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _border),
-      ),
+  Widget _actionIcon(IconData icon, String label, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
       child: Column(
         children: [
-          if (result['docNum'] != null) _infoRow('Nº Documento', '${result['docNum']}'),
-          if (result['docEntry'] != null) ...[const SizedBox(height: 10), _infoRow('ID Transacción', '${result['docEntry']}')],
-          const SizedBox(height: 10),
-          _infoRow('Total', '\$${_fmt(_total)}'),
-          const SizedBox(height: 10),
-          _infoRow('Email', result['emailSent'] == true ? 'Enviado' : 'No enviado'),
+          Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppTheme.elegantGray, borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: AppTheme.primaryBlue)),
+          const SizedBox(height: 4),
+          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
         ],
       ),
     );
   }
 
-  Widget _infoRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 13, color: _textMuted, fontWeight: FontWeight.w500)),
-        Flexible(child: Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _textDark), textAlign: TextAlign.end)),
-      ],
-    );
+  Future<void> _downloadPdf(Map<String, dynamic> result) async {
+    try {
+      await OrderReceiptService.generateAndSavePdf(clientName: _nombreController.text, cedula: _cedulaController.text, email: _emailController.text, telefono: _telefonoController.text, items: _validItems, total: _total, docNum: result['docNum']?.toString(), docEntry: result['docEntry']?.toString());
+      _snack('PDF generado', AppTheme.successColor);
+    } catch (_) { _snack('Error al generar PDF', AppTheme.errorColor); }
   }
 
-  Widget _receiptButtons(Map<String, dynamic> result) {
-    return Row(
-      children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () => _downloadPdf(result),
-            icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
-            label: const Text('PDF', style: TextStyle(fontWeight: FontWeight.w700)),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _blue,
-              side: const BorderSide(color: _blue),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () => _downloadExcel(result),
-            icon: const Icon(Icons.table_chart_rounded, size: 18),
-            label: const Text('Excel', style: TextStyle(fontWeight: FontWeight.w700)),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _success,
-              side: const BorderSide(color: _success),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
-          ),
-        ),
-      ],
-    );
+  Future<void> _downloadExcel(Map<String, dynamic> result) async {
+    try {
+      await OrderReceiptService.generateAndSaveCsv(clientName: _nombreController.text, cedula: _cedulaController.text, email: _emailController.text, telefono: _telefonoController.text, items: _validItems, total: _total, docNum: result['docNum']?.toString(), docEntry: result['docEntry']?.toString());
+      _snack('Excel generado', AppTheme.successColor);
+    } catch (_) { _snack('Error al generar Excel', AppTheme.errorColor); }
   }
 }

@@ -64,7 +64,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
 
   dynamic _get(dynamic map, String keySnake, String keyCamel) {
     if (map == null || map is! Map) return null;
-    final m = Map<String, dynamic>.from(map as Map);
+    final m = Map<String, dynamic>.from(map);
     return m[keySnake] ?? m[keyCamel];
   }
 

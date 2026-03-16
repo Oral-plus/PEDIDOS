@@ -5,7 +5,7 @@ import '../utils/app_assets.dart';
 import 'login_screen.dart';
 import 'client_menu_screen.dart';
 
-const _kPrimaryBlue = Color(0xFF1e3a8a);
+import '../utils/theme.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -100,7 +100,7 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                     const SizedBox(height: 40),
                     _LoadingDots(
-                        controller: _dotsController, color: _kPrimaryBlue),
+                        controller: _dotsController, color: AppTheme.primaryBlue),
                   ],
                 ),
               );
@@ -129,7 +129,7 @@ class _SplashLogo extends StatelessWidget {
         errorBuilder: (_, __, ___) => Icon(
             Icons.medical_services_outlined,
             size: 80,
-            color: _kPrimaryBlue.withOpacity(0.6)),
+            color: AppTheme.primaryBlue.withOpacity(0.6)),
       ),
     );
   }

@@ -87,7 +87,7 @@ class OrderReceiptService {
                     children: [
                       pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(item.title.isNotEmpty ? item.title : 'Producto', style: const pw.TextStyle(fontSize: 9), maxLines: 2)),
                       pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('${item.quantity}', style: const pw.TextStyle(fontSize: 9))),
-                      pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('\$${formatter.format(item.numericPrice.round())}', style: const pw.TextStyle(fontSize: 9))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('\$${formatter.format(item.price.round())}', style: const pw.TextStyle(fontSize: 9))),
                       pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('\$${formatter.format(item.totalPrice.round())}', style: const pw.TextStyle(fontSize: 9))),
                     ],
                   )),
@@ -310,7 +310,7 @@ class OrderReceiptService {
     sb.writeln('');
     sb.writeln('Producto;Cantidad;Precio unit;Total');
     for (final item in items) {
-      sb.writeln('"${item.title.replaceAll('"', '""')}";${item.quantity};\$${formatter.format(item.numericPrice.round())};\$${formatter.format(item.totalPrice.round())}');
+      sb.writeln('"${item.title.replaceAll('"', '""')}";${item.quantity};\$${formatter.format(item.price.round())};\$${formatter.format(item.totalPrice.round())}');
     }
     sb.writeln('');
     sb.writeln('TOTAL;\$${formatter.format(total.round())}');
