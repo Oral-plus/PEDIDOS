@@ -8,7 +8,6 @@ import '../services/api_easy_service.dart';
 import '../services/order_db_service.dart';
 import '../services/Datos_service.dart';
 import '../services/order_receipt_service.dart';
-import '../utils/app_assets.dart';
 import '../utils/theme.dart';
 import '../utils/price_utils.dart';
 import '../providers/session_provider.dart';

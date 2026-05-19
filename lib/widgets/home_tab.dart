@@ -89,13 +89,66 @@ class HomeTab extends StatelessWidget {
         ),
       ),
       actions: [
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.notifications_none_rounded, color: Colors.white),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: TextButton.icon(
+            onPressed: () => _confirmarCambioCliente(context),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              backgroundColor: Colors.white.withOpacity(0.18),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              minimumSize: const Size(0, 36),
+            ),
+            icon: const Icon(Icons.swap_horiz_rounded, size: 18, color: Colors.white),
+            label: const Text(
+              'Cambiar cliente',
+              style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+          ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 12),
       ],
     );
+  }
+
+  void _confirmarCambioCliente(BuildContext context) {
+    final cart = context.read<CartProvider>();
+    if (cart.items.isEmpty) {
+      _cambiarCliente(context);
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Cambiar cliente', style: TextStyle(fontWeight: FontWeight.w700)),
+        content: const Text(
+          'Tienes productos en el carrito. Si cambias de cliente, el carrito se vaciará. ¿Deseas continuar?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.read<CartProvider>().clearCart();
+              _cambiarCliente(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Continuar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _cambiarCliente(BuildContext context) {
+    context.read<SessionProvider>().clear();
+    Navigator.of(context).maybePop();
   }
 
   Widget _buildStatsRow(BuildContext context) {

@@ -24,17 +24,36 @@ class ProductCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final codigo = product['codigoSap']?.toString() ?? '';
-    
-    // Prioridad a datos de SAP
+
     final precioSAP = preciosSAP[codigo];
     final estadoSAP = estadosSAP[codigo];
-    
-    final bool disponible = (estadoSAP != null) 
-        ? (estadoSAP.toString().toUpperCase() == 'DISPONIBLE')
+
+    String? estadoString;
+    if (estadoSAP is Map) {
+      estadoString = (estadoSAP['estado'] ?? estadoSAP['status'])?.toString();
+    } else if (estadoSAP != null) {
+      estadoString = estadoSAP.toString();
+    }
+    final bool disponible = (estadoString != null)
+        ? (estadoString.toUpperCase() == 'DISPONIBLE')
         : (product['disponible'] ?? true);
-        
-    final String precioMostrar = (precioSAP != null)
-        ? PriceUtils.formatPriceDisplay((precioSAP as num).toDouble())
+
+    num? precioNum;
+    if (precioSAP is num) {
+      precioNum = precioSAP;
+    } else if (precioSAP is Map) {
+      final raw = precioSAP['precio'] ?? precioSAP['price'] ?? precioSAP['value'];
+      if (raw is num) {
+        precioNum = raw;
+      } else if (raw != null) {
+        precioNum = num.tryParse(raw.toString().replaceAll(RegExp(r'[^0-9.\-]'), ''));
+      }
+    } else if (precioSAP is String) {
+      precioNum = num.tryParse(precioSAP.replaceAll(RegExp(r'[^0-9.\-]'), ''));
+    }
+
+    final String precioMostrar = (precioNum != null)
+        ? PriceUtils.formatPriceDisplay(precioNum.toDouble())
         : (product['price']?.toString() ?? '\$0');
 
     return GestureDetector(

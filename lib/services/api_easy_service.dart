@@ -7,7 +7,7 @@ class ApiEasyService {
   factory ApiEasyService() => _instance;
 
   /// URL base de la API
-  static const String baseUrl = 'http://localhost:3000';
+  static const String baseUrl = 'http://192.168.2.73:3000';
 
   String? _token;
   Map<String, dynamic>? _usuario;
@@ -144,5 +144,49 @@ class ApiEasyService {
     } catch (_) {
       return null;
     }
+  }
+
+  /// GET /api/clientes/:codigo/comentarios
+  Future<List<Map<String, dynamic>>> getComentariosCliente(String codigo) async {
+    if (_token == null || _token!.isEmpty) return <Map<String, dynamic>>[];
+
+    try {
+      final res = await ApiClient.get(
+        '/api/clientes/$codigo/comentarios',
+        customBaseUrl: baseUrl,
+        headers: _headers,
+        timeout: const Duration(seconds: 10),
+      );
+
+      if (res['success'] == true) {
+        final list = res['data'] as List<dynamic>? ?? [];
+        return list
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+    } catch (_) {}
+    return <Map<String, dynamic>>[];
+  }
+
+  /// POST /api/clientes/:codigo/comentarios
+  Future<Map<String, dynamic>?> crearComentarioCliente(String codigo, String comentario) async {
+    if (_token == null || _token!.isEmpty) return null;
+    final texto = comentario.trim();
+    if (texto.isEmpty) return null;
+
+    try {
+      final res = await ApiClient.post(
+        '/api/clientes/$codigo/comentarios',
+        body: {'comentario': texto},
+        customBaseUrl: baseUrl,
+        headers: _headers,
+        timeout: const Duration(seconds: 10),
+      );
+
+      if (res['success'] == true) {
+        return Map<String, dynamic>.from(res['data'] as Map);
+      }
+    } catch (_) {}
+    return null;
   }
 }
