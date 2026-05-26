@@ -147,8 +147,11 @@ class ApiEasyService {
   }
 
   /// GET /api/clientes/:codigo/comentarios
-  Future<List<Map<String, dynamic>>> getComentariosCliente(String codigo) async {
-    if (_token == null || _token!.isEmpty) return <Map<String, dynamic>>[];
+  /// Returns { 'comentarios': List, 'freeText': String }
+  Future<Map<String, dynamic>> getComentariosCliente(String codigo) async {
+    if (_token == null || _token!.isEmpty) {
+      return {'comentarios': <Map<String, dynamic>>[], 'freeText': ''};
+    }
 
     try {
       final res = await ApiClient.get(
@@ -160,12 +163,15 @@ class ApiEasyService {
 
       if (res['success'] == true) {
         final list = res['data'] as List<dynamic>? ?? [];
-        return list
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
+        return {
+          'comentarios': list
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList(),
+          'freeText': res['freeText']?.toString() ?? '',
+        };
       }
     } catch (_) {}
-    return <Map<String, dynamic>>[];
+    return {'comentarios': <Map<String, dynamic>>[], 'freeText': ''};
   }
 
   /// POST /api/clientes/:codigo/comentarios
@@ -180,11 +186,29 @@ class ApiEasyService {
         body: {'comentario': texto},
         customBaseUrl: baseUrl,
         headers: _headers,
-        timeout: const Duration(seconds: 10),
+        timeout: const Duration(seconds: 15),
       );
 
       if (res['success'] == true) {
         return Map<String, dynamic>.from(res['data'] as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// PUT /api/clientes/:codigo/free-text — actualizar texto libre en OCRD
+  Future<String?> actualizarFreeTextCliente(String codigo, String texto) async {
+    if (_token == null || _token!.isEmpty) return null;
+    try {
+      final res = await ApiClient.put(
+        '/api/clientes/$codigo/free-text',
+        body: {'texto': texto},
+        customBaseUrl: baseUrl,
+        headers: _headers,
+        timeout: const Duration(seconds: 15),
+      );
+      if (res['success'] == true) {
+        return res['freeText']?.toString() ?? '';
       }
     } catch (_) {}
     return null;

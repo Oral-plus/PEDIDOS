@@ -65,7 +65,7 @@ class ApiClient {
 
   /// Centralized POST request
   static Future<dynamic> post(String endpoint, {
-    required Map<String, dynamic> body, 
+    required Map<String, dynamic> body,
     String? customBaseUrl,
     Map<String, String>? headers,
     Duration timeout = const Duration(seconds: 20)
@@ -77,6 +77,34 @@ class ApiClient {
 
     try {
       final response = await http.post(
+        uri,
+        headers: finalHeaders,
+        body: json.encode(body),
+      ).timeout(timeout);
+      return _processResponse(response);
+    } on SocketException {
+      throw Exception('Error de red: No se puede conectar al servidor. Verifica tu conexión a internet.');
+    } on TimeoutException {
+      throw Exception('Timeout: La operación tardó demasiado tiempo.');
+    } catch (e) {
+      throw Exception('Error en la petición: $e');
+    }
+  }
+
+  /// Centralized PUT request
+  static Future<dynamic> put(String endpoint, {
+    required Map<String, dynamic> body,
+    String? customBaseUrl,
+    Map<String, String>? headers,
+    Duration timeout = const Duration(seconds: 20),
+  }) async {
+    final baseURL = customBaseUrl ?? await getWorkingUrl();
+    final uri = Uri.parse('$baseURL$endpoint');
+    final finalHeaders = Map<String, String>.from(_defaultHeaders);
+    if (headers != null) finalHeaders.addAll(headers);
+
+    try {
+      final response = await http.put(
         uri,
         headers: finalHeaders,
         body: json.encode(body),
