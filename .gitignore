@@ -47,6 +47,9 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Dependencias Node del backend
+node_modules/
+
 # Secretos — NUNCA versionar (las plantillas .env.example sí se versionan)
 **/.env
 .env
