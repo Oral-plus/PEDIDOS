@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(flutter run -d chrome)",
+      "Bash(grep -qE 'Debug service listening|is being served at|Flutter run key commands|Error:|Exception|Failed to|No supported devices|failed' C:/Users/skyen/AppData/Local/Temp/claude/c--Users-skyen-Desktop-PEDIDOS/07288fe1-b6bb-4a5e-a158-df0485ac9668/tasks/benjiwewm.output)",
+      "Bash(sleep 1)",
+      "Bash(grep -E 'Launching|Debug service listening|is being served at|available at|Error:|Exception|Failed to|No supported devices|failed' C:/Users/skyen/AppData/Local/Temp/claude/c--Users-skyen-Desktop-PEDIDOS/07288fe1-b6bb-4a5e-a158-df0485ac9668/tasks/benjiwewm.output)"
+    ]
+  }
+}

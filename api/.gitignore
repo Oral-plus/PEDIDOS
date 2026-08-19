@@ -1,0 +1,5 @@
+.vercel
+
+# Variables de entorno y secretos (NO subir a git)
+.env
+api/.env
