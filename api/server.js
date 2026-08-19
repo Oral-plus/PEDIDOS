@@ -10,6 +10,10 @@ const dispositivos = require("./modules/dispositivos")
 require("dotenv").config()
 
 const app = express()
+// Detrás del reverse proxy (pedidos.oral-plus.com) las peticiones llegan con
+// X-Forwarded-For; sin esto el rate-limit contaría a todos los usuarios como
+// una sola IP (la del proxy) y bloquearía los logins de toda la empresa.
+app.set("trust proxy", 1)
 const PORT = process.env.PORT || 3000
 const JWT_SECRET = process.env.JWT_SECRET
 // Duracion de la sesion (formato jsonwebtoken: "24h", "7d", etc.)
