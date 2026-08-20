@@ -11,11 +11,10 @@ class ApiEasyService {
   factory ApiEasyService() => _instance;
 
   static const List<String> _baseUrls = [
-    // URL publica: el proxy del servidor 192.168.2.249 enruta /pedidos-api/*
-    // al backend de pedidos (server.js:3000) quitando el prefijo. Funciona
-    // dentro y fuera de la oficina (el router hace hairpin NAT). El dominio
-    // "pelado" (sin prefijo) responde la API SAP, que NO tiene rutas de auth.
-    'https://pedidos.oral-plus.com/pedidos-api',
+    // URL publica: subdominio dedicado del backend de pedidos. El proxy del
+    // servidor 192.168.2.249 manda todo este host al server.js:3000, sin
+    // prefijos. Funciona dentro y fuera de la oficina (hairpin NAT).
+    'https://gestores-api.oral-plus.com',
     // Acceso directo por LAN al backend desplegado en el servidor .249
     // (sirve aunque se caiga el internet de la oficina).
     'http://192.168.2.249:3000',

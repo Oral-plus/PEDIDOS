@@ -9,9 +9,9 @@ class OrderDbService {
   factory OrderDbService() => _instance;
 
   static const List<String> _baseUrls = [
-    // Mismo backend que ApiEasyService: publico via proxy del .249 primero,
+    // Mismo backend que ApiEasyService: subdominio publico primero,
     // luego LAN directa y el PC de desarrollo como fallback.
-    'https://pedidos.oral-plus.com/pedidos-api',
+    'https://gestores-api.oral-plus.com',
     'http://192.168.2.249:3000',
     'http://192.168.2.73:3000',
     'http://10.0.2.2:3000',
