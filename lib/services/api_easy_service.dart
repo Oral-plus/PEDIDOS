@@ -152,9 +152,12 @@ class ApiEasyService {
     final sondas = <String, Future<bool>>{
       for (final u in _baseUrls) u: _responde(u),
     };
+    // Gana el primer host de la lista si responde; el guardado solo se
+    // prefiere frente a los demás (es el respaldo que funcionó la última vez)
     final orden = [
+      _baseUrls.first,
       if (guardado != null && sondas.containsKey(guardado)) guardado,
-      ..._baseUrls,
+      ..._baseUrls.skip(1),
     ];
     for (final u in orden) {
       if (await sondas[u]!) {
