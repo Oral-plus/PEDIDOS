@@ -61,7 +61,7 @@ class _RutaDetalleScreenState extends State<RutaDetalleScreen> {
 
   bool _visitaRegistrada = false;
 
-  // ── Información desactualizada del cliente ────────────────────────────
+  // Información desactualizada del cliente
   // El umbral (solo > 1 año) está en la constante global kUmbralDiasDesactualizado.
 
   // Se refresca localmente cuando el vendedor corrige los datos en la visita,
@@ -98,8 +98,8 @@ class _RutaDetalleScreenState extends State<RutaDetalleScreen> {
     super.initState();
     _detalleSAP = widget.detalleSAP;
     _cargarTareas();
-    _cargarSugerencia();
     _cargarUltimaVisita();
+    // La sugerencia IA se pide cuando el vendedor la toca (tarda varios segundos)
     if (_detalleSAP == null) {
       _cargarDetalleSAP().then((_) => _cargarGeocodificacion());
     } else {
@@ -233,13 +233,14 @@ class _RutaDetalleScreenState extends State<RutaDetalleScreen> {
     if (mounted) setState(() { _tareasData = data; _loadingTareas = false; });
   }
 
-  Future<void> _cargarSugerencia() async {
+  Future<void> _cargarSugerencia({bool forzar = false}) async {
     setState(() => _loadingIA = true);
     final codigo = widget.cliente['id']?.toString() ?? '';
     final txt = await _api.getSugerenciasIA(
       codigo,
       cliente: widget.cliente,
       ruta: widget.ruta,
+      forzar: forzar,
     );
     if (mounted) setState(() { _sugerenciaIA = txt; _loadingIA = false; });
   }
@@ -730,11 +731,12 @@ class _RutaDetalleScreenState extends State<RutaDetalleScreen> {
             Text('Recomendaciones para esta visita',
                 style: TextStyle(color: _textMuted, fontSize: 11, fontWeight: FontWeight.w500)),
           ])),
-          IconButton(
-            onPressed: _loadingIA ? null : _cargarSugerencia,
-            icon: Icon(Icons.refresh_rounded, color: _primary, size: 20),
-            tooltip: 'Regenerar',
-          ),
+          if (_sugerenciaIA != null)
+            IconButton(
+              onPressed: _loadingIA ? null : () => _cargarSugerencia(forzar: true),
+              icon: Icon(Icons.refresh_rounded, color: _primary, size: 20),
+              tooltip: 'Regenerar',
+            ),
         ]),
         const SizedBox(height: 10),
         Container(
@@ -751,12 +753,23 @@ class _RutaDetalleScreenState extends State<RutaDetalleScreen> {
                   const SizedBox(width: 10),
                   Text('Pensando...', style: TextStyle(color: _textMuted, fontWeight: FontWeight.w600)),
                 ])
-              : SelectableText(
-                  _sugerenciaIA?.isNotEmpty == true
-                      ? _sugerenciaIA!
-                      : 'Sin sugerencias por ahora. Toca el botón de refrescar para reintentar.',
-                  style: TextStyle(color: _textDark, fontSize: 13, height: 1.55, fontWeight: FontWeight.w500),
-                ),
+              : _sugerenciaIA == null
+                  ? SizedBox(
+                      width: double.infinity,
+                      child: TextButton.icon(
+                        onPressed: () => _cargarSugerencia(),
+                        style: TextButton.styleFrom(foregroundColor: _primary),
+                        icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                        label: const Text('Generar recomendaciones',
+                            style: TextStyle(fontWeight: FontWeight.w700)),
+                      ),
+                    )
+                  : SelectableText(
+                      _sugerenciaIA!.isNotEmpty
+                          ? _sugerenciaIA!
+                          : 'Sin sugerencias por ahora. Toca el botón de refrescar para reintentar.',
+                      style: TextStyle(color: _textDark, fontSize: 13, height: 1.55, fontWeight: FontWeight.w500),
+                    ),
         ),
       ]),
     );

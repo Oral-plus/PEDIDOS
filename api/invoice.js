@@ -14,7 +14,7 @@ const JWT_SECRET = process.env.JWT_SECRET
 
 // Los secretos viven SOLO en api/.env — sin ellos el servicio no arranca
 if (!JWT_SECRET || !process.env.DB_PASSWORD) {
-  console.error("❌ Falta JWT_SECRET o DB_PASSWORD. Copia api/.env.example a api/.env y completa los valores.")
+  console.error("❌ Falta JWT_SECRET o DB_PASSWORD. Revisa el archivo api/.env.")
   process.exit(1)
 }
 

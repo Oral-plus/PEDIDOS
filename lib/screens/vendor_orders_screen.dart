@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
+import '../services/shared_http.dart';
 import 'package:intl/intl.dart';
 import '../services/api_easy_service.dart';
 import '../services/order_receipt_service.dart';
@@ -29,36 +30,34 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
   static const _textMuted = Color(0xFF6B7280);
   static const _border = Color(0xFFE5E7EB);
 
-  static const _baseUrls = ['http://localhost:3000', 'http://10.0.2.2:3000', 'http://192.168.2.244:3000'];
-
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() => setState(() {}));
+    _searchController.addListener(_programarFiltro);
     _cargarPedidos();
+  }
+
+  // La lista filtrada se calcula al cambiar el texto (con una pausa corta) o
+  // el filtro de estado, no en cada rebuild.
+  List<Map<String, dynamic>> _pedidosFiltrados = [];
+  Timer? _debounce;
+
+  void _programarFiltro() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) setState(() => _pedidosFiltrados = _calcularFiltrados());
+    });
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
   Future<String> _obtenerUrlBase() async {
-    if (_baseUrl != null) return _baseUrl!;
-    for (final url in _baseUrls) {
-      try {
-        final res = await http.get(Uri.parse('$url/api/test'), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 5));
-        if (res.statusCode == 200) {
-          final data = jsonDecode(res.body) as Map<String, dynamic>? ?? {};
-          if (data['success'] == true) {
-            _baseUrl = url;
-            return url;
-          }
-        }
-      } catch (_) {}
-    }
-    _baseUrl = _baseUrls.first;
+    _baseUrl ??= await ApiEasyService().baseUrl();
     return _baseUrl!;
   }
 
@@ -74,11 +73,11 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
       final base = await _obtenerUrlBase();
       final encoded = Uri.encodeComponent(numeroPedido);
       final url = '$base/api/orders/detail/$encoded';
-      final res = await http.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
+      final res = await SharedHttp.client.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (res.statusCode != 200 || data['success'] != true) return null;
 
-      // Soportar ambos formatos: api/server.js { pedido, detalle } o API-EASY { data: { pedido, productos } }
+      // Formatos aceptados: { pedido, detalle } o { data: { pedido, productos } }
       dynamic pedidoRaw = data['pedido'];
       List<dynamic> detalleRaw = data['detalle'] as List<dynamic>? ?? [];
       if (pedidoRaw == null && data['data'] != null) {
@@ -375,12 +374,18 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
       final base = await _obtenerUrlBase();
       final encoded = Uri.encodeComponent(nombre);
       final url = '$base/api/orders/vendedor/$encoded';
-      final res = await http.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
+      final res = await SharedHttp.client.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
       final data = jsonDecode(res.body) as Map<String, dynamic>;
 
       if (res.statusCode == 200 && data['success'] == true) {
         final list = (data['data'] as List<dynamic>?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
-        if (mounted) setState(() { _pedidos = list; _isLoading = false; });
+        if (mounted) {
+          setState(() {
+            _pedidos = list;
+            _pedidosFiltrados = _calcularFiltrados();
+            _isLoading = false;
+          });
+        }
       } else {
         if (mounted) setState(() { _error = data['message']?.toString() ?? 'Error'; _isLoading = false; });
       }
@@ -389,7 +394,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
     }
   }
 
-  List<Map<String, dynamic>> get _pedidosFiltrados {
+  List<Map<String, dynamic>> _calcularFiltrados() {
     var list = _pedidos;
     if (_filtroEstado != 'TODOS') {
       list = list.where((p) => p['estado'] == _filtroEstado).toList();
@@ -577,7 +582,10 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
             return Padding(
               padding: const EdgeInsets.only(right: 8),
               child: GestureDetector(
-                onTap: () => setState(() => _filtroEstado = f),
+                onTap: () => setState(() {
+                  _filtroEstado = f;
+                  _pedidosFiltrados = _calcularFiltrados();
+                }),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(

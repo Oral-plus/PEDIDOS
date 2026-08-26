@@ -79,7 +79,7 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
 
   double get _total => (_subtotal + _impuesto - _descuentoMonto + _flete).clamp(0, double.infinity);
 
-  // ── Cupo (límite de crédito) del cliente ──────────────────────────────
+  // Cupo (límite de crédito) del cliente
   double get _cupoAsignado => _n(widget.cartera?['limiteCredito']);
   double get _saldoUsado => _n(widget.cartera?['balance']);
   double get _cupoDisponible => _cupoAsignado - _saldoUsado;
@@ -140,7 +140,7 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     );
   }
 
-  // ── Header ────────────────────────────────────────────────────────────
+  // Header
   Widget _header() {
     return Container(
       decoration: const BoxDecoration(
@@ -203,7 +203,7 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     );
   }
 
-  // ── Resumen de liquidación ────────────────────────────────────────────
+  // Resumen de liquidación
   Widget _resumenLiquidacion() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -280,7 +280,7 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     return partes.isEmpty ? 'Definir condiciones' : partes.join(' · ');
   }
 
-  // ── Fila de opción ────────────────────────────────────────────────────
+  // Fila de opción
   Widget _opcion({
     required IconData icon,
     required String titulo,
@@ -338,7 +338,7 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
           itemBuilder: (_, i) => Stack(children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(11),
-              child: Image.file(File(_evidencias[i].path), width: 76, height: 76, fit: BoxFit.cover,
+              child: Image.file(File(_evidencias[i].path), width: 76, height: 76, cacheWidth: 256, fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(width: 76, height: 76, color: _surface, child: const Icon(Icons.image_rounded, color: _gray))),
             ),
             Positioned(
@@ -358,7 +358,7 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     );
   }
 
-  // ── Footer: guardar ───────────────────────────────────────────────────
+  // Footer: guardar
   Widget _footer() {
     return Container(
       decoration: BoxDecoration(
@@ -400,7 +400,7 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     );
   }
 
-  // ── Liquidación (editar descuento + flete) ────────────────────────────
+  // Liquidación (editar descuento + flete)
   Future<void> _abrirLiquidacion() async {
     final desc = TextEditingController(text: _descuentoPct > 0 ? _descuentoPct.toStringAsFixed(0) : '');
     final flete = TextEditingController(text: _flete > 0 ? _flete.toStringAsFixed(0) : '');
@@ -451,7 +451,7 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     flete.dispose();
   }
 
-  // ── Condiciones (plazo, fecha, observaciones) ─────────────────────────
+  // Condiciones (plazo, fecha, observaciones)
   Future<void> _abrirCondiciones() async {
     final plazo = TextEditingController(text: _plazoDias?.toString() ?? '');
     final obs = TextEditingController(text: _observaciones);
@@ -617,7 +617,7 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     );
   }
 
-  // ── Evidencias ────────────────────────────────────────────────────────
+  // Evidencias
   Future<void> _abrirEvidencias() async {
     final fuente = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -656,7 +656,7 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     }
   }
 
-  // ── Guardar (con validación de cupo) ──────────────────────────────────
+  // Guardar (con validación de cupo)
   Future<void> _guardar() async {
     String estado = 'GUARDADO';
 

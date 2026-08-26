@@ -6,13 +6,13 @@ import 'package:image_picker/image_picker.dart';
 import '../utils/app_assets.dart';
 import 'recaudos_screen.dart';
 
-/// Pantalla "Forma de pago" — se muestra OBLIGATORIAMENTE al finalizar la
+/// Pantalla "Forma de pago" - se muestra OBLIGATORIAMENTE al finalizar la
 /// visita para registrar el recaudo del cliente (valor, fecha y evidencias).
 ///
 /// Devuelve por Navigator.pop un mapa:
 ///   { 'valor': double, 'fecha': DateTime, 'evidencias': int }
 /// Si el usuario vuelve atrás sin registrar, devuelve null (la visita NO se
-/// finaliza — el formulario es "sí o sí").
+/// finaliza - el formulario es "sí o sí").
 ///
 /// Paleta 100% monocromática (blanco / negro / gris).
 class FormaPagoScreen extends StatefulWidget {
@@ -22,6 +22,16 @@ class FormaPagoScreen extends StatefulWidget {
   final int documentosPorCruzar; // facturas vencidas
   final double dineroFaltante; // saldo de cartera
   final double totalPedido; // total del pedido reservado en la visita
+  // Pago ya registrado en esta visita (para editarlo sin volver a escribirlo).
+  final Map<String, dynamic>? pagoInicial;
+  // Recaudo ya guardado en la BD durante esta visita: no se cruza otra vez,
+  // aunque el pago no se haya confirmado todavía. valorRecaudoPrevio es lo
+  // que se aplicó a cartera en ese recaudo.
+  final String? numeroRecaudoPrevio;
+  final double valorRecaudoPrevio;
+  // Avisa apenas se guarda un recaudo, para que la visita lo recuerde aunque
+  // el vendedor salga de esta pantalla sin confirmar el pago.
+  final void Function(String numeroRecaudo, double totalAplicado)? onRecaudoGuardado;
 
   const FormaPagoScreen({
     super.key,
@@ -31,6 +41,10 @@ class FormaPagoScreen extends StatefulWidget {
     this.documentosPorCruzar = 0,
     this.dineroFaltante = 0,
     this.totalPedido = 0,
+    this.pagoInicial,
+    this.numeroRecaudoPrevio,
+    this.valorRecaudoPrevio = 0,
+    this.onRecaudoGuardado,
   });
 
   @override
@@ -38,7 +52,7 @@ class FormaPagoScreen extends StatefulWidget {
 }
 
 class _FormaPagoScreenState extends State<FormaPagoScreen> {
-  // ── Paleta monocromática ──────────────────────────────────────────────
+  // Paleta monocromática
   static const Color _ink = Color(0xFF111827); // negro suave
   static const Color _inkDeep = Color(0xFF0B1220); // casi negro (degradados)
   static const Color _gray = Color(0xFF6B7280); // gris medio
@@ -67,12 +81,19 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   // Evidencias (fotos tomadas o elegidas de la galería).
   final ImagePicker _picker = ImagePicker();
   final List<XFile> _evidenciasFotos = [];
-  int get _evidencias => _evidenciasFotos.length;
+  // Evidencias contadas en un registro anterior de este mismo pago
+  int _evidenciasPrevias = 0;
+  int get _evidencias => _evidenciasFotos.length + _evidenciasPrevias;
 
-  // ── Método de pago y datos del recaudo ────────────────────────────────
+  // Método de pago y datos del recaudo
   String? _metodo;
   final TextEditingController _banco = TextEditingController();
   final TextEditingController _referencia = TextEditingController();
+
+  // Número del recaudo ya guardado en la BD (null si no se ha cruzado).
+  // Un recaudo guardado no se repite ni se marca "sin recaudo".
+  String? _numeroRecaudo;
+  bool get _recaudoCruzado => _numeroRecaudo != null && _numeroRecaudo!.isNotEmpty;
 
   /// Métodos de pago disponibles y qué datos exigen.
   static const List<Map<String, dynamic>> _metodos = [
@@ -98,9 +119,46 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     // Prefill: por defecto se paga el total de cada concepto.
     if (_tieneCartera) _pagoCartera.text = _miles(widget.dineroFaltante);
     if (_tienePedido) _pagoPedido.text = _miles(widget.totalPedido);
+    _cargarPagoInicial();
+    final previo = widget.numeroRecaudoPrevio ?? '';
+    if (previo.isNotEmpty) {
+      _numeroRecaudo = previo;
+      // El pago de cartera es lo que se aplicó en ese recaudo
+      if (_tieneCartera && widget.valorRecaudoPrevio > 0) {
+        _pagoCartera.text = _miles(widget.valorRecaudoPrevio);
+      }
+    }
     for (final c in [_pagoCartera, _pagoPedido, _valorCtrl]) {
       c.addListener(() => setState(() {}));
     }
+  }
+
+  // Recupera lo que el vendedor ya había registrado en esta visita. Se
+  // respetan sus valores (incluido 0); solo el pedido toma el total por
+  // defecto si no existía cuando registró el pago.
+  void _cargarPagoInicial() {
+    final p = widget.pagoInicial;
+    if (p == null) return;
+    double aDouble(dynamic v) => (v as num?)?.toDouble() ?? 0;
+    String texto(double v) => v > 0 ? _miles(v) : '';
+
+    final metodo = p['metodo']?.toString();
+    if (metodo != null && _metodos.any((m) => m['id'] == metodo)) _metodo = metodo;
+    _banco.text = p['banco']?.toString() ?? '';
+    _referencia.text = p['referencia']?.toString() ?? '';
+    if (_tieneCartera) _pagoCartera.text = texto(aDouble(p['valorCartera']));
+    final pedidoExistia = aDouble(p['totalPedidoBase']) > 0;
+    if (_tienePedido && pedidoExistia) _pagoPedido.text = texto(aDouble(p['valorPedido']));
+    if (!_tieneConceptos) _valorCtrl.text = texto(aDouble(p['valor']));
+    final fecha = p['fecha'];
+    if (fecha is DateTime) {
+      _fecha = fecha;
+    } else if (fecha != null) {
+      _fecha = DateTime.tryParse(fecha.toString()) ?? _fecha;
+    }
+    _evidenciasPrevias = (p['evidencias'] as num?)?.toInt() ?? 0;
+    final numRec = p['numeroRecaudo']?.toString() ?? '';
+    if (numRec.isNotEmpty) _numeroRecaudo = numRec;
   }
 
   @override
@@ -275,12 +333,17 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
       'metodo': _metodo,
       'banco': _banco.text.trim(),
       'referencia': _referencia.text.trim(),
+      'numeroRecaudo': _numeroRecaudo,
     });
   }
 
   /// El cliente no entregó dinero: confirmar y continuar con recaudo $0.
   Future<void> _sinRecaudo() async {
     HapticFeedback.selectionClick();
+    if (_recaudoCruzado) {
+      _aviso('Ya hay un recaudo registrado ($_numeroRecaudo); no se puede marcar sin recaudo');
+      return;
+    }
     final seguro = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -316,6 +379,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
         'metodo': 'Sin recaudo',
         'banco': '',
         'referencia': '',
+        'numeroRecaudo': null,
       });
     }
   }
@@ -369,7 +433,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     );
   }
 
-  // ── Header oscuro tipo "hero" con logo + resumen de cartera ───────────
+  // Header oscuro tipo "hero" con logo + resumen de cartera
   Widget _header() {
     return Container(
       decoration: const BoxDecoration(
@@ -447,7 +511,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
 
   Widget _dividerV() => Container(width: 1, height: 30, color: Colors.white.withOpacity(0.10));
 
-  // ── Sección de evidencias ─────────────────────────────────────────────
+  // Sección de evidencias
   Widget _seccionEvidencias() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -520,7 +584,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
         borderRadius: BorderRadius.circular(12),
         child: Image.file(
           File(_evidenciasFotos[i].path),
-          width: 84, height: 84, fit: BoxFit.cover,
+          width: 84, height: 84, cacheWidth: 256, fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => Container(
             width: 84, height: 84, color: _surface,
             child: const Icon(Icons.image_rounded, color: _gray),
@@ -544,7 +608,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     ]);
   }
 
-  // ── Sección: método de pago + datos necesarios ────────────────────────
+  // Sección: método de pago + datos necesarios
   Widget _seccionMetodoPago() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -663,7 +727,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     ]);
   }
 
-  // ── Campo de datos ────────────────────────────────────────────────────
+  // Campo de datos
   Widget _campo({
     required String label,
     required String valor,
@@ -707,10 +771,14 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     );
   }
 
-  // ── Sección: valor del pago (campo normal, igual que el resto) ─────────
+  // Sección: valor del pago (campo normal, igual que el resto)
   Future<void> _abrirRecaudos() async {
     HapticFeedback.selectionClick();
-    await Navigator.of(context).push(
+    if (_recaudoCruzado) {
+      _aviso('El recaudo $_numeroRecaudo ya quedó registrado en esta visita');
+      return;
+    }
+    final resultado = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => RecaudosScreen(
           codigoCliente: widget.numeroCuenta,
@@ -725,6 +793,20 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
         ),
       ),
     );
+    // RecaudosScreen devuelve el número del recaudo y lo aplicado cuando lo
+    // guarda en la BD
+    if (resultado is Map) {
+      final numero = (resultado['numeroRecaudo'] ?? '').toString();
+      final aplicado = (resultado['totalAplicado'] as num?)?.toDouble() ?? 0;
+      if (numero.isEmpty) return;
+      widget.onRecaudoGuardado?.call(numero, aplicado);
+      if (mounted) {
+        setState(() {
+          _numeroRecaudo = numero;
+          if (_tieneCartera && aplicado > 0) _pagoCartera.text = _miles(aplicado);
+        });
+      }
+    }
   }
 
   BoxDecoration get _cardDeco => BoxDecoration(
@@ -757,9 +839,13 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
           _conceptoRow(
             icon: Icons.account_balance_wallet_rounded,
             label: 'Cartera pendiente',
-            referencia: 'Saldo ${_pesos(widget.dineroFaltante)}',
+            referencia: _recaudoCruzado
+                ? 'Recaudo $_numeroRecaudo registrado'
+                : 'Saldo ${_pesos(widget.dineroFaltante)}',
             controller: _pagoCartera,
             maximo: widget.dineroFaltante,
+            // Con el recaudo ya guardado el monto de cartera no se cambia aquí
+            bloqueado: _recaudoCruzado,
           ),
           const SizedBox(height: 8),
           Align(
@@ -769,12 +855,17 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(color: _surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: _line)),
-                child: Row(mainAxisSize: MainAxisSize.min, children: const [
-                  Icon(Icons.playlist_add_check_rounded, size: 15, color: _ink),
-                  SizedBox(width: 6),
-                  Text('Cruzar documentos (Recaudos)', style: TextStyle(color: _ink, fontSize: 12, fontWeight: FontWeight.w800)),
-                  SizedBox(width: 4),
-                  Icon(Icons.chevron_right_rounded, size: 16, color: _ink),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(_recaudoCruzado ? Icons.check_circle_rounded : Icons.playlist_add_check_rounded, size: 15, color: _ink),
+                  const SizedBox(width: 6),
+                  Text(
+                    _recaudoCruzado ? 'Documentos cruzados: recaudo $_numeroRecaudo' : 'Cruzar documentos (Recaudos)',
+                    style: const TextStyle(color: _ink, fontSize: 12, fontWeight: FontWeight.w800),
+                  ),
+                  if (!_recaudoCruzado) ...const [
+                    SizedBox(width: 4),
+                    Icon(Icons.chevron_right_rounded, size: 16, color: _ink),
+                  ],
                 ]),
               ),
             ),
@@ -812,6 +903,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     required String referencia,
     required TextEditingController controller,
     required double maximo,
+    bool bloqueado = false,
   }) {
     return Row(children: [
       Container(
@@ -826,14 +918,16 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
           const SizedBox(height: 2),
           Row(children: [
             Flexible(child: Text(referencia, style: const TextStyle(color: _gray, fontSize: 11, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                controller.text = _miles(maximo);
-              },
-              child: const Text('Todo', style: TextStyle(color: _ink, fontSize: 11, fontWeight: FontWeight.w800, decoration: TextDecoration.underline)),
-            ),
+            if (!bloqueado) ...[
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  controller.text = _miles(maximo);
+                },
+                child: const Text('Todo', style: TextStyle(color: _ink, fontSize: 11, fontWeight: FontWeight.w800, decoration: TextDecoration.underline)),
+              ),
+            ],
           ]),
         ]),
       ),
@@ -842,6 +936,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
         width: 128,
         child: TextField(
           controller: controller,
+          readOnly: bloqueado,
           keyboardType: const TextInputType.numberWithOptions(decimal: false),
           inputFormatters: [_MilesInputFormatter()],
           textAlign: TextAlign.right,
@@ -899,7 +994,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     );
   }
 
-  // ── Barra inferior de acciones ────────────────────────────────────────
+  // Barra inferior de acciones
   Widget _footerAcciones() {
     return Container(
       decoration: BoxDecoration(
@@ -968,7 +1063,7 @@ class _MilesInputFormatter extends TextInputFormatter {
   }
 }
 
-// ─── Overlay de carga con el logo animado (halo + barra de progreso) ─────
+// Overlay de carga con el logo animado (halo + barra de progreso)
 class _ProcesandoPagoDialog extends StatefulWidget {
   const _ProcesandoPagoDialog();
 

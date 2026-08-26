@@ -10,6 +10,7 @@ import '../services/order_receipt_service.dart';
 import '../utils/theme.dart';
 import '../utils/app_assets.dart';
 import '../utils/price_utils.dart';
+import '../widgets/producto_imagen.dart';
 import '../providers/session_provider.dart';
 import '../providers/cart_provider.dart';
 import '../widgets/app_dialog.dart';
@@ -62,9 +63,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     super.dispose();
   }
 
-  // Lee del carrito EN VIVO (no de widget.cartItems, que es una copia estática),
-  // para que borrar/editar productos se refleje al instante. Cae a la copia
-  // recibida solo si el provider no está disponible.
+  // Lee el carrito en vivo (widget.cartItems es una copia estática) para que
+  // borrar o editar productos se refleje al instante.
   List<CartItem> get _validItems {
     List<CartItem> fuente;
     try {
@@ -86,7 +86,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _acceptTerms &&
       !_isProcessingOrder;
 
-  // ── Data loading ──
+  // Carga de datos
 
   Future<void> _loadUserData() async {
     if (!mounted) return;
@@ -107,8 +107,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (cedula.isEmpty || !mounted) return;
     setState(() => _isSearchingUser = true);
     try {
-      // Usa el API local (/api/clientes/:codigo), que resuelve el cliente en
-      // SAP correctamente — a diferencia del endpoint remoto anterior.
+      // /api/clientes/:codigo resuelve el cliente en SAP
       final data = await ApiEasyService().getClientePorCodigo(cedula.trim());
       if (!mounted) return;
       if (data != null && (data['nombre']?.toString().trim().isNotEmpty ?? false)) {
@@ -129,7 +128,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  // ── Geolocation ──
+  // Geolocalización
 
   Future<void> _getDeviceLocation() async {
     if (!mounted) return;
@@ -166,7 +165,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  // ── Order processing ──
+  // Procesamiento del pedido
 
   Future<void> _processOrder() async {
     if (!_formKey.currentState!.validate()) return;
@@ -417,13 +416,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
             )
           else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
+            // Column en vez de ListView con shrinkWrap: evita medir dos veces
+            // dentro del scroll de la pantalla
+            Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: _validItems.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, indent: 20, endIndent: 20, color: AppTheme.borderColor),
-              itemBuilder: (_, i) => _productRow(_validItems[i]),
+              child: Column(
+                children: [
+                  for (var i = 0; i < _validItems.length; i++) ...[
+                    if (i > 0)
+                      const Divider(height: 1, indent: 20, endIndent: 20, color: AppTheme.borderColor),
+                    _productRow(_validItems[i]),
+                  ],
+                ],
+              ),
             ),
         ],
       ),
@@ -441,7 +446,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             borderRadius: BorderRadius.circular(10),
             child: Container(
               width: 52, height: 52, color: AppTheme.elegantGray,
-              child: Image.asset(item.image, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.shopping_bag_outlined, color: AppTheme.textSecondary, size: 24)),
+              child: ProductoImagen(url: item.image, cacheWidth: 160, iconSize: 24, iconColor: AppTheme.textSecondary),
             ),
           ),
           const SizedBox(width: 14),

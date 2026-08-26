@@ -72,7 +72,7 @@ class _RuteroScreenState extends State<RuteroScreen> {
               .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
           child: c,
         ),
-        transitionDuration: const Duration(milliseconds: 400),
+        transitionDuration: const Duration(milliseconds: 250),
       ),
     );
   }
@@ -172,9 +172,11 @@ class _RuteroScreenState extends State<RuteroScreen> {
           ),
         ]),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        children: [
+      body: Builder(builder: (context) {
+        // Cabecera fija y una fila por ruta: las rutas se construyen al hacer
+        // scroll, no todas de golpe (pueden ser hasta 100).
+        final rutas = _rutasLista();
+        final cabecera = <Widget>[
           _buildClienteHeader(nombre, codigo),
           const SizedBox(height: 18),
           _buildSeccionTitle('Acciones'),
@@ -188,8 +190,14 @@ class _RuteroScreenState extends State<RuteroScreen> {
           ),
           const SizedBox(height: 22),
           _buildSeccionRutas(),
-        ],
-      ),
+        ];
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+          itemCount: cabecera.length + rutas.length,
+          itemBuilder: (_, i) =>
+              i < cabecera.length ? cabecera[i] : _ruteroItem(rutas[i - cabecera.length]),
+        );
+      }),
     );
   }
 
@@ -265,12 +273,13 @@ class _RuteroScreenState extends State<RuteroScreen> {
           Expanded(child: _miniStat('Pendientes', '$pendientes', AppTheme.accentColor, Icons.schedule_rounded)),
         ]),
         const SizedBox(height: 10),
-        ...rutas.map((raw) {
-          final r = Map<String, dynamic>.from(raw as Map);
-          return _ruteroItem(r);
-        }),
       ],
     ]);
+  }
+
+  List<Map<String, dynamic>> _rutasLista() {
+    final rutas = (_rutasData?['rutas'] as List<dynamic>?) ?? [];
+    return [for (final raw in rutas) Map<String, dynamic>.from(raw as Map)];
   }
 
   Widget _ruteroItem(Map<String, dynamic> r) {
@@ -309,7 +318,7 @@ class _RuteroScreenState extends State<RuteroScreen> {
                       .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
                   child: c,
                 ),
-                transitionDuration: const Duration(milliseconds: 350),
+                transitionDuration: const Duration(milliseconds: 250),
               ),
             );
           },

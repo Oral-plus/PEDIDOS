@@ -41,9 +41,9 @@ class _MisRutasScreenState extends State<MisRutasScreen> {
     _cargar();
   }
 
-  Future<void> _cargar() async {
+  Future<void> _cargar({bool forzar = false}) async {
     setState(() => _loading = true);
-    final data = await _api.getMisRutas(periodo: _periodo);
+    final data = await _api.getMisRutas(periodo: _periodo, forzar: forzar);
     if (mounted) setState(() { _data = data; _loading = false; });
   }
 
@@ -220,7 +220,7 @@ class _MisRutasScreenState extends State<MisRutasScreen> {
                       ),
                     )
                   : RefreshIndicator(
-                      onRefresh: _cargar,
+                      onRefresh: () => _cargar(forzar: true),
                       child: ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                         itemCount: rutas.length,
@@ -285,7 +285,7 @@ class _MisRutasScreenState extends State<MisRutasScreen> {
                       .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
                   child: c,
                 ),
-                transitionDuration: const Duration(milliseconds: 350),
+                transitionDuration: const Duration(milliseconds: 250),
               ),
             );
           },

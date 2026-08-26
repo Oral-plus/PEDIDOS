@@ -74,34 +74,37 @@ class CartItem {
   // Verificar si el item tiene descuento
   bool get hasDiscount => discount > 0;
 
+  // Un solo formateador para todos los ítems (crearlo por getter era costoso)
+  static final NumberFormat _fmt = NumberFormat('#,##0.00', 'es_CO');
+
   // Precio formateado para mostrar (con decimales correctos)
   String get formattedPrice {
-    return '\$${NumberFormat('#,##0.00', 'es_CO').format(price)}';
+    return '\$${_fmt.format(price)}';
   }
 
   // Precio original formateado
   String get formattedOriginalPrice {
     if (originalPrice <= 0) return '';
-    return '\$${NumberFormat('#,##0.00', 'es_CO').format(originalPrice)}';
+    return '\$${_fmt.format(originalPrice)}';
   }
 
   // Precio total formateado
   String get formattedTotalPrice {
-    return '\$${NumberFormat('#,##0.00', 'es_CO').format(totalPrice)}';
+    return '\$${_fmt.format(totalPrice)}';
   }
 
   // Precio sin IVA formateado
   String get formattedPriceSinIVA {
-    return '\$${NumberFormat('#,##0.00', 'es_CO').format(priceSinIVA)}';
+    return '\$${_fmt.format(priceSinIVA)}';
   }
 
   String get formattedTotalPriceSinIVA {
-    return '\$${NumberFormat('#,##0.00', 'es_CO').format(totalPriceSinIVA)}';
+    return '\$${_fmt.format(totalPriceSinIVA)}';
   }
 
   // IVA formateado
   String get formattedIVA {
-    return '\$${NumberFormat('#,##0.00', 'es_CO').format(totalIVA)}';
+    return '\$${_fmt.format(totalIVA)}';
   }
 
   // Descuento formateado

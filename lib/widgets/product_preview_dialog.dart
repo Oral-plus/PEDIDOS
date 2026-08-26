@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../utils/theme.dart';
 import '../utils/responsive_utils.dart';
 import '../utils/price_utils.dart';
-import '../services/Sap_service.dart' as sap;
+import 'producto_imagen.dart';
 
 class ProductPreviewDialog extends StatelessWidget {
   final Map<String, dynamic> product;
@@ -100,10 +100,12 @@ class ProductPreviewDialog extends StatelessWidget {
             tag: 'product_${product['codigoSap'] ?? product['title']}',
             child: Padding(
               padding: EdgeInsets.all(context.responsive(32)),
-              child: Image.asset(
-                product['image'] ?? '',
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Icon(Icons.image_not_supported_outlined, size: 80, color: AppTheme.textSecondary),
+              child: ProductoImagen(
+                url: product['image']?.toString(),
+                cacheWidth: 900,
+                icon: Icons.image_not_supported_outlined,
+                iconSize: 80,
+                iconColor: AppTheme.textSecondary,
               ),
             ),
           ),
@@ -415,7 +417,7 @@ class ProductPreviewDialog extends StatelessWidget {
   String? _obtenerPrecioSAP(String codigoSap) {
     if (preciosSAP.containsKey(codigoSap)) {
       final precio = preciosSAP[codigoSap]!['precio'];
-      return sap.InvoiceService1.formatearPrecioSAP(precio);
+      if (precio is num && precio > 0) return precio.toStringAsFixed(0);
     }
     return null;
   }

@@ -8,6 +8,7 @@ import '../screens/checkout_screen.dart';
 import '../utils/theme.dart';
 import '../utils/responsive_utils.dart';
 import '../utils/price_utils.dart';
+import 'producto_imagen.dart';
 
 class CartBottomSheet extends StatefulWidget {
   const CartBottomSheet({super.key});
@@ -359,14 +360,12 @@ class _CartBottomSheetState extends State<CartBottomSheet>
                   borderRadius: BorderRadius.circular(12),
                   child: Padding(
                     padding: const EdgeInsets.all(4),
-                    child: Image.asset(
-                      item.image,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => Icon(
-                        Icons.shopping_bag_rounded,
-                        color: AppTheme.primaryBlue.withOpacity(0.4),
-                        size: 28,
-                      ),
+                    child: ProductoImagen(
+                      url: item.image,
+                      cacheWidth: 200,
+                      icon: Icons.shopping_bag_rounded,
+                      iconColor: AppTheme.primaryBlue.withOpacity(0.4),
+                      iconSize: 28,
                     ),
                   ),
                 ),

@@ -128,7 +128,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     );
   }
 
-  // ── Header con número de recaudo y totales ────────────────────────────
+  // Header con número de recaudo y totales
   Widget _header() {
     return Container(
       decoration: const BoxDecoration(
@@ -192,7 +192,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     ]);
   }
 
-  // ── Tab DOCUMENTOS ────────────────────────────────────────────────────
+  // Tab DOCUMENTOS
   Widget _tabDocumentos() {
     if (_docs.isEmpty) {
       return _vacio(Icons.description_outlined, 'Sin documentos abiertos');
@@ -396,7 +396,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     ctrl.dispose();
   }
 
-  // ── Tab PAGOS ─────────────────────────────────────────────────────────
+  // Tab PAGOS
   Widget _tabPagos() {
     final metodo = (widget.pago?['metodo'] ?? '').toString();
     return ListView(
@@ -442,7 +442,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     );
   }
 
-  // ── Tab NOTAS ─────────────────────────────────────────────────────────
+  // Tab NOTAS
   Widget _tabNotas() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
@@ -475,7 +475,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     );
   }
 
-  // ── Footer: guardar ───────────────────────────────────────────────────
+  // Footer: guardar
   Widget _footer() {
     final activo = _cruzados.isNotEmpty && !_guardando;
     return Container(
@@ -574,7 +574,12 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
         backgroundColor: _verde,
         behavior: SnackBarBehavior.floating,
       ));
-      Navigator.of(context).pop(true);
+      // Se devuelve el número y lo aplicado para que la forma de pago no
+      // permita cruzar otra vez y use ese monto como pago de cartera
+      Navigator.of(context).pop({
+        'numeroRecaudo': (res['numeroRecaudo'] ?? _numeroRecaudo).toString(),
+        'totalAplicado': _totalAplicado,
+      });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text((res['message'] ?? 'No se pudo guardar el recaudo').toString()),

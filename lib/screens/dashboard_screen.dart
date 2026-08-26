@@ -15,16 +15,31 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 0;
 
-  late final List<Widget> _pages;
+  // Cada pestaña se crea la primera vez que se muestra. Inicio y Productos se
+  // crean de entrada; Pedidos solo cuando el vendedor entra, así no consulta
+  // el servidor en cada apertura del dashboard.
+  final List<Widget?> _pages = List<Widget?>.filled(3, null);
 
   @override
   void initState() {
     super.initState();
-    _pages = [
-      HomeTab(onNavigateToProducts: () => setState(() => _currentIndex = 1)),
-      const ProductsTab(),
-      const OrdersScreen(),
-    ];
+    _page(0);
+    _page(1);
+  }
+
+  Widget _page(int index) {
+    final existente = _pages[index];
+    if (existente != null) return existente;
+    final Widget nueva;
+    if (index == 0) {
+      nueva = HomeTab(onNavigateToProducts: () => setState(() => _currentIndex = 1));
+    } else if (index == 1) {
+      nueva = const ProductsTab();
+    } else {
+      nueva = const OrdersScreen();
+    }
+    _pages[index] = nueva;
+    return nueva;
   }
 
   @override
@@ -40,7 +55,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       backgroundColor: AppTheme.backgroundColor,
       body: IndexedStack(
         index: _currentIndex,
-        children: _pages,
+        children: [
+          for (var i = 0; i < _pages.length; i++)
+            (i == _currentIndex || _pages[i] != null)
+                ? _page(i)
+                : const SizedBox.shrink(),
+        ],
       ),
       bottomNavigationBar: _buildBottomBar(),
     );

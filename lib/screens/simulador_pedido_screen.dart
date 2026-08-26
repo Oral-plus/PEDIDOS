@@ -1,12 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/cart_item.dart';
-import '../services/product_data_service.dart';
+import '../services/catalogo_service.dart';
 import '../utils/price_utils.dart';
+import '../widgets/producto_imagen.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_dialog.dart';
 
-/// Simulador de pedido — cotiza un pedido SIN necesidad de entrar a una
+/// Simulador de pedido - cotiza un pedido SIN necesidad de entrar a una
 /// visita ni seleccionar cliente. No genera pedido real ni toca el carrito:
 /// es una calculadora comercial con los precios del catálogo.
 ///
@@ -19,7 +21,7 @@ class SimuladorPedidoScreen extends StatefulWidget {
 }
 
 class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
-  // ── Paleta monocromática ──────────────────────────────────────────────
+  // Paleta monocromática
   static const Color _ink = Color(0xFF111827);
   static const Color _inkDeep = Color(0xFF0B1220);
   static const Color _gray = Color(0xFF6B7280);
@@ -27,7 +29,9 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
   static const Color _surface = Color(0xFFF3F4F6);
 
   final TextEditingController _search = TextEditingController();
-  late final List<Map<String, dynamic>> _productos;
+  // Catálogo con precios de la lista base (el simulador no tiene cliente)
+  List<Map<String, dynamic>> _productos = [];
+  bool _cargando = true;
 
   /// Cantidades simuladas por producto (clave: codigoSap o título).
   final Map<String, int> _cantidades = {};
@@ -35,12 +39,31 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
   @override
   void initState() {
     super.initState();
-    _productos = ProductDataService.getAllProducts();
-    _search.addListener(() => setState(() {}));
+    _search.addListener(_programarFiltro);
+    _cargarCatalogo();
+  }
+
+  Future<void> _cargarCatalogo() async {
+    final catalogo = await CatalogoService().obtener('');
+    if (!mounted) return;
+    setState(() {
+      _productos = catalogo?.productos.map((p) => p.toMapUi()).toList() ?? [];
+      _cargando = false;
+    });
+  }
+
+  // Se filtra cuando el vendedor deja de escribir, no en cada tecla
+  Timer? _debounce;
+  void _programarFiltro() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _search.dispose();
     super.dispose();
   }
@@ -62,7 +85,7 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
     }).toList();
   }
 
-  // ── Totales de la simulación (precio catálogo = c/IVA) ────────────────
+  // Totales de la simulación (precio catálogo = c/IVA)
   int get _totalUnidades => _cantidades.values.fold(0, (a, b) => a + b);
   int get _totalProductos => _cantidades.entries.where((e) => e.value > 0).length;
 
@@ -158,7 +181,9 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
           _avisoSimulacion(),
           _buscador(),
           Expanded(
-            child: lista.isEmpty
+            child: _cargando
+                ? const Center(child: CircularProgressIndicator(color: _ink))
+                : lista.isEmpty
                 ? _sinResultados()
                 : ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
@@ -266,11 +291,11 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
             width: 52, height: 52,
             color: _surface,
             padding: const EdgeInsets.all(4),
-            child: Image.asset(
-              p['image']?.toString() ?? '',
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) =>
-                  const Icon(Icons.shopping_bag_outlined, color: _gray, size: 22),
+            child: ProductoImagen(
+              url: p['image']?.toString(),
+              cacheWidth: 160,
+              iconSize: 22,
+              iconColor: _gray,
             ),
           ),
         ),

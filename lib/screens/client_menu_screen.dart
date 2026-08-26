@@ -103,7 +103,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     if (!mounted) return;
     context.read<SessionProvider>().clear();
     Navigator.of(context).pushAndRemoveUntil(
-      PageRouteBuilder(pageBuilder: (_, __, ___) => const LoginScreen(), transitionsBuilder: (_, a, __, c) => FadeTransition(opacity: a, child: c), transitionDuration: const Duration(milliseconds: 400)),
+      PageRouteBuilder(pageBuilder: (_, __, ___) => const LoginScreen(), transitionsBuilder: (_, a, __, c) => FadeTransition(opacity: a, child: c), transitionDuration: const Duration(milliseconds: 250)),
       (route) => false,
     );
   }
@@ -176,7 +176,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
           position: Tween<Offset>(begin: const Offset(1.0, 0.0), end: Offset.zero).animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
           child: c,
         ),
-        transitionDuration: const Duration(milliseconds: 400),
+        transitionDuration: const Duration(milliseconds: 250),
       ),
     );
   }
@@ -468,7 +468,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                   .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
               child: c,
             ),
-            transitionDuration: const Duration(milliseconds: 350),
+            transitionDuration: const Duration(milliseconds: 250),
           ),
         );
       },
@@ -526,7 +526,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                   .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
               child: c,
             ),
-            transitionDuration: const Duration(milliseconds: 350),
+            transitionDuration: const Duration(milliseconds: 250),
           ),
         );
       },
@@ -648,7 +648,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
               .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
           child: c,
         ),
-        transitionDuration: const Duration(milliseconds: 350),
+        transitionDuration: const Duration(milliseconds: 250),
       ),
     );
   }
@@ -685,7 +685,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
               .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
           child: c,
         ),
-        transitionDuration: const Duration(milliseconds: 350),
+        transitionDuration: const Duration(milliseconds: 250),
       ),
     );
     if (!mounted || result == null) return;

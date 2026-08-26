@@ -21,13 +21,12 @@ Este paquete (ZIP) contiene todo lo necesario:
 | `modules/` | Módulos del backend (incluye control de dispositivos). **Necesario** |
 | `package.json` / `package-lock.json` | Dependencias |
 | `Dockerfile` / `docker-compose.yml` | Para levantarlo como contenedor |
-| `.env.example` | Plantilla de configuración (referencia, sin secretos) |
 
 **Además del ZIP**, Oral-Plus les envía por canal aparte el archivo `.env`
 (configuración con credenciales reales — tratar como confidencial). Debe quedar
 en la misma carpeta que `server.js` **antes** de construir el contenedor.
-El `Dockerfile` ya copia la carpeta `modules/` y el `.env`, así que basta con
-que ambos estén presentes al hacer el build.
+El `docker-compose.yml` lo lee con `env_file`, así que solo debe estar en la
+misma carpeta al levantar el contenedor; no queda dentro de la imagen.
 
 ## Paso 1 — Crear el subdominio (DNS)
 
@@ -123,3 +122,30 @@ curl https://pedidos.oral-plus.com/api/test
 ```
 
 Si los 3 responden así, quedó listo. Cualquier duda: sistemas@oral-plus.com.
+
+## Actualización: catálogo de productos desde SAP
+
+Esta versión del backend lee el catálogo de productos directamente de SAP y
+sirve las fotos de los productos, que Soporte TI sube desde la app. Al
+desplegar hay que tener en cuenta tres cosas:
+
+1. **Imágenes en la base de datos.** Las fotos de los productos se guardan en la
+   BD Pedidos (tabla `productos_imagenes`), no en carpetas: no hay volúmenes ni
+   archivos que copiar. Soporte TI las sube desde la app.
+2. **Variables nuevas en el `.env`** (vienen en el `.env` que envía Oral-Plus):
+   `SL_URL`, `SL_COMPANY_DB`, `SL_USER`, `SL_PASSWORD`, `SL_TLS_INSECURE`,
+   `SAP_BODEGA`, `SAP_GRUPOS_PT`, `CATALOGO_FUENTE`, `CATALOGO_TTL_MIN`.
+   El contenedor debe poder llegar al Service Layer de SAP
+   (`https://192.168.2.242:50000`); si no llega, usa SQL directo automáticamente.
+3. **Dependencias nativas.** `package.json` incluye `sharp` (recorte de fotos);
+   `npm install --omit=dev` dentro de `node:18-slim` descarga el binario de
+   Linux sin pasos adicionales.
+
+Comprobación:
+
+```bash
+# Debe responder success:true con el catálogo (requiere un token de vendedor)
+curl -H "Authorization: Bearer <token>" https://gestores-api.oral-plus.com/api/productos
+# Una foto migrada debe responder image/webp (sale de la base de datos)
+curl -I https://gestores-api.oral-plus.com/api/productos/imagen/50360251
+```

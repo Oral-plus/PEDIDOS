@@ -1,65 +1,50 @@
-# SkyPagos / ORAL-PLUS
+# PEDIDOS - Oral-Plus
 
-Aplicación móvil y web de pasarela de pagos, facturación y catálogo de productos para **ORAL-PLUS** — salud y belleza en tu sonrisa.
+Aplicación móvil para la fuerza de ventas de Oral-Plus: rutero, visitas a clientes,
+toma de pedidos, recaudos y catálogo de productos. Incluye el backend que la soporta.
 
----
+Autor: Steven Villamizar Mendoza (Sistemas, Oral-Plus).
 
-## Creador
+## Estructura
 
-**STEVEN VILLAMIZAR MENDOZA**
-
----
-
-## Descripción
-
-- **Login y registro** con documento y PIN  
-- **Dashboard** con video, facturas pendientes y acceso a pagos  
-- **Pagar facturas** con Wompi (PSE, tarjetas)  
-- **Historial de facturas pagadas** con filtros y búsqueda  
-- **Catálogo de productos** con búsqueda, carrito y checkout  
-- **Perfil de usuario** y notificaciones  
-- Integración con **SAP** (clientes, facturas, pedidos) y APIs ORAL-PLUS  
-
----
+- `lib/` - Aplicación Flutter (pantallas, servicios, modelos, widgets).
+- `api/` - Backend Node.js (Express + SQL Server) de la app de pedidos.
+  - `server.js` y `modules/` - Código del servidor.
+  - `deploy/` - Dockerfile, docker-compose e instrucciones de despliegue.
+  - `sql/` - Scripts de creación de las bases de datos.
+  - `.env` - Configuración con credenciales (no se versiona).
+- `assets/` - Imágenes del catálogo, logos y video de inicio.
 
 ## Requisitos
 
-- [Flutter](https://flutter.dev) SDK >= 3.1.0  
-- Dart >= 3.1.0  
+- Flutter 3.x / Dart 3.x
+- Node.js 18 o superior (backend)
+- SQL Server con las bases SkyPagos, Pedidos, RBOSKY3 (SAP) y Ruta
 
----
-
-## Cómo ejecutar
+## Ejecutar la app
 
 ```bash
-# Instalar dependencias
 flutter pub get
-
-# Ejecutar en dispositivo o emulador
 flutter run
-
-# Ejecutar en Chrome (web)
-flutter run -d chrome
 ```
 
----
+APK de producción:
 
-## Estructura principal
+```bash
+flutter build apk --release
+```
 
-- `lib/main.dart` — Punto de entrada  
-- `lib/screens/` — Pantallas (login, dashboard, productos, checkout, facturas, perfil, Wompi)  
-- `lib/services/` — API, auth, SAP, pagos, notificaciones  
-- `lib/models/` — Modelos de datos  
-- `lib/utils/` — Assets, tema, rutas  
+## Ejecutar el backend
 
----
+```bash
+cd api
+npm install
+node server.js
+```
+
+El servidor escucha en el puerto 3000. Prueba: `http://localhost:3000/api/test`.
+En producción se publica en `https://gestores-api.oral-plus.com` (ver `api/deploy/README-DESPLIEGUE.md`).
 
 ## Licencia
 
-Proyecto privado. Todos los derechos reservados.
-
----
-
-*Desarrollado por **Steven Villamizar Mendoza**.*
-# PEDIDOS
-# PEDIDOS
+Proyecto privado de Oral-Plus. Todos los derechos reservados.

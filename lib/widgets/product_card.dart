@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../utils/theme.dart';
 import '../utils/responsive_utils.dart';
 import '../utils/price_utils.dart';
+import 'producto_imagen.dart';
 
 class ProductCard extends StatefulWidget {
   final Map<String, dynamic> product;
@@ -166,18 +167,17 @@ class _ProductCardState extends State<ProductCard> {
     final topRadius = BorderRadius.vertical(top: Radius.circular(context.responsive(18)));
     Widget img = Padding(
       padding: const EdgeInsets.all(10.0),
-      child: Image.asset(
-        product['image'] ?? '',
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => Icon(
-          Icons.image_not_supported_outlined,
-          color: AppTheme.textSecondary,
-          size: context.responsive(40),
-        ),
+      child: ProductoImagen(
+        url: product['image']?.toString(),
+        // La tarjeta mide ~170 px: con 500 px de decodificación sobra
+        cacheWidth: 500,
+        icon: Icons.image_not_supported_outlined,
+        iconColor: AppTheme.textSecondary,
+        iconSize: context.responsive(40),
       ),
     );
 
-    // Producto agotado → imagen en escala de grises y atenuada.
+    // Producto agotado -> imagen en escala de grises y atenuada.
     if (!disponible) {
       img = Opacity(
         opacity: 0.55,

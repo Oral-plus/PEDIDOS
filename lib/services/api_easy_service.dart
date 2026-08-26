@@ -1,24 +1,26 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_client.dart';
+import 'cache_service.dart';
 import 'device_service.dart';
+import 'shared_http.dart';
 
-/// Servicio para conectar con API-EASY (auth + clientes por vendor)
+/// Cliente del backend de pedidos (server.js): auth, clientes, rutas y visitas.
 class ApiEasyService {
-  ApiEasyService._();
+  ApiEasyService._() {
+    ApiClient.onConnectionError = _olvidarBaseUrl;
+  }
   static final ApiEasyService _instance = ApiEasyService._();
   factory ApiEasyService() => _instance;
 
   static const List<String> _baseUrls = [
-    // URL publica: subdominio dedicado del backend de pedidos. El proxy del
-    // servidor 192.168.2.249 manda todo este host al server.js:3000, sin
-    // prefijos. Funciona dentro y fuera de la oficina (hairpin NAT).
+    // Subdominio público (funciona dentro y fuera de la oficina)
     'https://gestores-api.oral-plus.com',
-    // Acceso directo por LAN al backend desplegado en el servidor .249
-    // (sirve aunque se caiga el internet de la oficina).
+    // LAN directa al servidor .249 (por si falla el internet)
     'http://192.168.2.249:3000',
-    // PC de desarrollo (fallback mientras el backend siga corriendo ahi).
+    // PC de desarrollo
     'http://192.168.2.73:3000',
     'http://10.0.2.2:3000',
     'http://localhost:3000',
@@ -33,6 +35,7 @@ class ApiEasyService {
   String _loginUsuario = '';
   String? _resolvedBaseUrl;
   bool _sessionRestored = false;
+  final CacheService _cache = CacheService();
 
   String? get token => _token;
   Map<String, dynamic>? get usuario => _usuario;
@@ -96,6 +99,7 @@ class ApiEasyService {
     _token = null;
     _usuario = null;
     _loginUsuario = '';
+    _cache.limpiar();
     await _persistSession();
   }
 
@@ -110,61 +114,82 @@ class ApiEasyService {
     return h;
   }
 
-  Future<String> _resolveBaseUrl() async {
-    if (_resolvedBaseUrl != null) return _resolvedBaseUrl!;
+  /// URL base del backend ya resuelta (la misma que usan el resto de llamadas).
+  Future<String> baseUrl() => _resolveBaseUrl();
 
-    String? aliveFallback;
+  static const _baseUrlKey = 'api_base_url';
+  static const _sondaLan = Duration(milliseconds: 1500);
+  static const _sondaPublica = Duration(seconds: 6);
+  Future<String>? _resolviendo;
+  DateTime? _ultimaBusquedaFallida;
 
-    for (final baseUrl in _baseUrls) {
-      try {
-        final res = await ApiClient.get(
-          '/api/test',
-          customBaseUrl: baseUrl,
-          timeout: const Duration(seconds: 5),
-        );
-        if (res is Map && res['success'] == true) {
-          // /api/test puede responder en servidores que no tienen las rutas
-          // de auth (p. ej. la API SAP remota); verificar antes de aceptar.
-          // Como fallback preferimos un servidor local (tiene todos los
-          // endpoints) por encima del remoto SAP.
-          final esRemoto = baseUrl.contains('pedidos.oral-plus.com');
-          if (aliveFallback == null ||
-              (!esRemoto && aliveFallback.contains('pedidos.oral-plus.com'))) {
-            aliveFallback = baseUrl;
-          }
-          if (await _hasAuthRoutes(baseUrl)) {
-            _resolvedBaseUrl = baseUrl;
-            return baseUrl;
-          }
+  /// Devuelve el host cacheado. Si varias llamadas llegan a la vez sin host
+  /// resuelto, comparten una sola búsqueda.
+  Future<String> _resolveBaseUrl() {
+    final cached = _resolvedBaseUrl;
+    if (cached != null) return Future.value(cached);
+    return _resolviendo ??=
+        _buscarBaseUrl().whenComplete(() => _resolviendo = null);
+  }
+
+  /// Sondea todos los hosts a la vez. Se prefiere el que funcionó la última
+  /// vez (guardado en preferencias) y, si no, el primero de la lista que
+  /// responda. Solo se cachea un host que haya respondido.
+  Future<String> _buscarBaseUrl() async {
+    // Si hace poco no respondió ninguno, no se vuelve a sondear todavía
+    final fallo = _ultimaBusquedaFallida;
+    if (fallo != null &&
+        DateTime.now().difference(fallo) < const Duration(seconds: 30)) {
+      return _baseUrls.first;
+    }
+
+    SharedPreferences? prefs;
+    try {
+      prefs = await SharedPreferences.getInstance();
+    } catch (_) {}
+    final guardado = prefs?.getString(_baseUrlKey);
+
+    final sondas = <String, Future<bool>>{
+      for (final u in _baseUrls) u: _responde(u),
+    };
+    final orden = [
+      if (guardado != null && sondas.containsKey(guardado)) guardado,
+      ..._baseUrls,
+    ];
+    for (final u in orden) {
+      if (await sondas[u]!) {
+        _resolvedBaseUrl = u;
+        _ultimaBusquedaFallida = null;
+        if (u != guardado) {
+          try {
+            await prefs?.setString(_baseUrlKey, u);
+          } catch (_) {}
         }
-      } catch (_) {
-        continue;
+        return u;
       }
     }
 
-    // Solo cacheamos cuando encontramos un servidor con auth (arriba). Si solo
-    // hay un fallback sin auth (p. ej. el servidor local estaba reiniciándose),
-    // lo usamos pero NO lo cacheamos, para reintentar en la próxima llamada y
-    // auto-recuperarnos cuando el servidor local vuelva.
-    return aliveFallback ?? _baseUrls.first;
+    _ultimaBusquedaFallida = DateTime.now();
+    return _baseUrls.first;
   }
 
-  /// Verifica que el servidor exponga /api/auth/login. Un POST vacío debe
-  /// responder 400 "Usuario y contraseña son requeridos"; esa firma solo la
-  /// da el server.js real. Un 404, una conexión cortada por el proxy o
-  /// cualquier error de red significan que este servidor no sirve.
-  Future<bool> _hasAuthRoutes(String baseUrl) async {
+  Future<bool> _responde(String baseUrl) async {
     try {
-      await ApiClient.post(
-        '/api/auth/login',
-        body: const {},
+      final res = await ApiClient.get(
+        '/api/test',
         customBaseUrl: baseUrl,
-        timeout: const Duration(seconds: 5),
+        timeout: baseUrl.startsWith('https://') ? _sondaPublica : _sondaLan,
       );
-      return true;
-    } catch (e) {
-      return e.toString().contains('requeridos');
+      return res is Map && res['success'] == true;
+    } catch (_) {
+      return false;
     }
+  }
+
+  /// Descarta el host cacheado cuando deja de responder (por ejemplo al salir
+  /// de la red de la oficina); la siguiente llamada vuelve a buscar.
+  void _olvidarBaseUrl(String baseUrl) {
+    if (_resolvedBaseUrl == baseUrl) _resolvedBaseUrl = null;
   }
 
   Map<String, dynamic>? _extractUsuario(Map<String, dynamic> res) {
@@ -254,6 +279,8 @@ class ApiEasyService {
         _token = token;
         _usuario = _extractUsuario(response);
         _loginUsuario = usuario;
+        // Otro vendedor puede tener otros clientes y rutas
+        _cache.limpiar();
         await _persistSession();
 
         return {
@@ -278,11 +305,9 @@ class ApiEasyService {
     return _resolvedBaseUrl ?? await _resolveBaseUrl();
   }
 
-  // ---------------------------------------------------------------------------
-  //  Soporte TI: administración de dispositivos (requiere sesión rol soporte)
-  // ---------------------------------------------------------------------------
+  // Soporte TI: administración de dispositivos (requiere rol soporte)
 
-  /// GET /api/dispositivos — lista dispositivos con la persona asociada.
+  /// GET /api/dispositivos - lista dispositivos con la persona asociada.
   Future<Map<String, dynamic>> getDispositivos({String? buscar}) async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada', 'data': <dynamic>[]};
@@ -315,7 +340,47 @@ class ApiEasyService {
     }
   }
 
-  /// POST /api/dispositivos/:id/estado — activa/desactiva un dispositivo.
+  /// GET /api/usuarios - quiénes pueden entrar a la app (vendedores SAP y
+  /// usuarios de la tabla usuarios), si son soporte y sus dispositivos.
+  Future<Map<String, dynamic>> getUsuarios({String? buscar}) async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'message': 'Sesión expirada', 'data': <dynamic>[]};
+    }
+    try {
+      final query = (buscar != null && buscar.trim().isNotEmpty)
+          ? '?buscar=${Uri.encodeQueryComponent(buscar.trim())}'
+          : '';
+      final res = await ApiClient.get(
+        '/api/usuarios$query',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 20),
+      );
+      if (res['success'] == true) {
+        final list = res['data'] as List<dynamic>? ?? [];
+        return {
+          'success': true,
+          'data': list,
+          'total': res['total'] ?? list.length,
+          'soporte': (res['soporte'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? <String>[],
+          'avisos': (res['avisos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? <String>[],
+        };
+      }
+      return {
+        'success': false,
+        'message': res['message']?.toString() ?? 'Error al cargar usuarios',
+        'data': <dynamic>[],
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': e.toString().replaceFirst('Exception: ', ''),
+        'data': <dynamic>[],
+      };
+    }
+  }
+
+  /// POST /api/dispositivos/:id/estado - activa/desactiva un dispositivo.
   /// estado: 'ACTIVO' | 'DESACTIVADO' | 'PENDIENTE'.
   Future<Map<String, dynamic>> setDispositivoEstado(
       String idServicio, String estado) async {
@@ -344,7 +409,7 @@ class ApiEasyService {
     }
   }
 
-  /// DELETE /api/dispositivos/:id — elimina un dispositivo del registro.
+  /// DELETE /api/dispositivos/:id - elimina un dispositivo del registro.
   Future<Map<String, dynamic>> deleteDispositivo(String idServicio) async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada'};
@@ -369,8 +434,139 @@ class ApiEasyService {
     }
   }
 
-  /// GET /api/clientes - Lista de clientes del vendor (requiere token)
-  Future<Map<String, dynamic>> getClientes() async {
+  // Soporte TI: catálogo de productos (imágenes y presentación)
+
+  /// GET /api/productos/admin - todos los artículos de SAP con su configuración.
+  Future<Map<String, dynamic>> getProductosAdmin() async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'message': 'Sesión expirada', 'data': <dynamic>[]};
+    }
+    try {
+      final res = await ApiClient.get(
+        '/api/productos/admin',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 40),
+      );
+      if (res['success'] == true) {
+        return {
+          'success': true,
+          'data': res['productos'] as List<dynamic>? ?? [],
+          'categorias': (res['categorias'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? <String>[],
+          'fuente': res['fuente']?.toString() ?? '',
+          'actualizado': res['actualizado']?.toString() ?? '',
+        };
+      }
+      return {'success': false, 'message': res['message']?.toString() ?? 'Error al cargar productos', 'data': <dynamic>[]};
+    } catch (e) {
+      return {'success': false, 'message': e.toString().replaceFirst('Exception: ', ''), 'data': <dynamic>[]};
+    }
+  }
+
+  /// PUT /api/productos/:codigo/imagen - sube o reemplaza la foto (multipart).
+  Future<Map<String, dynamic>> subirImagenProducto(String codigo, String rutaArchivo) async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'message': 'Sesión expirada'};
+    }
+    try {
+      final base = await _baseUrlForRequest();
+      final req = http.MultipartRequest(
+        'PUT',
+        Uri.parse('$base/api/productos/${Uri.encodeComponent(codigo)}/imagen'),
+      );
+      req.headers['Authorization'] = 'Bearer $_token';
+      req.headers['Accept'] = 'application/json';
+      req.files.add(await http.MultipartFile.fromPath('imagen', rutaArchivo));
+      final streamed = await SharedHttp.client.send(req).timeout(const Duration(seconds: 60));
+      final res = await http.Response.fromStream(streamed);
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      if (res.statusCode == 200 && data is Map && data['success'] == true) {
+        return {'success': true, 'imagenUrl': data['imagenUrl']?.toString()};
+      }
+      return {
+        'success': false,
+        'message': (data is Map ? data['message']?.toString() : null) ?? 'No se pudo subir la imagen',
+      };
+    } catch (e) {
+      return {'success': false, 'message': e.toString().replaceFirst('Exception: ', '')};
+    }
+  }
+
+  /// DELETE /api/productos/:codigo/imagen
+  Future<Map<String, dynamic>> eliminarImagenProducto(String codigo) async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'message': 'Sesión expirada'};
+    }
+    try {
+      final res = await ApiClient.delete(
+        '/api/productos/${Uri.encodeComponent(codigo)}/imagen',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 20),
+      );
+      return {'success': res['success'] == true, 'message': res['message']?.toString() ?? ''};
+    } catch (e) {
+      return {'success': false, 'message': e.toString().replaceFirst('Exception: ', '')};
+    }
+  }
+
+  /// PUT /api/productos/:codigo/config - categoría, visible, orden, variante,
+  /// textura y descripción.
+  Future<Map<String, dynamic>> guardarConfigProducto(String codigo, Map<String, dynamic> cambios) async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'message': 'Sesión expirada'};
+    }
+    try {
+      final res = await ApiClient.put(
+        '/api/productos/${Uri.encodeComponent(codigo)}/config',
+        body: cambios,
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 20),
+      );
+      return {'success': res['success'] == true, 'message': res['message']?.toString() ?? ''};
+    } catch (e) {
+      return {'success': false, 'message': e.toString().replaceFirst('Exception: ', '')};
+    }
+  }
+
+  /// POST /api/productos/refrescar - vuelve a leer SAP ahora mismo.
+  Future<Map<String, dynamic>> refrescarCatalogo() async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'message': 'Sesión expirada'};
+    }
+    try {
+      final res = await ApiClient.post(
+        '/api/productos/refrescar',
+        body: const {},
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 60),
+      );
+      return {
+        'success': res['success'] == true,
+        'articulos': res['articulos'],
+        'fuente': res['fuente']?.toString() ?? '',
+        'message': res['message']?.toString() ?? '',
+      };
+    } catch (e) {
+      return {'success': false, 'message': e.toString().replaceFirst('Exception: ', '')};
+    }
+  }
+
+  /// GET /api/clientes - Lista de clientes del vendor (requiere token).
+  /// Se guarda 10 min; [forzar] vuelve a pedirla al servidor.
+  Future<Map<String, dynamic>> getClientes({bool forzar = false}) {
+    return _cache.obtener(
+      'clientes',
+      const Duration(minutes: 10),
+      _getClientesRed,
+      forzar: forzar,
+      guardarSi: (r) => r['success'] == true,
+    );
+  }
+
+  Future<Map<String, dynamic>> _getClientesRed() async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada', 'data': <dynamic>[]};
     }
@@ -408,8 +604,16 @@ class ApiEasyService {
     return s.contains('401') || s.contains('sesión expirada') || s.contains('sesion expirada');
   }
 
-  /// GET /api/clientes/:codigo - Detalle de un cliente
-  Future<Map<String, dynamic>?> getClientePorCodigo(String codigo) async {
+  /// GET /api/clientes/:codigo - Detalle de un cliente (en caché 5 min)
+  Future<Map<String, dynamic>?> getClientePorCodigo(String codigo) {
+    return _cache.obtener(
+      'cliente:$codigo',
+      const Duration(minutes: 5),
+      () => _getClientePorCodigoRed(codigo),
+    );
+  }
+
+  Future<Map<String, dynamic>?> _getClientePorCodigoRed(String codigo) async {
     if (_token == null || _token!.isEmpty) return null;
 
     try {
@@ -429,7 +633,7 @@ class ApiEasyService {
     }
   }
 
-  /// POST /api/clientes/:codigo/actualizar-datos — corrige los datos de
+  /// POST /api/clientes/:codigo/actualizar-datos - corrige los datos de
   /// contacto del cliente (se guarda en nuestra BD, no en SAP).
   /// Devuelve { success, message, fechaActualizacion? }.
   Future<Map<String, dynamic>> actualizarDatosCliente(
@@ -461,6 +665,10 @@ class ApiEasyService {
         headers: _headers,
         timeout: const Duration(seconds: 20),
       );
+      if (res['success'] == true) {
+        _cache.invalidar('cliente:$codigo');
+        _cache.invalidar('clientes');
+      }
       return {
         'success': res['success'] == true,
         'message': res['message']?.toString() ?? '',
@@ -476,7 +684,7 @@ class ApiEasyService {
     }
   }
 
-  /// POST /api/pedidos/gestion — guarda la gestión del pedido de la visita
+  /// POST /api/pedidos/gestion - guarda la gestión del pedido de la visita
   /// (liquidación, condiciones, forma de pago, evidencias).
   Future<Map<String, dynamic>> guardarGestionPedido({
     String numeroPedido = '',
@@ -544,6 +752,15 @@ class ApiEasyService {
     if (_token == null || _token!.isEmpty) {
       return {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0};
     }
+    final datos = await _cache.obtener<Map<String, dynamic>?>(
+      'documentos:$codigo',
+      const Duration(minutes: 2),
+      () => _getDocumentosClienteRed(codigo),
+    );
+    return datos ?? {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0};
+  }
+
+  Future<Map<String, dynamic>?> _getDocumentosClienteRed(String codigo) async {
     try {
       final res = await ApiClient.get(
         '/api/clientes/$codigo/documentos',
@@ -561,7 +778,7 @@ class ApiEasyService {
         };
       }
     } catch (_) {}
-    return {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0};
+    return null;
   }
 
   /// POST /api/recaudos - Guarda un recaudo con los documentos cruzados.
@@ -603,6 +820,11 @@ class ApiEasyService {
         headers: _headers,
         timeout: const Duration(seconds: 25),
       );
+      if (res['success'] == true) {
+        // Cambian las facturas abiertas y el saldo del cliente
+        _cache.invalidar('documentos:$clienteId');
+        _cache.invalidar('cartera:$clienteId');
+      }
       return {
         'success': res['success'] == true,
         'message': res['message']?.toString() ?? '',
@@ -618,7 +840,16 @@ class ApiEasyService {
   }
 
   /// GET /api/clientes/cartera/:codigo - Cartera completa del cliente desde SAP
-  Future<Map<String, dynamic>?> getCarteraCliente(String codigo) async {
+  /// (en caché 2 min; se invalida al registrar recaudos o visitas)
+  Future<Map<String, dynamic>?> getCarteraCliente(String codigo) {
+    return _cache.obtener(
+      'cartera:$codigo',
+      const Duration(minutes: 2),
+      () => _getCarteraClienteRed(codigo),
+    );
+  }
+
+  Future<Map<String, dynamic>?> _getCarteraClienteRed(String codigo) async {
     if (_token == null || _token!.isEmpty) return null;
 
     try {
@@ -638,10 +869,44 @@ class ApiEasyService {
     }
   }
 
-  /// GET /api/clientes/:codigo/geocode — geocodifica la dirección del cliente
-  /// Retorna { lat, lng, formattedAddress, placeId }
+  /// GET /api/clientes/:codigo/geocode - geocodifica la dirección del cliente
+  /// Retorna { lat, lng, formattedAddress, placeId }.
+  /// Una dirección no cambia: el resultado se guarda en el teléfono.
   Future<Map<String, dynamic>?> getGeocodeCliente(String codigo, {String? address}) async {
     if (_token == null || _token!.isEmpty) return null;
+    final clave = 'geo:$codigo:${(address ?? '').trim().toUpperCase()}';
+
+    final enMemoria = _cache.leer<Map<String, dynamic>>(clave);
+    if (enMemoria != null) return enMemoria;
+
+    SharedPreferences? prefs;
+    try {
+      prefs = await SharedPreferences.getInstance();
+      final guardado = prefs.getString(clave);
+      if (guardado != null) {
+        final decoded = jsonDecode(guardado);
+        if (decoded is Map) {
+          final geo = Map<String, dynamic>.from(decoded);
+          _cache.guardar(clave, geo, const Duration(days: 30));
+          return geo;
+        }
+      }
+    } catch (_) {}
+
+    final geo = await _cache.obtener<Map<String, dynamic>?>(
+      clave,
+      const Duration(days: 30),
+      () => _getGeocodeClienteRed(codigo, address),
+    );
+    if (geo != null) {
+      try {
+        await prefs?.setString(clave, jsonEncode(geo));
+      } catch (_) {}
+    }
+    return geo;
+  }
+
+  Future<Map<String, dynamic>?> _getGeocodeClienteRed(String codigo, String? address) async {
     try {
       final qp = address != null && address.isNotEmpty
           ? '?address=${Uri.encodeQueryComponent(address)}'
@@ -659,8 +924,16 @@ class ApiEasyService {
     return null;
   }
 
-  /// GET /api/clientes/:codigo/tareas — tareas asignadas al cliente
-  Future<Map<String, dynamic>?> getTareasCliente(String codigo) async {
+  /// GET /api/clientes/:codigo/tareas - tareas asignadas al cliente (en caché 5 min)
+  Future<Map<String, dynamic>?> getTareasCliente(String codigo) {
+    return _cache.obtener(
+      'tareas:$codigo',
+      const Duration(minutes: 5),
+      () => _getTareasClienteRed(codigo),
+    );
+  }
+
+  Future<Map<String, dynamic>?> _getTareasClienteRed(String codigo) async {
     if (_token == null || _token!.isEmpty) return null;
     try {
       final res = await ApiClient.get(
@@ -676,10 +949,25 @@ class ApiEasyService {
     return null;
   }
 
-  /// POST /api/clientes/:codigo/ia/sugerencias — recomendaciones IA para la visita
+  /// POST /api/clientes/:codigo/ia/sugerencias - recomendaciones IA para la visita.
+  /// Se guardan 1 h por cliente; [forzar] pide una respuesta nueva.
   Future<String?> getSugerenciasIA(String codigo, {
     Map<String, dynamic>? cliente,
     Map<String, dynamic>? ruta,
+    bool forzar = false,
+  }) {
+    return _cache.obtener(
+      'sugerenciaIA:$codigo',
+      const Duration(hours: 1),
+      () => _getSugerenciasIARed(codigo, cliente: cliente, ruta: ruta, forzar: forzar),
+      forzar: forzar,
+    );
+  }
+
+  Future<String?> _getSugerenciasIARed(String codigo, {
+    Map<String, dynamic>? cliente,
+    Map<String, dynamic>? ruta,
+    bool forzar = false,
   }) async {
     if (_token == null || _token!.isEmpty) return null;
     try {
@@ -688,6 +976,7 @@ class ApiEasyService {
         body: {
           if (cliente != null) 'cliente': cliente,
           if (ruta != null) 'ruta': ruta,
+          if (forzar) 'forzar': true,
         },
         customBaseUrl: await _baseUrlForRequest(),
         headers: _headers,
@@ -700,7 +989,7 @@ class ApiEasyService {
     return null;
   }
 
-  /// POST /api/clientes/:codigo/ia/chat — pregunta al asistente IA
+  /// POST /api/clientes/:codigo/ia/chat - pregunta al asistente IA
   Future<String?> chatIA(String codigo, String pregunta, {
     Map<String, dynamic>? cliente,
     Map<String, dynamic>? ruta,
@@ -725,8 +1014,18 @@ class ApiEasyService {
     return null;
   }
 
-  /// GET /api/rutas/mias?periodo=hoy|semana|mes|todas — mis rutas del periodo
-  Future<Map<String, dynamic>?> getMisRutas({String periodo = 'todas'}) async {
+  /// GET /api/rutas/mias?periodo=hoy|semana|mes|todas - mis rutas del periodo
+  /// (en caché 2 min por periodo; [forzar] para el gesto de refrescar)
+  Future<Map<String, dynamic>?> getMisRutas({String periodo = 'todas', bool forzar = false}) {
+    return _cache.obtener(
+      'rutasMias:$periodo',
+      const Duration(minutes: 2),
+      () => _getMisRutasRed(periodo),
+      forzar: forzar,
+    );
+  }
+
+  Future<Map<String, dynamic>?> _getMisRutasRed(String periodo) async {
     if (_token == null || _token!.isEmpty) return null;
     try {
       final res = await ApiClient.get(
@@ -742,7 +1041,7 @@ class ApiEasyService {
     return null;
   }
 
-  /// POST /api/rutas/extra — crea una ruta adicional de urgencia.
+  /// POST /api/rutas/extra - crea una ruta adicional de urgencia.
   /// Requiere cliente + motivo (por qué visita) + observación.
   /// Devuelve { success, message, id? }.
   Future<Map<String, dynamic>> crearRutaExtra({
@@ -769,6 +1068,10 @@ class ApiEasyService {
         headers: _headers,
         timeout: const Duration(seconds: 20),
       );
+      if (res['success'] == true) {
+        _cache.invalidarPrefijo('rutasMias:');
+        _cache.invalidar('rutasCliente:$clienteId');
+      }
       return {
         'success': res['success'] == true,
         'message': res['message']?.toString() ?? '',
@@ -785,8 +1088,16 @@ class ApiEasyService {
     }
   }
 
-  /// GET /api/clientes/:codigo/rutas — rutas registradas para el cliente
-  Future<Map<String, dynamic>?> getRutasCliente(String codigo, {int limite = 100}) async {
+  /// GET /api/clientes/:codigo/rutas - rutas registradas para el cliente (en caché 2 min)
+  Future<Map<String, dynamic>?> getRutasCliente(String codigo, {int limite = 100}) {
+    return _cache.obtener(
+      'rutasCliente:$codigo',
+      const Duration(minutes: 2),
+      () => _getRutasClienteRed(codigo, limite),
+    );
+  }
+
+  Future<Map<String, dynamic>?> _getRutasClienteRed(String codigo, int limite) async {
     if (_token == null || _token!.isEmpty) return null;
     try {
       final res = await ApiClient.get(
@@ -802,7 +1113,7 @@ class ApiEasyService {
     return null;
   }
 
-  /// GET /api/clientes/:codigo/facturas-historico — todas las facturas (pagadas/abiertas)
+  /// GET /api/clientes/:codigo/facturas-historico - todas las facturas (pagadas/abiertas)
   Future<Map<String, dynamic>?> getFacturasHistoricasCliente(String codigo, {int limite = 100}) async {
     if (_token == null || _token!.isEmpty) return null;
     try {
@@ -820,7 +1131,7 @@ class ApiEasyService {
   }
 
   /// GET /api/clientes/:codigo/comentarios
-  /// Returns { 'comentarios': List, 'freeText': String }
+  /// Devuelve { 'comentarios': List, 'freeText': String }
   Future<Map<String, dynamic>> getComentariosCliente(String codigo) async {
     if (_token == null || _token!.isEmpty) {
       return {'comentarios': <Map<String, dynamic>>[], 'freeText': ''};
@@ -869,7 +1180,7 @@ class ApiEasyService {
     return null;
   }
 
-  /// POST /api/clientes/:codigo/visita — registra / finaliza una visita
+  /// POST /api/clientes/:codigo/visita - registra / finaliza una visita
   Future<Map<String, dynamic>?> registrarVisita(
     String codigo, {
     String? estadoCliente,
@@ -919,14 +1230,29 @@ class ApiEasyService {
         timeout: const Duration(seconds: 15),
       );
       if (res['success'] == true) {
+        // La visita cambia cartera, tareas, rutas y el estado "visitado hoy"
+        _cache.invalidar('cartera:$codigo');
+        _cache.invalidar('tareas:$codigo');
+        _cache.invalidar('visitasHoy:$codigo');
+        _cache.invalidar('ultimaVisita:$codigo');
+        _cache.invalidar('rutasCliente:$codigo');
+        _cache.invalidarPrefijo('rutasMias:');
         return Map<String, dynamic>.from(res['data'] as Map);
       }
     } catch (_) {}
     return null;
   }
 
-  /// GET /api/clientes/:codigo/visitas-hoy — ¿ya se visitó hoy?
-  Future<Map<String, dynamic>?> getVisitasHoy(String codigo) async {
+  /// GET /api/clientes/:codigo/visitas-hoy - ¿ya se visitó hoy?
+  Future<Map<String, dynamic>?> getVisitasHoy(String codigo) {
+    return _cache.obtener(
+      'visitasHoy:$codigo',
+      const Duration(minutes: 1),
+      () => _getVisitasHoyRed(codigo),
+    );
+  }
+
+  Future<Map<String, dynamic>?> _getVisitasHoyRed(String codigo) async {
     if (_token == null || _token!.isEmpty) return null;
     try {
       final res = await ApiClient.get(
@@ -942,8 +1268,16 @@ class ApiEasyService {
     return null;
   }
 
-  /// GET /api/clientes/:codigo/ultimo-pedido — último pedido con ítems
-  Future<Map<String, dynamic>?> getUltimoPedido(String codigo, {DateTime? desde}) async {
+  /// GET /api/clientes/:codigo/ultimo-pedido - último pedido con ítems
+  Future<Map<String, dynamic>?> getUltimoPedido(String codigo, {DateTime? desde}) {
+    return _cache.obtener(
+      'pedidos:$codigo:ultimo:${desde?.toIso8601String() ?? ''}',
+      const Duration(minutes: 2),
+      () => _getUltimoPedidoRed(codigo, desde),
+    );
+  }
+
+  Future<Map<String, dynamic>?> _getUltimoPedidoRed(String codigo, DateTime? desde) async {
     if (_token == null || _token!.isEmpty) return null;
     try {
       final qp = desde != null ? '?desde=${Uri.encodeQueryComponent(desde.toIso8601String())}' : '';
@@ -960,9 +1294,18 @@ class ApiEasyService {
     return null;
   }
 
-  /// GET /api/clientes/:codigo/pedidos-total — total de pedidos (opcionalmente desde una fecha)
+  /// GET /api/clientes/:codigo/pedidos-total - total de pedidos (opcionalmente desde una fecha)
   Future<double> getTotalPedidos(String codigo, {DateTime? desde}) async {
     if (_token == null || _token!.isEmpty) return 0;
+    final total = await _cache.obtener<double?>(
+      'pedidos:$codigo:total:${desde?.toIso8601String() ?? ''}',
+      const Duration(minutes: 2),
+      () => _getTotalPedidosRed(codigo, desde),
+    );
+    return total ?? 0;
+  }
+
+  Future<double?> _getTotalPedidosRed(String codigo, DateTime? desde) async {
     try {
       final qp = desde != null ? '?desde=${Uri.encodeQueryComponent(desde.toIso8601String())}' : '';
       final res = await ApiClient.get(
@@ -975,11 +1318,19 @@ class ApiEasyService {
         return (res['data']['total'] as num?)?.toDouble() ?? 0;
       }
     } catch (_) {}
-    return 0;
+    return null;
   }
 
-  /// GET /api/clientes/:codigo/visita/ultima — última visita registrada
-  Future<Map<String, dynamic>?> getUltimaVisita(String codigo) async {
+  /// GET /api/clientes/:codigo/visita/ultima - última visita registrada
+  Future<Map<String, dynamic>?> getUltimaVisita(String codigo) {
+    return _cache.obtener(
+      'ultimaVisita:$codigo',
+      const Duration(minutes: 2),
+      () => _getUltimaVisitaRed(codigo),
+    );
+  }
+
+  Future<Map<String, dynamic>?> _getUltimaVisitaRed(String codigo) async {
     if (_token == null || _token!.isEmpty) return null;
     try {
       final res = await ApiClient.get(
@@ -995,7 +1346,7 @@ class ApiEasyService {
     return null;
   }
 
-  /// PUT /api/clientes/:codigo/free-text — actualizar texto libre en OCRD
+  /// PUT /api/clientes/:codigo/free-text - actualizar texto libre en OCRD
   Future<String?> actualizarFreeTextCliente(String codigo, String texto) async {
     if (_token == null || _token!.isEmpty) return null;
     try {

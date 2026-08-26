@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -13,7 +14,7 @@ import 'forma_pago_screen.dart';
 import 'gestion_pedido_screen.dart';
 import 'products.dart';
 
-/// Pantalla "Información visita" — resumen y gestión de la visita al cliente.
+/// Pantalla "Información visita" - resumen y gestión de la visita al cliente.
 class InformacionVisitaScreen extends StatefulWidget {
   final Map<String, dynamic> cliente;
   final Map<String, dynamic> ruta;
@@ -48,13 +49,33 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
 
   // Cronómetro de la visita (persistente: no se reinicia al salir/entrar)
   DateTime _horaInicio = DateTime.now();
-  Duration _transcurrido = Duration.zero;
+  // Solo los dos textos del cronómetro escuchan este valor; así el tic de
+  // cada segundo no reconstruye la pantalla entera.
+  final ValueNotifier<Duration> _transcurrido = ValueNotifier(Duration.zero);
   Timer? _timer;
 
   String get _visitaKey {
     final rid = '${widget.ruta['id'] ?? ''}';
     return rid.isNotEmpty ? 'visita_inicio_ruta_$rid' : 'visita_inicio_cli_$_codigo';
   }
+
+  // Pago registrado en esta visita (desde el menú Cartera o al finalizar).
+  // Se guarda en preferencias junto con la hora de inicio para no perderlo si
+  // el vendedor sale de la pantalla o se cierra la app.
+  Map<String, dynamic>? _pago;
+  String get _pagoKey => '${_visitaKey}_pago';
+
+  // Recaudo ya guardado en la BD en esta visita (número y monto aplicado a
+  // cartera). Se anota apenas se cruza, aunque el pago no se confirme, para
+  // que nunca se cruce dos veces.
+  String? _numeroRecaudo;
+  double _valorRecaudo = 0;
+  String get _recaudoKey => '${_visitaKey}_recaudo';
+
+  double get _totalPedidoBasePago => (_pago?['totalPedidoBase'] as num?)?.toDouble() ?? 0;
+  // Solo se compara cuando el total del pedido ya está cargado
+  bool get _pagoDesactualizado =>
+      _pago != null && !_recargandoPedidos && _totalPedidoBasePago != _totalPedidos;
 
   double _totalPedidos = 0;
   bool _recargandoPedidos = false;
@@ -87,7 +108,7 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     _restaurarCronometro();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      setState(() => _transcurrido = DateTime.now().difference(_horaInicio));
+      _transcurrido.value = DateTime.now().difference(_horaInicio);
     });
     _cargar();
   }
@@ -100,14 +121,30 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
       if (dt != null) {
         // Visita ya iniciada: continuar contando desde la hora original
         if (mounted) {
-          setState(() {
-            _horaInicio = dt;
-            _transcurrido = DateTime.now().difference(dt);
-          });
+          setState(() => _horaInicio = dt);
+          _transcurrido.value = DateTime.now().difference(dt);
         }
       } else {
         // Primera vez: guardar la hora de inicio
         await prefs.setString(_visitaKey, _horaInicio.toIso8601String());
+      }
+      // Pago y recaudo registrados antes de salir de la pantalla (si los hubo)
+      final pagoGuardado = prefs.getString(_pagoKey);
+      final recaudoGuardado = prefs.getString(_recaudoKey);
+      if (mounted) {
+        setState(() {
+          if (pagoGuardado != null) {
+            final decoded = jsonDecode(pagoGuardado);
+            if (decoded is Map) _pago = Map<String, dynamic>.from(decoded);
+          }
+          if (recaudoGuardado != null && recaudoGuardado.isNotEmpty) {
+            final rec = jsonDecode(recaudoGuardado);
+            if (rec is Map) {
+              _numeroRecaudo = rec['numero']?.toString();
+              _valorRecaudo = (rec['aplicado'] as num?)?.toDouble() ?? 0;
+            }
+          }
+        });
       }
     } catch (_) {}
     // Publicar la visita como activa (alimenta el cronómetro flotante global)
@@ -118,7 +155,8 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
   @override
   void dispose() {
     _timer?.cancel();
-    // Al salir sin finalizar, la visita sigue activa → mostrar el flotante.
+    _transcurrido.dispose();
+    // Al salir sin finalizar, la visita sigue activa -> mostrar el flotante.
     _visitaActiva?.setEnPantallaVisita(false);
     _obs.dispose();
     super.dispose();
@@ -174,16 +212,21 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     _recargarTotalPedidos();
   }
 
+  static final RegExp _reProductosTarea = RegExp(r'(\d+)\s*PRODUCTO', caseSensitive: false);
+
   /// Cantidad requerida de productos según el texto de la tarea (ej: "2 PRODUCTOS").
   int _requeridoTarea(String texto) {
-    final m = RegExp(r'(\d+)\s*PRODUCTO', caseSensitive: false).firstMatch(texto);
+    final m = _reProductosTarea.firstMatch(texto);
     if (m != null) return int.tryParse(m.group(1) ?? '') ?? 1;
     return 1;
   }
 
-  /// Productos distintos en el pedido de la visita (para calcular avance de tareas).
-  int get _productosPedido {
-    final items = (_ultimoPedido?['items'] as List<dynamic>?) ?? [];
+  /// Productos distintos en el pedido de la visita (para calcular avance de
+  /// tareas). Se recalcula solo cuando cambia el pedido.
+  int _productosPedido = 0;
+
+  static int _contarProductosPedido(Map<String, dynamic>? pedido) {
+    final items = (pedido?['items'] as List<dynamic>?) ?? [];
     return items.map((e) => (e as Map)['codigo']).where((c) => '$c'.isNotEmpty).toSet().length;
   }
 
@@ -235,6 +278,7 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
       setState(() {
         _totalPedidos = results[0] as double;
         _ultimoPedido = results[1] as Map<String, dynamic>?;
+        _productosPedido = _contarProductosPedido(_ultimoPedido);
         _recargandoPedidos = false;
       });
     }
@@ -256,7 +300,7 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
         ),
       );
       if (encuesta == null) {
-        // Canceló la encuesta → no se finaliza la visita
+        // Canceló la encuesta -> no se finaliza la visita
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -272,33 +316,34 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
 
     if (!mounted) return;
 
-    // Formulario de pago OBLIGATORIO: siempre se muestra al finalizar la
-    // visita para registrar el recaudo (o confirmar que no hubo pago).
-    final pago = await Navigator.of(context).push<Map<String, dynamic>>(
-      MaterialPageRoute(
-        builder: (_) => FormaPagoScreen(
-          nombreCliente: _nombreCliente,
-          numeroCuenta: _codigo,
-          totalDocumentos: (_cartera?['totalFacturasAbiertas'] as num?)?.toInt() ?? 0,
-          documentosPorCruzar: (_cartera?['facturasVencidas'] as num?)?.toInt() ?? 0,
-          dineroFaltante: _totalCartera,
-          totalPedido: _totalPedidos,
-        ),
-      ),
-    );
+    // El pago sigue siendo obligatorio. Si ya se registró desde el menú
+    // "Cartera y pago" no se vuelve a pedir; si no, se pide aquí.
+    var pago = _pago;
     if (pago == null) {
-      // Volvió atrás sin registrar el pago → no se finaliza la visita
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Registra el pago (o confirma sin recaudo) para finalizar la visita'),
-            backgroundColor: AppTheme.accentColor,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      pago = await _abrirFormaPago();
+      if (pago == null) {
+        // Volvió atrás sin registrar el pago -> no se finaliza la visita
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Registra el pago (o confirma sin recaudo) para finalizar la visita'),
+              backgroundColor: AppTheme.accentColor,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
       }
-      return;
+    } else if (_pagoDesactualizado) {
+      // El pedido cambió después de registrar el pago: ofrecer revisarlo
+      final revisar = await _confirmarRevisarPago();
+      if (!mounted) return;
+      if (revisar) {
+        final nuevo = await _abrirFormaPago();
+        if (nuevo != null) pago = nuevo;
+      }
     }
+    if (!mounted) return;
     final totalRecaudos = (pago['valor'] as num?)?.toDouble() ?? 0;
     final metodoPago = pago['metodo']?.toString() ?? '';
     final bancoPago = pago['banco']?.toString() ?? '';
@@ -359,8 +404,13 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove(_visitaKey);
+        await prefs.remove(_pagoKey);
+        await prefs.remove(_recaudoKey);
       } catch (_) {}
-      // Cerrar la visita activa → oculta el cronómetro flotante global
+      _pago = null;
+      _numeroRecaudo = null;
+      _valorRecaudo = 0;
+      // Cerrar la visita activa -> oculta el cronómetro flotante global
       _visitaActiva?.finalizar();
       if (!mounted) return;
       HapticFeedback.heavyImpact();
@@ -387,31 +437,139 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     }
   }
 
-  void _verCartera() {
-    final total = _totalCartera;
-    final facturas = (_cartera?['totalFacturasAbiertas'] as num?)?.toInt() ?? 0;
-    final vencidas = (_cartera?['facturasVencidas'] as num?)?.toInt() ?? 0;
-    showModalBottomSheet(
+  /// Abre la forma de pago con los datos actuales de cartera y pedido. Si el
+  /// vendedor confirma, el pago queda guardado en la visita (memoria y
+  /// preferencias) y se devuelve; si vuelve atrás devuelve null.
+  Future<Map<String, dynamic>?> _abrirFormaPago() async {
+    if (_guardando) return null;
+    final pago = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(
+        builder: (_) => FormaPagoScreen(
+          nombreCliente: _nombreCliente,
+          numeroCuenta: _codigo,
+          totalDocumentos: (_cartera?['totalFacturasAbiertas'] as num?)?.toInt() ?? 0,
+          documentosPorCruzar: (_cartera?['facturasVencidas'] as num?)?.toInt() ?? 0,
+          dineroFaltante: _totalCartera,
+          totalPedido: _totalPedidos,
+          pagoInicial: _pago,
+          numeroRecaudoPrevio: _numeroRecaudo,
+          valorRecaudoPrevio: _valorRecaudo,
+          onRecaudoGuardado: _guardarNumeroRecaudo,
+        ),
+      ),
+    );
+    if (pago == null || !mounted) return null;
+
+    final fecha = pago['fecha'];
+    final guardado = <String, dynamic>{
+      ...pago,
+      'fecha': fecha is DateTime ? fecha.toIso8601String() : fecha?.toString(),
+      'totalPedidoBase': _totalPedidos,
+    };
+    setState(() => _pago = guardado);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_pagoKey, jsonEncode(guardado));
+    } catch (_) {}
+    return guardado;
+  }
+
+  // Se llama desde la forma de pago apenas se guarda un recaudo en la BD
+  Future<void> _guardarNumeroRecaudo(String numero, double aplicado) async {
+    if (numero.isEmpty) return;
+    if (mounted) {
+      setState(() {
+        _numeroRecaudo = numero;
+        _valorRecaudo = aplicado;
+      });
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_recaudoKey, jsonEncode({'numero': numero, 'aplicado': aplicado}));
+    } catch (_) {}
+  }
+
+  Future<bool> _confirmarRevisarPago() async {
+    final r = await showDialog<bool>(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('El pedido cambió', style: TextStyle(color: _textDark, fontWeight: FontWeight.w800)),
+        content: Text(
+          'Cuando registraste el pago el pedido sumaba ${_pesos(_totalPedidoBasePago)} y ahora suma ${_pesos(_totalPedidos)}. ¿Quieres revisar el pago antes de finalizar?',
+          style: TextStyle(color: _textMuted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Continuar así', style: TextStyle(color: _textMuted, fontWeight: FontWeight.w700)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: _primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Revisar', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
       ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 30),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(Icons.account_balance_wallet_rounded, color: _primary),
-            const SizedBox(width: 10),
-            Text('Cartera del cliente',
-                style: TextStyle(color: _textDark, fontSize: 17, fontWeight: FontWeight.w800)),
+    );
+    return r == true;
+  }
+
+  /// Tarjeta con el pago registrado en la visita (o el aviso de pendiente).
+  Widget _tarjetaPago() {
+    final p = _pago;
+    final registrado = p != null;
+    final valor = (p?['valor'] as num?)?.toDouble() ?? 0;
+    final metodo = (p?['metodo'] ?? '').toString();
+    final numRecaudo = (p?['numeroRecaudo'] ?? _numeroRecaudo ?? '').toString();
+    final color = !registrado ? AppTheme.accentColor : (valor > 0 ? AppTheme.successColor : _textMuted);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: registrado ? _border : AppTheme.accentColor.withOpacity(0.5)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      child: Row(children: [
+        Container(
+          width: 34, height: 34,
+          decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(9)),
+          child: Icon(registrado ? Icons.payments_rounded : Icons.pending_actions_rounded, color: color, size: 19),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(registrado ? 'Pago de la visita' : 'Pago pendiente',
+                style: TextStyle(color: _textDark, fontSize: 15, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 2),
+            Text(
+              !registrado
+                  ? (numRecaudo.isNotEmpty
+                      ? 'Recaudo $numRecaudo guardado; falta confirmar el pago'
+                      : 'Se registra desde el menú "Cartera y pago" o al finalizar')
+                  : valor > 0
+                      ? '${_pesos(valor)} · $metodo${numRecaudo.isNotEmpty ? ' · Recaudo $numRecaudo' : ''}'
+                      : 'Sin recaudo',
+              style: TextStyle(color: _textMuted, fontSize: 11.5, fontWeight: FontWeight.w600),
+            ),
+            if (registrado && _pagoDesactualizado)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('El pedido cambió después de registrar el pago',
+                    style: TextStyle(color: AppTheme.accentColor, fontSize: 11, fontWeight: FontWeight.w700)),
+              ),
           ]),
-          const SizedBox(height: 16),
-          _carteraRow('Saldo total', _pesos(total), total > 0 ? AppTheme.errorColor : AppTheme.successColor),
-          _carteraRow('Facturas abiertas', '$facturas', _textDark),
-          _carteraRow('Facturas vencidas', '$vencidas', vencidas > 0 ? AppTheme.errorColor : _textDark),
-        ]),
-      ),
+        ),
+        TextButton(
+          onPressed: _guardando ? null : _abrirFormaPago,
+          child: Text(registrado ? 'Editar' : 'Registrar',
+              style: TextStyle(color: _primary, fontWeight: FontWeight.w800)),
+        ),
+      ]),
     );
   }
 
@@ -536,7 +694,7 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
                   _irAPedido();
                   break;
                 case 'cartera':
-                  _verCartera();
+                  _abrirFormaPago();
                   break;
                 case 'finalizar':
                   _finalizarVisita();
@@ -545,7 +703,7 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
             },
             itemBuilder: (_) => [
               _menuItem('pedido', Icons.shopping_cart_rounded, 'Pedido', _primary),
-              _menuItem('cartera', Icons.account_balance_wallet_rounded, 'Cartera', AppTheme.accentColor),
+              _menuItem('cartera', Icons.account_balance_wallet_rounded, 'Cartera y pago', AppTheme.accentColor),
               _menuItem('finalizar', Icons.flag_rounded, 'Finalizar visita', AppTheme.successColor),
             ],
           ),
@@ -569,6 +727,8 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
                 _dropdownMotivo(),
                 const SizedBox(height: 18),
                 _resumenVisita(),
+                const SizedBox(height: 14),
+                _tarjetaPago(),
                 if (_ultimoPedido != null) ...[
                   const SizedBox(height: 14),
                   _vistaPreviaPedido(),
@@ -687,14 +847,17 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
             color: AppTheme.successColor.withOpacity(0.1),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Text(
-            _cronoFormato(_transcurrido),
-            style: const TextStyle(
-              color: AppTheme.successColor,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              fontFeatures: [FontFeature.tabularFigures()],
-              letterSpacing: 0.5,
+          child: ValueListenableBuilder<Duration>(
+            valueListenable: _transcurrido,
+            builder: (_, d, __) => Text(
+              _cronoFormato(d),
+              style: const TextStyle(
+                color: AppTheme.successColor,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                fontFeatures: [FontFeature.tabularFigures()],
+                letterSpacing: 0.5,
+              ),
             ),
           ),
         ),
@@ -914,7 +1077,10 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
             _carteraRow('Canal', _canalTexto, _textDark),
             _carteraRow('Lista de precios', _listaTexto, _textDark),
             Divider(height: 22, thickness: 1, color: _border),
-            _carteraRow('Tiempo de visita', _cronoFormato(_transcurrido), _textDark),
+            ValueListenableBuilder<Duration>(
+              valueListenable: _transcurrido,
+              builder: (_, d, __) => _carteraRow('Tiempo de visita', _cronoFormato(d), _textDark),
+            ),
             _carteraRow('Tareas asignadas', '${_tareas.length}', _textDark),
             _carteraRow('Tareas cumplidas (pedido)', '$cumplidas', AppTheme.successColor),
             _carteraRow('Productos requeridos', '$req', _textDark),

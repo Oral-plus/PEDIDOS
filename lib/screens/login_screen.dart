@@ -112,7 +112,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     setState(() => _isLoading = false);
 
     if (result['success'] == true && _api.hasSession) {
-      // Soporte TI → plataforma de mantenimiento; vendedor → menú de cliente.
+      // Soporte TI -> plataforma de mantenimiento; vendedor -> menú de cliente.
       final Widget destino =
           _api.esSoporte ? const MantenimientoScreen() : const ClientMenuScreen();
       Navigator.of(context).pushReplacement(
@@ -120,7 +120,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
           pageBuilder: (_, __, ___) => destino,
           transitionsBuilder: (_, a, __, c) =>
               FadeTransition(opacity: a, child: c),
-          transitionDuration: const Duration(milliseconds: 400),
+          transitionDuration: const Duration(milliseconds: 250),
         ),
       );
     } else if (result['needsActivation'] == true) {

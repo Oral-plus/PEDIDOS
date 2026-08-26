@@ -10,6 +10,18 @@ import '../utils/csv_save_io.dart' if (dart.library.html) '../utils/csv_save_web
 
 /// Genera comprobantes de pedido: PDF (con logo) y CSV (para Excel).
 class OrderReceiptService {
+  // El logo se lee del bundle una sola vez
+  static Uint8List? _logoBytes;
+
+  static Future<Uint8List?> _cargarLogo() async {
+    if (_logoBytes != null) return _logoBytes;
+    try {
+      final data = await rootBundle.load(AppAssets.logo);
+      _logoBytes = data.buffer.asUint8List();
+    } catch (_) {}
+    return _logoBytes;
+  }
+
   /// Genera un PDF con el logo ORAL-PLUS y el detalle del pedido.
   static Future<void> generateAndSavePdf({
     required String clientName,
@@ -26,11 +38,10 @@ class OrderReceiptService {
     final formatter = NumberFormat('#,##0', 'es_CO');
 
     pw.Widget logoWidget = pw.SizedBox.shrink();
-    try {
-      final data = await rootBundle.load(AppAssets.logo);
-      final bytes = data.buffer.asUint8List();
-      logoWidget = pw.Image(pw.MemoryImage(bytes), width: 120, height: 48, fit: pw.BoxFit.contain);
-    } catch (_) {}
+    final logoBytes = await _cargarLogo();
+    if (logoBytes != null) {
+      logoWidget = pw.Image(pw.MemoryImage(logoBytes), width: 120, height: 48, fit: pw.BoxFit.contain);
+    }
 
     pdf.addPage(
       pw.MultiPage(
@@ -135,11 +146,10 @@ class OrderReceiptService {
     }
 
     pw.Widget logoWidget = pw.SizedBox.shrink();
-    try {
-      final data = await rootBundle.load(AppAssets.logo);
-      final bytes = data.buffer.asUint8List();
-      logoWidget = pw.Image(pw.MemoryImage(bytes), width: 120, height: 48, fit: pw.BoxFit.contain);
-    } catch (_) {}
+    final logoBytes = await _cargarLogo();
+    if (logoBytes != null) {
+      logoWidget = pw.Image(pw.MemoryImage(logoBytes), width: 120, height: 48, fit: pw.BoxFit.contain);
+    }
 
     final clientName = pedido['nombreCliente']?.toString() ?? '—';
     final cedula = pedido['cedulaCliente']?.toString() ?? pedido['codigoCliente']?.toString() ?? '—';

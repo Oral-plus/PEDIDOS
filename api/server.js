@@ -5,31 +5,36 @@ const jwt = require("jsonwebtoken")
 const sql = require("mssql")
 const crypto = require("crypto")
 const helmet = require("helmet")
+const compression = require("compression")
 const rateLimit = require("express-rate-limit")
 const dispositivos = require("./modules/dispositivos")
+const productos = require("./modules/productos")
 require("dotenv").config()
 
 const app = express()
-// Detrás del reverse proxy (pedidos.oral-plus.com) las peticiones llegan con
-// X-Forwarded-For; sin esto el rate-limit contaría a todos los usuarios como
-// una sola IP (la del proxy) y bloquearía los logins de toda la empresa.
+// Detrás del reverse proxy: necesario para que el rate-limit vea la IP real
 app.set("trust proxy", 1)
 const PORT = process.env.PORT || 3000
 const JWT_SECRET = process.env.JWT_SECRET
-// Duracion de la sesion (formato jsonwebtoken: "24h", "7d", etc.)
+
+// Nivel de log (LOG_LEVEL=info|warn). En producción solo avisos y errores:
+// console.log escribe de forma síncrona y frena las respuestas cuando la
+// salida va a un archivo. Los mensajes de arranque usan console.info.
+const LOG_LEVEL = (process.env.LOG_LEVEL || (process.env.NODE_ENV === "production" ? "warn" : "info")).toLowerCase()
+if (LOG_LEVEL === "warn" || LOG_LEVEL === "error") {
+  console.log = () => {}
+}
+// Duración de la sesión (formato de jsonwebtoken: "24h", "7d")
 const SESSION_TIMEOUT = process.env.SESSION_TIMEOUT || "24h"
 
-// Los secretos viven SOLO en api/.env — sin ellos el servidor no arranca
+// Sin estas variables el servidor no debe arrancar
 if (!JWT_SECRET || !process.env.DB_PASSWORD) {
-  console.error("❌ Falta JWT_SECRET o DB_PASSWORD. Copia api/.env.example a api/.env y completa los valores.")
+  console.error("Falta JWT_SECRET o DB_PASSWORD. Revisa el archivo api/.env.")
   process.exit(1)
 }
 
-// Soporte TI: códigos de usuarios designados (ej: SOPORTE_USUARIOS=SKV263 en
-// api/.env, separados por coma). No existen cuentas ni contraseñas de soporte
-// en el código ni en el .env: son usuarios normales (BD usuarios / vendedores
-// SAP) que al iniciar sesión con sus credenciales de siempre reciben el rol
-// "soporte" para administrar la activación de dispositivos.
+// Usuarios de Soporte TI (SOPORTE_USUARIOS en .env, separados por coma).
+// Son usuarios normales; al iniciar sesión reciben el rol "soporte".
 const SOPORTE_USUARIOS = (process.env.SOPORTE_USUARIOS || "")
   .split(",")
   .map((s) => s.trim().toUpperCase())
@@ -38,7 +43,69 @@ const SOPORTE_USUARIOS = (process.env.SOPORTE_USUARIOS || "")
 const esSoporte = (...ids) =>
   ids.some((v) => v != null && String(v).trim() !== "" && SOPORTE_USUARIOS.includes(String(v).trim().toUpperCase()))
 
-// Configuración de la base de datos principal (SkyPagos - usuarios, auth, etc.)
+// Caché en memoria con vencimiento y tamaño máximo; al llenarse descarta lo
+// menos usado. Sustituye a los Map que crecían sin límite.
+class CacheTTL {
+  constructor(max, ttlMs) {
+    this.max = max
+    this.ttl = ttlMs
+    this.mapa = new Map()
+  }
+  get(clave) {
+    const e = this.mapa.get(clave)
+    if (!e) return undefined
+    if (Date.now() > e.vence) {
+      this.mapa.delete(clave)
+      return undefined
+    }
+    // Se reinserta para que quede como la más reciente
+    this.mapa.delete(clave)
+    this.mapa.set(clave, e)
+    return e.valor
+  }
+  has(clave) {
+    return this.get(clave) !== undefined
+  }
+  set(clave, valor) {
+    if (this.mapa.has(clave)) this.mapa.delete(clave)
+    this.mapa.set(clave, { valor, vence: Date.now() + this.ttl })
+    if (this.mapa.size > this.max) this.mapa.delete(this.mapa.keys().next().value)
+  }
+  delete(clave) {
+    this.mapa.delete(clave)
+  }
+}
+
+// Catálogos SAP que casi no cambian (canales de distribución)
+const catalogoSapCache = new CacheTTL(1000, 24 * 60 * 60 * 1000)
+
+// Inserta muchas filas con un solo INSERT ... VALUES (...), (...) por lotes,
+// dentro del límite de parámetros de SQL Server. valoresFila devuelve
+// [[tipo, valor], ...] en el orden de columnas.
+async function insertarFilas(crearRequest, tabla, columnas, filas, valoresFila, filasPorLote = 200) {
+  for (let i = 0; i < filas.length; i += filasPorLote) {
+    const lote = filas.slice(i, i + filasPorLote)
+    const req = crearRequest()
+    const grupos = lote.map((fila, j) => {
+      const params = valoresFila(fila).map(([tipo, valor], k) => {
+        const nombre = `p${j}_${k}`
+        req.input(nombre, tipo, valor)
+        return `@${nombre}`
+      })
+      return `(${params.join(", ")})`
+    })
+    await req.query(`INSERT INTO ${tabla} (${columnas.join(", ")}) VALUES ${grupos.join(", ")}`)
+  }
+}
+
+// Límite de filas pedido por query string, acotado a un máximo
+function limiteDesdeQuery(valor, porDefecto, maximo) {
+  const n = Number.parseInt(valor, 10)
+  if (Number.isNaN(n) || n <= 0) return porDefecto
+  return Math.min(n, maximo)
+}
+
+// BD SkyPagos (usuarios y autenticación)
 const dbConfig = {
   server: process.env.DB_SERVER,
   database: process.env.DB_NAME || "SkyPagos",
@@ -54,12 +121,13 @@ const dbConfig = {
   },
   pool: {
     max: 10,
-    min: 0,
-    idleTimeoutMillis: 30000,
+    min: 2,
+    idleTimeoutMillis: 300000,
+    acquireTimeoutMillis: 15000,
   },
 }
 
-// Configuración de la base de datos de PEDIDOS (BD independiente)
+// BD Pedidos
 const pedidosDbConfig = {
   server: process.env.DB_SERVER,
   database: process.env.PEDIDOS_DB_NAME || "Pedidos",
@@ -75,51 +143,62 @@ const pedidosDbConfig = {
   },
   pool: {
     max: 10,
-    min: 0,
-    idleTimeoutMillis: 30000,
+    min: 2,
+    idleTimeoutMillis: 300000,
+    acquireTimeoutMillis: 15000,
   },
 }
 
 // Middleware de seguridad
 app.use(helmet())
+// Respuestas JSON comprimidas (las listas de clientes y pedidos pesan cientos de KB)
+app.use(compression({ threshold: 1024 }))
 app.use(
   cors({
-    origin: "*", // Permitir cualquier origen
+    origin: "*",
     credentials: true,
   }),
 )
-app.use(express.json({ limit: "10mb" }))
+// El cuerpo más grande es la lista de productos de un pedido (unos KB);
+// un límite alto obliga a parsear en memoria cuerpos enormes.
+app.use(express.json({ limit: "512kb" }))
 app.use(express.urlencoded({ extended: true }))
 
-/// Rate limiting global (puedes reducir esto también si lo necesitas)
+// Rate limit general: 600 peticiones por minuto por IP
 const limiter = rateLimit({
-  windowMs: 1000, // 1 segundo
-  max: 100, // máximo 100 requests por segundo
+  windowMs: 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: {
-    error: "Demasiadas solicitudes, intenta nuevamente en 1 segundo",
+    error: "Demasiadas solicitudes, intenta nuevamente en un minuto",
   },
 })
 app.use("/api/", limiter)
 
-// Rate limiting específico para login
+// Un dispositivo desactivado o eliminado por Soporte deja de servir de
+// inmediato, no cuando caduque el token (el estado se cachea un minuto)
+app.use("/api/", dispositivos.controlEstadoMiddleware(jwt, JWT_SECRET, () => pedidosPool, sql))
+
+// Rate limit para login: 50 intentos cada 15 minutos por IP
 const loginLimiter = rateLimit({
-  windowMs: 1000, // 1 segundo
-  max: 5, // máximo 5 intentos de login por segundo por IP
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: {
-    error: "Demasiados intentos de login, intenta nuevamente en 1 segundo",
+    error: "Demasiados intentos de login, intenta nuevamente en unos minutos",
   },
 })
 
-// Conexión a la base de datos principal (SkyPagos)
+// Pools de conexión
 let pool
-
-// Conexión a la base de datos de Pedidos (BD separada)
 let pedidosPool
 
 async function connectDB() {
   try {
     pool = await sql.connect(dbConfig)
-    console.log("✅ Conectado a SQL Server [SkyPagos] exitosamente")
+    console.info("Conectado a SQL Server (SkyPagos)")
 
     const result = await pool.request().query(`
       SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.TABLES 
@@ -127,10 +206,10 @@ async function connectDB() {
     `)
 
     if (result.recordset[0].count < 3) {
-      console.log("⚠️  Advertencia: Algunas tablas de SkyPagos no existen.")
+      console.log("Faltan tablas en la BD SkyPagos")
     }
   } catch (err) {
-    console.error("❌ Error conectando a SkyPagos:", err.message)
+    console.error("Error conectando a SkyPagos:", err.message)
     process.exit(1)
   }
 }
@@ -138,13 +217,12 @@ async function connectDB() {
 async function connectPedidosDB() {
   try {
     pedidosPool = await new sql.ConnectionPool(pedidosDbConfig).connect()
-    console.log("✅ Conectado a SQL Server [Pedidos] exitosamente")
+    console.info("Conectado a SQL Server (Pedidos)")
 
     await ensurePedidosTables()
   } catch (err) {
-    console.error("❌ Error conectando a BD Pedidos:", err.message)
-    console.log("💡 Asegúrate de ejecutar: api/sql/create_pedidos_db.sql")
-    console.log("   Intentando crear las tablas automáticamente...")
+    console.error("Error conectando a BD Pedidos:", err.message)
+    console.log("Intentando crear la BD Pedidos (ver api/sql/create_pedidos_db.sql)")
 
     try {
       const tempPool = await new sql.ConnectionPool({
@@ -158,15 +236,15 @@ async function connectPedidosDB() {
 
       if (dbExists.recordset[0].cnt === 0) {
         await tempPool.request().query(`CREATE DATABASE Pedidos`)
-        console.log("✅ Base de datos [Pedidos] creada automáticamente")
+        console.log("BD Pedidos creada")
       }
       await tempPool.close()
 
       pedidosPool = await new sql.ConnectionPool(pedidosDbConfig).connect()
       await ensurePedidosTables()
-      console.log("✅ Tablas de pedidos creadas automáticamente")
+      console.log("Tablas de pedidos creadas")
     } catch (autoErr) {
-      console.error("❌ No se pudo crear la BD Pedidos automáticamente:", autoErr.message)
+      console.error("No se pudo crear la BD Pedidos:", autoErr.message)
       process.exit(1)
     }
   }
@@ -255,11 +333,23 @@ async function ensurePedidosTables() {
     `)
     console.log("   Tabla [pedidos_historial] creada")
   }
+
+  // Índices para los listados por vendedor y por cliente (ordenan por fecha)
+  try {
+    await pedidosPool.request().query(`
+      IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_pedidos_vendedor_fecha' AND object_id = OBJECT_ID('dbo.pedidos'))
+        CREATE INDEX IX_pedidos_vendedor_fecha ON dbo.pedidos(vendedor, fecha_creacion DESC);
+      IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_pedidos_cliente_fecha' AND object_id = OBJECT_ID('dbo.pedidos'))
+        CREATE INDEX IX_pedidos_cliente_fecha ON dbo.pedidos(codigo_cliente, fecha_creacion DESC);
+      IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_historial_pedido_fecha' AND object_id = OBJECT_ID('dbo.pedidos_historial'))
+        CREATE INDEX IX_historial_pedido_fecha ON dbo.pedidos_historial(pedido_id, fecha DESC);
+    `)
+  } catch (e) {
+    console.error("No se pudieron crear los índices de pedidos:", e.message)
+  }
 }
 
-// ============================================================
-// CONEXIÓN SAP (RBOSKY3) - Para vendedores y clientes
-// ============================================================
+// SAP (RBOSKY3): vendedores y clientes
 const sapDbConfig = {
   server: process.env.DB_SERVER,
   database: process.env.SAP_DB_NAME || "RBOSKY3",
@@ -273,26 +363,35 @@ const sapDbConfig = {
     connectTimeout: 30000,
     requestTimeout: 30000,
   },
-  pool: { max: 5, min: 0, idleTimeoutMillis: 30000 },
+  pool: { max: 15, min: 2, idleTimeoutMillis: 300000, acquireTimeoutMillis: 15000 },
 }
 
 let sapPool = null
-async function connectSAP() {
-  if (sapPool && sapPool.connected) return sapPool
-  try {
-    sapPool = new sql.ConnectionPool(sapDbConfig)
-    await sapPool.connect()
-    console.log("✅ Conectado a SAP (RBOSKY3)")
-    return sapPool
-  } catch (err) {
-    console.error("❌ Error conectando a SAP:", err.message)
-    throw err
+let sapConectando = null
+// Si varias peticiones llegan sin conexión, comparten el mismo connect()
+// en vez de abrir un pool cada una.
+function connectSAP() {
+  if (sapPool && sapPool.connected) return Promise.resolve(sapPool)
+  if (!sapConectando) {
+    sapConectando = new sql.ConnectionPool(sapDbConfig)
+      .connect()
+      .then((p) => {
+        sapPool = p
+        console.info("Conectado a SAP (RBOSKY3)")
+        return p
+      })
+      .catch((err) => {
+        console.error("Error conectando a SAP:", err.message)
+        throw err
+      })
+      .finally(() => {
+        sapConectando = null
+      })
   }
+  return sapConectando
 }
 
-// Middleware de autenticación: verifica el token JWT del header Authorization.
-// Rechaza con 401 si falta o es inválido/expirado (antes era un stub que dejaba
-// pasar a todos como userId:1, dejando abiertas las rutas de pagos).
+// Verifica el JWT del header Authorization
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers.authorization
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -313,21 +412,16 @@ function generateTransactionCode() {
   return `SKY${timestamp.slice(-6)}${random}`
 }
 
-// Función para hashear PIN
 async function hashPin(pin) {
   const saltRounds = 10
   return await bcrypt.hash(pin, saltRounds)
 }
 
-// RUTAS DE AUTENTICACIÓN
+// Autenticación
 
-// Cierra el login de un vendedor/usuario normal: asocia la identidad al
-// dispositivo (por id_servicio) y aplica el gate de activación. Solo si el
-// dispositivo está ACTIVO devuelve el token; de lo contrario bloquea el ingreso.
+// Asocia el dispositivo al usuario y exige que esté ACTIVO antes de emitir el token
 async function finalizeLogin(req, res, payload, usuario) {
-  // Soporte TI: entra por este mismo flujo con sus credenciales normales; si su
-  // código está designado en SOPORTE_USUARIOS recibe el rol "soporte" y no le
-  // aplica el gate de dispositivo (él es quien activa los dispositivos).
+  // Los usuarios de soporte no pasan por el control de dispositivo
   const rolSoporte = esSoporte(
     usuario.documento,
     usuario.nombre,
@@ -358,8 +452,7 @@ async function finalizeLogin(req, res, payload, usuario) {
       )
 
       if (estado !== "ACTIVO") {
-        // 200 (no 401/403) a propósito: así el cliente recibe el cuerpo
-        // estructurado con needsActivation y el ID para mostrarlo/copiarlo.
+        // Se responde 200 para que la app reciba needsActivation y el ID
         return res.json({
           success: false,
           needsActivation: true,
@@ -369,7 +462,7 @@ async function finalizeLogin(req, res, payload, usuario) {
         })
       }
     } catch (e) {
-      console.log("⚠️ Gate de dispositivo falló:", e.message)
+      console.log("Control de dispositivo falló:", e.message)
       if (requiereDispositivo) {
         return res.status(503).json({ success: false, message: "No se pudo validar el dispositivo, intente de nuevo" })
       }
@@ -377,6 +470,9 @@ async function finalizeLogin(req, res, payload, usuario) {
   } else if (requiereDispositivo && !rolSoporte) {
     return res.status(400).json({ success: false, message: "Falta el ID de servicio del dispositivo. Actualice la aplicación." })
   }
+
+  // El dispositivo viaja en el token para poder cortar la sesión si Soporte lo desactiva
+  if (idServicio && !rolSoporte) payload.id_servicio = idServicio
 
   const token = jwt.sign(payload, JWT_SECRET, { expiresIn: SESSION_TIMEOUT })
   return res.json({
@@ -386,8 +482,7 @@ async function finalizeLogin(req, res, payload, usuario) {
   })
 }
 
-// Login (soporta usuario/password y documento/pin)
-// Intenta primero en tabla usuarios (SkyPagos), luego en vendedores SAP (RBOSKY3)
+// Login: primero tabla usuarios (SkyPagos), luego vendedores SAP
 app.post("/api/auth/login", loginLimiter, async (req, res) => {
   try {
     const usuario = (req.body.usuario || req.body.documento || "").toString().trim()
@@ -400,13 +495,9 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
       })
     }
 
-    console.log(`🔐 Intento de login: ${usuario}`)
+    console.log(`Login: ${usuario}`)
 
-    // El rol de Soporte TI ya no usa cuentas aparte: los usuarios designados en
-    // SOPORTE_USUARIOS (.env) entran por los intentos normales de abajo y
-    // finalizeLogin les asigna el rol.
-
-    // --- Intento 1: Buscar en tabla usuarios de SkyPagos ---
+    // 1) Tabla usuarios (SkyPagos)
     let user = null
     try {
       const request = pool.request()
@@ -431,7 +522,7 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
         }
 
         if (valid) {
-          console.log(`✅ Login exitoso (SkyPagos): ${user.nombre}`)
+          console.log(`Login exitoso (SkyPagos): ${user.nombre}`)
           return await finalizeLogin(
             req,
             res,
@@ -448,10 +539,10 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
         }
       }
     } catch (dbErr) {
-      console.log("⚠️ Tabla usuarios no disponible:", dbErr.message)
+      console.log("Tabla usuarios no disponible:", dbErr.message)
     }
 
-    // --- Intento 2: Login tipo SKVxx (código vendedor SKY) ---
+    // 2) Código de vendedor SKVxx
     // Formato: usuario = "SKV18", password = "SKV123" (o similar)
     const skvMatch = usuario.toUpperCase().match(/^SKV(\d+)$/)
     if (skvMatch) {
@@ -470,11 +561,11 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
 
         if (sapResult.recordset.length > 0) {
           const vendedor = sapResult.recordset[0]
-          // Aceptar password que empiece con "SKV" (ej: SKV123, SKV456)
+          // Se acepta cualquier clave que empiece por SKV
           const isValid = password.toUpperCase().startsWith("SKV") || password === "1234"
 
           if (isValid) {
-            console.log(`✅ Login exitoso (vendedor SKV): ${vendedor.SlpName}`)
+            console.log(`Login exitoso (vendedor SKV): ${vendedor.SlpName}`)
             return await finalizeLogin(
               req,
               res,
@@ -491,11 +582,11 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
           }
         }
       } catch (sapErr) {
-        console.log("⚠️ Consulta SAP vendedor SKV falló:", sapErr.message)
+        console.log("Consulta SAP vendedor SKV falló:", sapErr.message)
       }
     }
 
-    // --- Intento 3: Buscar vendedor en SAP por nombre/memo ---
+    // 3) Vendedor SAP por nombre o memo
     try {
       let sap = sapPool
       if (!sap || !sap.connected) {
@@ -512,16 +603,14 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
 
       if (sapResult.recordset.length > 0) {
         const vendedor = sapResult.recordset[0]
-        // Métodos válidos: código del vendedor, "1234" o su campo Memo.
-        // (Antes la lista incluía `password`, lo que la volvía siempre verdadera
-        // y aceptaba cualquier clave.)
+        // Claves válidas: código del vendedor, "1234" o su Memo
         const validPasswords = [
           String(vendedor.SlpCode), "1234", vendedor.Memo || "",
         ]
         const isValid = validPasswords.includes(password)
 
         if (isValid) {
-          console.log(`✅ Login exitoso (SAP vendedor): ${vendedor.SlpName}`)
+          console.log(`Login exitoso (SAP vendedor): ${vendedor.SlpName}`)
           return await finalizeLogin(
             req,
             res,
@@ -538,11 +627,11 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
         }
       }
     } catch (sapErr) {
-      console.log("⚠️ Consulta SAP vendedores falló:", sapErr.message)
+      console.log("Consulta SAP vendedores falló:", sapErr.message)
     }
 
-    // --- Ningún método funcionó ---
-    console.log(`❌ Login fallido: ${usuario}`)
+    // Ningún método funcionó
+    console.log(`Login fallido: ${usuario}`)
     return res.status(401).json({
       success: false,
       message: "Usuario o contraseña incorrectos",
@@ -562,7 +651,6 @@ app.post("/api/auth/register", async (req, res) => {
       return res.status(400).json({ error: "Todos los campos obligatorios son requeridos" })
     }
 
-    // Validaciones
     if (!/^\d{10}$/.test(telefono)) {
       return res.status(400).json({ error: "El teléfono debe tener 10 dígitos" })
     }
@@ -573,7 +661,6 @@ app.post("/api/auth/register", async (req, res) => {
 
     const request = pool.request()
 
-    // Verificar si el usuario ya existe
     const existingUser = await request
       .input("telefono", sql.NVarChar, telefono)
       .input("documento", sql.NVarChar, documento)
@@ -583,10 +670,8 @@ app.post("/api/auth/register", async (req, res) => {
       return res.status(400).json({ error: "Ya existe un usuario con ese teléfono o documento" })
     }
 
-    // Hashear PIN
     const hashedPin = await hashPin(pin)
 
-    // Insertar nuevo usuario
     const result = await request
       .input("nombre", sql.NVarChar, nombre)
       .input("apellido", sql.NVarChar, apellido)
@@ -611,7 +696,7 @@ app.post("/api/auth/register", async (req, res) => {
   }
 })
 
-// RUTAS PROTEGIDAS
+// Rutas protegidas (SkyPagos)
 
 // Obtener perfil del usuario
 app.get("/api/user/profile", authenticateToken, async (req, res) => {
@@ -680,7 +765,6 @@ app.post("/api/transactions/send", authenticateToken, async (req, res) => {
 
     const request = pool.request()
 
-    // Verificar saldo del usuario origen
     const saldoResult = await request
       .input("userId", sql.Int, userId)
       .query("SELECT saldo FROM usuarios WHERE id = @userId")
@@ -697,7 +781,6 @@ app.post("/api/transactions/send", authenticateToken, async (req, res) => {
       })
     }
 
-    // Buscar usuario destino
     const destinoResult = await request
       .input("telefono_destino", sql.NVarChar, telefono_destino)
       .query("SELECT id, nombre, apellido FROM usuarios WHERE telefono = @telefono_destino AND estado = 'ACTIVO'")
@@ -709,14 +792,12 @@ app.post("/api/transactions/send", authenticateToken, async (req, res) => {
     const userDestino = destinoResult.recordset[0]
     const codigoTransaccion = generateTransactionCode()
 
-    // Iniciar transacción
     const transaction = pool.transaction()
     await transaction.begin()
 
     try {
       const transactionRequest = transaction.request()
 
-      // Insertar transacción
       await transactionRequest
         .input("codigo_transaccion", sql.NVarChar, codigoTransaccion)
         .input("usuario_origen_id", sql.Int, userId)
@@ -735,13 +816,11 @@ app.post("/api/transactions/send", authenticateToken, async (req, res) => {
                 VALUES (@codigo_transaccion, @usuario_origen_id, @usuario_destino_id, @tipo_transaccion_id,
                         @monto, @comision, @monto_total, @descripcion, @telefono_destino, @nombre_destino, @estado, GETDATE())`)
 
-      // Actualizar saldo origen
       await transactionRequest
         .input("nuevo_saldo_origen", sql.Decimal(15, 2), saldoActual - montoTotal)
         .input("userId_origen", sql.Int, userId)
         .query("UPDATE usuarios SET saldo = @nuevo_saldo_origen WHERE id = @userId_origen")
 
-      // Actualizar saldo destino
       await transactionRequest
         .input("monto_destino", sql.Decimal(15, 2), montoNum)
         .input("userId_destino", sql.Int, userDestino.id)
@@ -789,7 +868,6 @@ app.get("/api/transactions/history", authenticateToken, async (req, res) => {
               ORDER BY t.fecha_transaccion DESC
               OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`)
 
-    // Convertir decimales a números
     const transacciones = result.recordset.map((t) => ({
       ...t,
       monto: Number.parseFloat(t.monto),
@@ -877,9 +955,7 @@ app.get("/api/notifications", authenticateToken, async (req, res) => {
   }
 })
 
-// ============================================================
-// CLIENTES - Consulta a SAP (RBOSKY3) para obtener clientes
-// ============================================================
+// Clientes (SAP)
 
 // GET /api/clientes - Lista de clientes (filtra por vendedor si hay token)
 app.get("/api/clientes", async (req, res) => {
@@ -896,32 +972,34 @@ app.get("/api/clientes", async (req, res) => {
           slpCode = decoded.userId
         }
       } catch (_) {
-        // Token presente pero inválido/expirado → sesión expirada
+        // Token inválido o expirado
         return res.status(401).json({ success: false, message: "Sesión expirada", data: [] })
       }
     }
 
-    let result
-    if (slpCode !== null) {
-      // Filtrar clientes del vendedor
-      result = await sap.request()
-        .input("slpCode", sql.Int, slpCode)
-        .query(`
-          SELECT
-            T0.CardCode  AS id,
-            T0.CardName  AS nombre,
-            T0.Address   AS direccion,
-            T0.Phone1    AS telefono,
-            T0.E_Mail    AS correo,
-            T0.Balance   AS saldo,
-            T0.City      AS ciudad
-          FROM OCRD T0
-          WHERE T0.CardType = 'C' AND T0.SlpCode = @slpCode
-          ORDER BY T0.CardName
-        `)
-    } else {
-      result = await sap.request().query(`
-        SELECT TOP 500
+    const limite = limiteDesdeQuery(req.query.limit, 1000, 5000)
+
+    // La lista siempre es la del vendedor del token. Sin sesión no hay lista,
+    // y una sesión sin código de vendedor (soporte, usuario de la tabla
+    // usuarios) recibe vacío en vez de todos los clientes de la empresa.
+    if (!authHeader) {
+      return res.status(401).json({ success: false, message: "Sesión requerida", data: [] })
+    }
+    if (slpCode === null) {
+      return res.json({
+        success: true,
+        data: [],
+        total: 0,
+        hasMore: false,
+        message: "El usuario no tiene código de vendedor asignado",
+      })
+    }
+
+    const result = await sap.request()
+      .input("slpCode", sql.Int, slpCode)
+      .input("limite", sql.Int, limite)
+      .query(`
+        SELECT TOP (@limite)
           T0.CardCode  AS id,
           T0.CardName  AS nombre,
           T0.Address   AS direccion,
@@ -930,10 +1008,9 @@ app.get("/api/clientes", async (req, res) => {
           T0.Balance   AS saldo,
           T0.City      AS ciudad
         FROM OCRD T0
-        WHERE T0.CardType = 'C'
+        WHERE T0.CardType = 'C' AND T0.SlpCode = @slpCode
         ORDER BY T0.CardName
       `)
-    }
 
     const clientes = result.recordset.map((c) => ({
       id: c.id || "",
@@ -945,8 +1022,8 @@ app.get("/api/clientes", async (req, res) => {
       ciudad: c.ciudad || "",
     }))
 
-    console.log(`📋 Clientes cargados: ${clientes.length}${slpCode ? ` (vendedor ${slpCode})` : " (todos)"}`)
-    res.json({ success: true, data: clientes, total: clientes.length })
+    console.log(`Clientes cargados: ${clientes.length} (vendedor ${slpCode})`)
+    res.json({ success: true, data: clientes, total: clientes.length, hasMore: clientes.length >= limite })
   } catch (error) {
     console.error("Error obteniendo clientes:", error.message)
     res.status(500).json({ success: false, message: "Error al obtener clientes", data: [] })
@@ -996,10 +1073,8 @@ app.get("/api/clientes/:codigo", async (req, res) => {
   }
 })
 
-// POST /api/clientes/:codigo/actualizar-datos - El vendedor corrige los datos
-// de contacto del cliente en campo. Se guarda en nuestra BD (no en SAP) y se
-// refresca la fecha de actualización de las rutas del cliente para quitar el
-// aviso de "información desactualizada".
+// POST /api/clientes/:codigo/actualizar-datos - Corrección de datos de contacto
+// hecha por el vendedor. Se guarda en nuestra BD (no en SAP).
 app.post("/api/clientes/:codigo/actualizar-datos", async (req, res) => {
   try {
     const authHeader = req.headers.authorization || ""
@@ -1063,7 +1138,7 @@ app.post("/api/clientes/:codigo/actualizar-datos", async (req, res) => {
            @nombre, @direccion, @telefono, @correo, @ciudad, @anteriores)
       `)
 
-    // Refrescar fecha de actualización de las rutas de este cliente → quita el aviso.
+    // Refresca la fecha de actualización de las rutas del cliente
     let fechaActualizacion = new Date().toISOString()
     try {
       await ruta
@@ -1074,7 +1149,7 @@ app.post("/api/clientes/:codigo/actualizar-datos", async (req, res) => {
       console.error("Aviso: no se pudo refrescar fecha_actualizacion de rutas:", e.message)
     }
 
-    console.log(`📝 Datos corregidos cliente ${clienteId} por vendedor ${slpCode}`)
+    console.log(`Datos corregidos cliente ${clienteId} por vendedor ${slpCode}`)
     res.json({
       success: true,
       message: "Datos actualizados correctamente",
@@ -1092,85 +1167,74 @@ app.get("/api/clientes/cartera/:codigo", async (req, res) => {
     const sap = await connectSAP()
     const cardCode = req.params.codigo
 
-    const clientResult = await sap.request()
-      .input("cardCode", sql.VarChar, cardCode)
-      .query(`
-        SELECT
-          T0.CardCode, T0.CardName, T0.Address, T0.Phone1, T0.E_Mail,
-          T0.Balance, T0.City, T0.SlpCode,
-          T0.GroupCode, T0.U_CANAL_DISTRIBUCION, T0.ListNum,
-          T0.CreditLine, T0.Discount
-        FROM OCRD T0
-        WHERE T0.CardCode = @cardCode
-      `)
+    // El cliente con vendedor, grupo y lista de precios en una sola consulta,
+    // y las facturas abiertas en paralelo (antes eran 6 consultas seguidas)
+    const [clientResult, factResult] = await Promise.all([
+      sap.request()
+        .input("cardCode", sql.VarChar, cardCode)
+        .query(`
+          SELECT
+            T0.CardCode, T0.CardName, T0.Address, T0.Phone1, T0.E_Mail,
+            T0.Balance, T0.City, T0.SlpCode,
+            T0.GroupCode, T0.U_CANAL_DISTRIBUCION, T0.ListNum,
+            T0.CreditLine, T0.Discount,
+            S.SlpName, G.GroupName, L.ListName
+          FROM OCRD T0
+          LEFT JOIN OSLP S ON S.SlpCode = T0.SlpCode
+          LEFT JOIN OCRG G ON G.GroupCode = T0.GroupCode
+          LEFT JOIN OPLN L ON L.ListNum = T0.ListNum
+          WHERE T0.CardCode = @cardCode
+        `),
+      sap.request()
+        .input("cardCode", sql.VarChar, cardCode)
+        .query(`
+          SELECT COUNT(*) AS total,
+            SUM(CASE WHEN T0.DocDueDate < GETDATE() THEN 1 ELSE 0 END) AS vencidas,
+            MAX(T0.DocDate) AS ultimaCompra
+          FROM OINV T0
+          WHERE T0.CardCode = @cardCode AND T0.DocStatus = 'O'
+        `)
+        .catch(() => null),
+    ])
 
     if (clientResult.recordset.length === 0) {
       return res.status(404).json({ success: false, message: "Cliente no encontrado" })
     }
 
     const client = clientResult.recordset[0]
+    const vendedorNombre = client.SlpName || "—"
 
-    // Obtener nombre del vendedor
-    let vendedorNombre = "—"
-    if (client.SlpCode) {
-      try {
-        const vResult = await sap.request()
-          .input("slpCode", sql.Int, client.SlpCode)
-          .query("SELECT SlpName FROM OSLP WHERE SlpCode = @slpCode")
-        if (vResult.recordset.length > 0) vendedorNombre = vResult.recordset[0].SlpName
-      } catch (_) {}
-    }
-
-    // Canal de distribución (U_CANAL_DISTRIBUCION → [@DISTRIBUCION]); si no hay, usar el grupo comercial (OCRG)
+    // Canal de distribución (U_CANAL_DISTRIBUCION -> @DISTRIBUCION). Es una
+    // tabla de usuario que puede no existir, por eso va aparte y en caché.
     let canalNombre = ""
     const canalCodigo = (client.U_CANAL_DISTRIBUCION || "").toString().trim() || null
     if (canalCodigo) {
-      try {
-        const cResult = await sap.request()
-          .input("canal", sql.VarChar, canalCodigo)
-          .query("SELECT Name FROM [@DISTRIBUCION] WHERE Code = @canal")
-        if (cResult.recordset.length > 0) canalNombre = (cResult.recordset[0].Name || "").trim()
-      } catch (_) {}
-    }
-    if (!canalNombre && client.GroupCode != null) {
-      try {
-        const gResult = await sap.request()
-          .input("groupCode", sql.Int, client.GroupCode)
-          .query("SELECT GroupName FROM OCRG WHERE GroupCode = @groupCode")
-        if (gResult.recordset.length > 0) canalNombre = (gResult.recordset[0].GroupName || "").trim()
-      } catch (_) {}
-    }
-
-    // Lista de precios (OCRD.ListNum → OPLN.ListName)
-    let listaNombre = ""
-    const listaCodigo = client.ListNum != null ? client.ListNum : null
-    if (listaCodigo != null) {
-      try {
-        const lResult = await sap.request()
-          .input("listNum", sql.Int, client.ListNum)
-          .query("SELECT ListName FROM OPLN WHERE ListNum = @listNum")
-        if (lResult.recordset.length > 0) listaNombre = (lResult.recordset[0].ListName || "").trim()
-      } catch (_) {}
-    }
-
-    // Facturas abiertas
-    let totalFacturas = 0, facturasVencidas = 0, ultimaCompra = null
-    try {
-      const factResult = await sap.request()
-        .input("cardCode2", sql.VarChar, cardCode)
-        .query(`
-          SELECT COUNT(*) AS total,
-            SUM(CASE WHEN T0.DocDueDate < GETDATE() THEN 1 ELSE 0 END) AS vencidas,
-            MAX(T0.DocDate) AS ultimaCompra
-          FROM OINV T0
-          WHERE T0.CardCode = @cardCode2 AND T0.DocStatus = 'O'
-        `)
-      if (factResult.recordset.length > 0) {
-        totalFacturas = factResult.recordset[0].total || 0
-        facturasVencidas = factResult.recordset[0].vencidas || 0
-        ultimaCompra = factResult.recordset[0].ultimaCompra
+      const claveCanal = `canal:${canalCodigo}`
+      let nombre = catalogoSapCache.get(claveCanal)
+      if (nombre === undefined) {
+        nombre = ""
+        try {
+          const cResult = await sap.request()
+            .input("canal", sql.VarChar, canalCodigo)
+            .query("SELECT Name FROM [@DISTRIBUCION] WHERE Code = @canal")
+          if (cResult.recordset.length > 0) nombre = (cResult.recordset[0].Name || "").trim()
+        } catch (_) {}
+        catalogoSapCache.set(claveCanal, nombre)
       }
-    } catch (_) {}
+      canalNombre = nombre
+    }
+    // Si no hay canal, se usa el grupo comercial (OCRG)
+    if (!canalNombre && client.GroupName) canalNombre = (client.GroupName || "").trim()
+
+    const listaCodigo = client.ListNum != null ? client.ListNum : null
+    const listaNombre = (client.ListName || "").trim()
+
+    let totalFacturas = 0, facturasVencidas = 0, ultimaCompra = null
+    if (factResult && factResult.recordset.length > 0) {
+      totalFacturas = factResult.recordset[0].total || 0
+      facturasVencidas = factResult.recordset[0].vencidas || 0
+      ultimaCompra = factResult.recordset[0].ultimaCompra
+    }
 
     res.json({
       success: true,
@@ -1199,14 +1263,17 @@ app.get("/api/clientes/cartera/:codigo", async (req, res) => {
   }
 })
 
-// GET /api/clientes/:codigo/documentos - Facturas abiertas (para recaudos).
-// Devuelve cada documento con saldo pendiente, fechas y días de vencimiento.
+// GET /api/clientes/:codigo/documentos - Facturas abiertas con saldo y vencimiento (recaudos)
 app.get("/api/clientes/:codigo/documentos", async (req, res) => {
   try {
     const sap = await connectSAP()
     const cardCode = req.params.codigo
-    const result = await sap.request().input("cardCode", sql.VarChar, cardCode).query(`
-      SELECT T0.DocEntry, T0.DocNum, T0.NumAtCard,
+    const limite = limiteDesdeQuery(req.query.limit, 500, 2000)
+    const result = await sap.request()
+      .input("cardCode", sql.VarChar, cardCode)
+      .input("limite", sql.Int, limite)
+      .query(`
+      SELECT TOP (@limite) T0.DocEntry, T0.DocNum, T0.NumAtCard,
              CONVERT(VARCHAR(10), T0.DocDate, 120)     AS docDate,
              CONVERT(VARCHAR(10), T0.DocDueDate, 120)  AS dueDate,
              T0.DocTotal, T0.PaidToDate,
@@ -1230,7 +1297,7 @@ app.get("/api/clientes/:codigo/documentos", async (req, res) => {
       vencida: (d.diasVencimiento || 0) < 0,
     }))
     const totalSaldo = documentos.reduce((a, d) => a + d.saldo, 0)
-    console.log(`📄 Documentos abiertos cliente ${cardCode}: ${documentos.length} (saldo ${totalSaldo})`)
+    console.log(`Documentos abiertos cliente ${cardCode}: ${documentos.length} (saldo ${totalSaldo})`)
     res.json({ success: true, data: documentos, total: documentos.length, totalSaldo })
   } catch (error) {
     console.error("Error obteniendo documentos:", error.message)
@@ -1272,6 +1339,10 @@ async function ensureRecaudosTablas() {
       abono           DECIMAL(18,2) NULL,
       due_date        NVARCHAR(20)  NULL
     );
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_recaudos_doc_recaudo' AND object_id = OBJECT_ID('dbo.recaudos_documentos'))
+      CREATE INDEX IX_recaudos_doc_recaudo ON dbo.recaudos_documentos(recaudo_id);
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_recaudos_cliente_fecha' AND object_id = OBJECT_ID('dbo.recaudos'))
+      CREATE INDEX IX_recaudos_cliente_fecha ON dbo.recaudos(cliente_id, fecha DESC);
   `)
   recaudosTablasListas = true
 }
@@ -1303,7 +1374,12 @@ app.post("/api/recaudos", async (req, res) => {
 
     await ensureRecaudosTablas()
 
-    const cab = await pedidosPool.request()
+    // Cabecera y documentos en una transacción: o se guarda todo o nada
+    const transaction = pedidosPool.transaction()
+    await transaction.begin()
+    let recaudoId
+    try {
+    const cab = await transaction.request()
       .input("numero", sql.NVarChar, numeroRecaudo)
       .input("clienteId", sql.NVarChar, clienteId)
       .input("clienteNombre", sql.NVarChar, (b.clienteNombre || "").toString().trim() || null)
@@ -1325,24 +1401,32 @@ app.post("/api/recaudos", async (req, res) => {
         VALUES (@numero, @clienteId, @clienteNombre, @vendId, @vendNom,
                 @formaPago, @bancoPago, @refPago, @totDocs, @totApl, @totRec, @saldo, @notas)
       `)
-    const recaudoId = cab.recordset[0].id
+    recaudoId = cab.recordset[0].id
 
-    for (const d of docs) {
-      await pedidosPool.request()
-        .input("rid", sql.Int, recaudoId)
-        .input("docEntry", sql.Int, Number.isNaN(Number.parseInt(d.docEntry, 10)) ? null : Number.parseInt(d.docEntry, 10))
-        .input("docNum", sql.NVarChar, (d.docNum || "").toString() || null)
-        .input("numFactura", sql.NVarChar, (d.numFactura || "").toString() || null)
-        .input("saldo", sql.Decimal(18, 2), num(d.saldo))
-        .input("abono", sql.Decimal(18, 2), num(d.abono))
-        .input("dueDate", sql.NVarChar, (d.dueDate || "").toString() || null)
-        .query(`
-          INSERT INTO dbo.recaudos_documentos (recaudo_id, doc_entry, doc_num, num_factura, saldo, abono, due_date)
-          VALUES (@rid, @docEntry, @docNum, @numFactura, @saldo, @abono, @dueDate)
-        `)
+    // Todos los documentos en un solo INSERT
+    await insertarFilas(
+      () => transaction.request(),
+      "dbo.recaudos_documentos",
+      ["recaudo_id", "doc_entry", "doc_num", "num_factura", "saldo", "abono", "due_date"],
+      docs,
+      (d) => [
+        [sql.Int, recaudoId],
+        [sql.Int, Number.isNaN(Number.parseInt(d.docEntry, 10)) ? null : Number.parseInt(d.docEntry, 10)],
+        [sql.NVarChar, (d.docNum || "").toString() || null],
+        [sql.NVarChar, (d.numFactura || "").toString() || null],
+        [sql.Decimal(18, 2), num(d.saldo)],
+        [sql.Decimal(18, 2), num(d.abono)],
+        [sql.NVarChar, (d.dueDate || "").toString() || null],
+      ],
+    )
+
+    await transaction.commit()
+    } catch (err) {
+      await transaction.rollback()
+      throw err
     }
 
-    console.log(`💵 Recaudo ${numeroRecaudo} #${recaudoId} cliente ${clienteId}: ${docs.length} doc(s), aplicado ${num(b.totalAplicado)}`)
+    console.log(`Recaudo ${numeroRecaudo} #${recaudoId} cliente ${clienteId}: ${docs.length} doc(s), aplicado ${num(b.totalAplicado)}`)
     res.json({ success: true, message: "Recaudo guardado correctamente", data: { id: recaudoId, numeroRecaudo } })
   } catch (error) {
     console.error("Error guardando recaudo:", error.message)
@@ -1350,9 +1434,7 @@ app.post("/api/recaudos", async (req, res) => {
   }
 })
 
-// ============================================================
-// PEDIDOS - BD "Pedidos" (completamente independiente de SkyPagos)
-// ============================================================
+// Pedidos (BD Pedidos)
 function generatePedidoNumero() {
   const now = new Date()
   const yy = String(now.getFullYear()).slice(-2)
@@ -1362,7 +1444,7 @@ function generatePedidoNumero() {
   return `PED-${yy}${mm}${dd}-${random}`
 }
 
-// Crear pedido → BD Pedidos
+// Crear pedido
 app.post("/api/orders", async (req, res) => {
   const startTime = Date.now()
   try {
@@ -1430,23 +1512,23 @@ app.post("/api/orders", async (req, res) => {
 
       const pedidoId = headerResult.recordset[0].id
 
-      for (const item of items) {
-        const reqDet = transaction.request()
-        await reqDet
-          .input("pedido_id", sql.Int, pedidoId)
-          .input("codigo_producto", sql.NVarChar, item.codigo)
-          .input("nombre_producto", sql.NVarChar, item.nombre)
-          .input("textura", sql.NVarChar, item.textura)
-          .input("cantidad", sql.Int, item.cantidad)
-          .input("precio_unitario", sql.Decimal(18, 2), item.precio)
-          .input("total_linea", sql.Decimal(18, 2), item.total)
-          .query(`
-            INSERT INTO pedidos_detalle (pedido_id, codigo_producto, nombre_producto, textura, cantidad, precio_unitario, total_linea)
-            VALUES (@pedido_id, @codigo_producto, @nombre_producto, @textura, @cantidad, @precio_unitario, @total_linea)
-          `)
-      }
+      // Todas las líneas en un solo INSERT (antes era un viaje por línea)
+      await insertarFilas(
+        () => transaction.request(),
+        "pedidos_detalle",
+        ["pedido_id", "codigo_producto", "nombre_producto", "textura", "cantidad", "precio_unitario", "total_linea"],
+        items,
+        (item) => [
+          [sql.Int, pedidoId],
+          [sql.NVarChar, item.codigo],
+          [sql.NVarChar, item.nombre],
+          [sql.NVarChar, item.textura],
+          [sql.Int, item.cantidad],
+          [sql.Decimal(18, 2), item.precio],
+          [sql.Decimal(18, 2), item.total],
+        ],
+      )
 
-      // Registrar en historial
       const reqHist = transaction.request()
       await reqHist
         .input("pedido_id", sql.Int, pedidoId)
@@ -1461,7 +1543,7 @@ app.post("/api/orders", async (req, res) => {
       await transaction.commit()
 
       const elapsed = Date.now() - startTime
-      console.log(`✅ [BD Pedidos] ${numeroPedido} - ID: ${pedidoId} - $${total.toFixed(2)} - ${elapsed}ms`)
+      console.log(`Pedido ${numeroPedido} guardado (id ${pedidoId}, $${total.toFixed(2)}, ${elapsed}ms)`)
 
       res.json({
         success: true,
@@ -1476,7 +1558,7 @@ app.post("/api/orders", async (req, res) => {
       throw err
     }
   } catch (error) {
-    console.error("❌ Error guardando pedido en BD Pedidos:", error)
+    console.error("Error guardando pedido:", error)
     res.status(500).json({
       success: false,
       message: error.message || "Error al registrar el pedido",
@@ -1484,7 +1566,7 @@ app.post("/api/orders", async (req, res) => {
   }
 })
 
-// Obtener pedidos de un cliente → BD Pedidos
+// Pedidos de un cliente
 app.get("/api/orders/:codigoCliente", async (req, res) => {
   try {
     const { codigoCliente } = req.params
@@ -1492,10 +1574,12 @@ app.get("/api/orders/:codigoCliente", async (req, res) => {
     const offset = (Number.parseInt(page) - 1) * Number.parseInt(limit)
 
     let query = `
-      SELECT p.*, 
-        (SELECT COUNT(*) FROM pedidos_detalle d WHERE d.pedido_id = p.id) as total_productos,
-        (SELECT SUM(d.cantidad) FROM pedidos_detalle d WHERE d.pedido_id = p.id) as total_unidades
+      SELECT p.*, d.total_productos, d.total_unidades
       FROM pedidos p
+      OUTER APPLY (
+        SELECT COUNT(*) AS total_productos, SUM(x.cantidad) AS total_unidades
+        FROM pedidos_detalle x WHERE x.pedido_id = p.id
+      ) d
       WHERE (p.codigo_cliente = @codigo OR p.cedula_cliente = @codigo)
     `
     const req2 = pedidosPool.request()
@@ -1519,12 +1603,12 @@ app.get("/api/orders/:codigoCliente", async (req, res) => {
       limit: Number.parseInt(limit),
     })
   } catch (error) {
-    console.error("❌ Error consultando pedidos:", error)
+    console.error("Error consultando pedidos:", error)
     res.status(500).json({ success: false, message: error.message })
   }
 })
 
-// Obtener detalle de un pedido específico → BD Pedidos
+// Detalle de un pedido
 app.get("/api/orders/detail/:numeroPedido", async (req, res) => {
   try {
     const { numeroPedido } = req.params
@@ -1557,14 +1641,12 @@ app.get("/api/orders/detail/:numeroPedido", async (req, res) => {
       historial: historial.recordset,
     })
   } catch (error) {
-    console.error("❌ Error consultando detalle de pedido:", error)
+    console.error("Error consultando detalle de pedido:", error)
     res.status(500).json({ success: false, message: error.message })
   }
 })
 
-// ============================================================
-// CONSULTA DE PEDIDOS - Historial y detalle
-// ============================================================
+// Consulta de pedidos
 
 // GET /api/orders?cliente=CODIGO - Pedidos de un cliente
 app.get("/api/orders", async (req, res) => {
@@ -1575,13 +1657,19 @@ app.get("/api/orders", async (req, res) => {
       return res.status(400).json({ success: false, message: "Código de cliente requerido", data: [] })
     }
 
+    const limite = limiteDesdeQuery(req.query.limit, 200, 1000)
+    const pagina = limiteDesdeQuery(req.query.page, 1, 100000)
+
     let query = `
       SELECT p.id, p.numero_pedido, p.codigo_cliente, p.cedula_cliente, p.nombre_cliente,
              p.direccion, p.telefono, p.correo, p.subtotal, p.iva, p.total,
              p.observaciones, p.estado, p.vendedor, p.fecha_creacion, p.fecha_actualizacion,
-             (SELECT COUNT(*) FROM pedidos_detalle d WHERE d.pedido_id = p.id) as total_productos,
-             (SELECT SUM(d.cantidad) FROM pedidos_detalle d WHERE d.pedido_id = p.id) as total_unidades
+             d.total_productos, d.total_unidades
       FROM pedidos p
+      OUTER APPLY (
+        SELECT COUNT(*) AS total_productos, SUM(x.cantidad) AS total_unidades
+        FROM pedidos_detalle x WHERE x.pedido_id = p.id
+      ) d
       WHERE p.codigo_cliente = @cliente
     `
     const reqDb = pedidosPool.request()
@@ -1592,7 +1680,9 @@ app.get("/api/orders", async (req, res) => {
       reqDb.input("estado", sql.NVarChar, estado.trim())
     }
 
-    query += " ORDER BY p.fecha_creacion DESC"
+    query += " ORDER BY p.fecha_creacion DESC OFFSET @offset ROWS FETCH NEXT @limite ROWS ONLY"
+    reqDb.input("offset", sql.Int, (pagina - 1) * limite)
+    reqDb.input("limite", sql.Int, limite)
 
     const result = await reqDb.query(query)
 
@@ -1614,7 +1704,7 @@ app.get("/api/orders", async (req, res) => {
       totalUnidades: p.total_unidades || 0,
     }))
 
-    res.json({ success: true, data: pedidos, total: pedidos.length })
+    res.json({ success: true, data: pedidos, total: pedidos.length, page: pagina, limit: limite, hasMore: pedidos.length >= limite })
   } catch (error) {
     console.error("Error obteniendo pedidos:", error.message)
     res.status(500).json({ success: false, message: "Error al obtener pedidos", data: [] })
@@ -1682,13 +1772,19 @@ app.get("/api/orders/vendedor/:nombre", async (req, res) => {
       return res.status(400).json({ success: false, message: "Nombre de vendedor requerido", data: [] })
     }
 
+    const limite = limiteDesdeQuery(req.query.limit, 200, 1000)
+    const pagina = limiteDesdeQuery(req.query.page, 1, 100000)
+
     let query = `
       SELECT p.id, p.numero_pedido, p.codigo_cliente, p.cedula_cliente, p.nombre_cliente,
              p.direccion, p.telefono, p.correo, p.subtotal, p.iva, p.total,
              p.observaciones, p.estado, p.vendedor, p.fecha_creacion, p.fecha_actualizacion,
-             (SELECT COUNT(*) FROM pedidos_detalle d WHERE d.pedido_id = p.id) as total_productos,
-             (SELECT SUM(d.cantidad) FROM pedidos_detalle d WHERE d.pedido_id = p.id) as total_unidades
+             d.total_productos, d.total_unidades
       FROM pedidos p
+      OUTER APPLY (
+        SELECT COUNT(*) AS total_productos, SUM(x.cantidad) AS total_unidades
+        FROM pedidos_detalle x WHERE x.pedido_id = p.id
+      ) d
       WHERE p.vendedor = @vendedor
     `
     const reqDb = pedidosPool.request()
@@ -1699,7 +1795,9 @@ app.get("/api/orders/vendedor/:nombre", async (req, res) => {
       reqDb.input("estado", sql.NVarChar, estado.trim())
     }
 
-    query += " ORDER BY p.fecha_creacion DESC"
+    query += " ORDER BY p.fecha_creacion DESC OFFSET @offset ROWS FETCH NEXT @limite ROWS ONLY"
+    reqDb.input("offset", sql.Int, (pagina - 1) * limite)
+    reqDb.input("limite", sql.Int, limite)
 
     const result = await reqDb.query(query)
 
@@ -1721,17 +1819,15 @@ app.get("/api/orders/vendedor/:nombre", async (req, res) => {
       totalUnidades: p.total_unidades || 0,
     }))
 
-    console.log(`📋 Pedidos vendedor "${vendedorNombre}": ${pedidos.length} encontrados`)
-    res.json({ success: true, data: pedidos, total: pedidos.length })
+    console.log(`Pedidos vendedor "${vendedorNombre}": ${pedidos.length} encontrados`)
+    res.json({ success: true, data: pedidos, total: pedidos.length, page: pagina, limit: limite, hasMore: pedidos.length >= limite })
   } catch (error) {
     console.error("Error obteniendo pedidos del vendedor:", error.message)
     res.status(500).json({ success: false, message: "Error al obtener pedidos del vendedor", data: [] })
   }
 })
 
-// ============================================================
-// CONEXIÓN BD RUTA (rutero) - rutas programadas de vendedores
-// ============================================================
+// BD Ruta (rutero)
 const rutaDbConfig = {
   server: process.env.DB_SERVER,
   database: process.env.RUTA_DB_NAME || "Ruta",
@@ -1745,20 +1841,29 @@ const rutaDbConfig = {
     connectTimeout: 30000,
     requestTimeout: 30000,
   },
-  pool: { max: 5, min: 0, idleTimeoutMillis: 30000 },
+  pool: { max: 15, min: 2, idleTimeoutMillis: 300000, acquireTimeoutMillis: 15000 },
 }
 
 let rutaPool = null
-async function connectRuta() {
-  if (rutaPool && rutaPool.connected) return rutaPool
-  rutaPool = new sql.ConnectionPool(rutaDbConfig)
-  await rutaPool.connect()
-  console.log("✅ Conectado a BD Ruta (rutero)")
-  return rutaPool
+let rutaConectando = null
+function connectRuta() {
+  if (rutaPool && rutaPool.connected) return Promise.resolve(rutaPool)
+  if (!rutaConectando) {
+    rutaConectando = new sql.ConnectionPool(rutaDbConfig)
+      .connect()
+      .then((p) => {
+        rutaPool = p
+        console.info("Conectado a BD Ruta (rutero)")
+        return p
+      })
+      .finally(() => {
+        rutaConectando = null
+      })
+  }
+  return rutaConectando
 }
 
-// Columnas para soportar "rutas extra" (urgencias). Se agregan de forma
-// segura solo si no existen, sin afectar a RUTERO. Nullable / con default.
+// Columnas para rutas extra (urgencias); se agregan solo si no existen
 let rutasExtraColsListas = false
 async function ensureRutasExtraCols(pool) {
   if (rutasExtraColsListas) return
@@ -1771,10 +1876,21 @@ async function ensureRutasExtraCols(pool) {
       ALTER TABLE dbo.rutas ADD observacion NVARCHAR(MAX) NULL;
   `)
   rutasExtraColsListas = true
+
+  // Las rutas se consultan por vendedor o por cliente, ordenadas por fecha
+  try {
+    await pool.request().query(`
+      IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_rutas_vendedor_fecha' AND object_id = OBJECT_ID('dbo.rutas'))
+        CREATE INDEX IX_rutas_vendedor_fecha ON dbo.rutas(vendedor_id, fecha_programada DESC);
+      IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_rutas_cliente_fecha' AND object_id = OBJECT_ID('dbo.rutas'))
+        CREATE INDEX IX_rutas_cliente_fecha ON dbo.rutas(cliente_id, fecha_programada DESC);
+    `)
+  } catch (e) {
+    console.error("No se pudieron crear los índices de rutas:", e.message)
+  }
 }
 
-// Tabla para registrar correcciones de datos de clientes hechas por el
-// vendedor en campo (NO se escribe en SAP; un admin las aplica luego).
+// Correcciones de datos de clientes hechas por el vendedor (no se escriben en SAP)
 let actualizacionesTablaLista = false
 async function ensureActualizacionesTabla(pool) {
   if (actualizacionesTablaLista) return
@@ -1799,8 +1915,7 @@ async function ensureActualizacionesTabla(pool) {
   actualizacionesTablaLista = true
 }
 
-// Tablas dedicadas para las encuestas de visita: una cabecera por encuesta
-// respondida y una fila por cada respuesta (para poder consultar/reportar).
+// Encuestas de visita: cabecera + una fila por respuesta
 let encuestasTablasListas = false
 async function ensureEncuestasTablas(pool) {
   if (encuestasTablasListas) return
@@ -1827,11 +1942,13 @@ async function ensureEncuestasTablas(pool) {
     );
     IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_encuestas_resp_encuesta')
       CREATE INDEX IX_encuestas_resp_encuesta ON dbo.encuestas_respuestas(encuesta_id);
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_encuestas_cliente' AND object_id = OBJECT_ID('dbo.encuestas_visitas'))
+      CREATE INDEX IX_encuestas_cliente ON dbo.encuestas_visitas(cliente_id, id DESC);
   `)
   encuestasTablasListas = true
 }
 
-// Extraer SlpCode del vendedor desde el token JWT (mismo patrón que /api/clientes)
+// SlpCode del vendedor desde el token
 function getSlpCodeFromToken(req) {
   const authHeader = req.headers.authorization
   if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -1908,9 +2025,8 @@ app.get("/api/rutas/mias", async (req, res) => {
     const request = ruta.request().input("slpCode", sql.Int, slpCode)
     let filtroFecha = ""
     if (inicio && fin) {
-      // Fechas como texto local naive (sin zona horaria): el driver mssql
-      // convierte los Date de JS a UTC y desplazaba la ventana +5h, dejando
-      // fuera las rutas programadas a medianoche (00:00).
+      // Fechas como texto local (sin zona horaria): el driver las convertía a UTC
+      // y dejaba fuera las rutas programadas a medianoche
       const toLocalIso = (d) =>
         `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T00:00:00`
       request.input("inicio", sql.VarChar, toLocalIso(inicio))
@@ -1927,7 +2043,8 @@ app.get("/api/rutas/mias", async (req, res) => {
              CONVERT(VARCHAR(19), r.fecha_actualizacion, 126) AS fecha_actualizacion,
              (SELECT COUNT(*) FROM visitas_clientes v
               WHERE v.cliente_id = r.cliente_id
-                AND CAST(v.fecha AS DATE) = CAST(GETDATE() AS DATE)) AS visitas_hoy
+                AND v.fecha >= CAST(GETDATE() AS DATE)
+                AND v.fecha < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))) AS visitas_hoy
       FROM rutas r
       WHERE r.vendedor_id = @slpCode ${filtroFecha}
       ORDER BY r.fecha_programada DESC, r.hora_visita ASC
@@ -1938,7 +2055,7 @@ app.get("/api/rutas/mias", async (req, res) => {
     const canceladas = rutas.filter((r) => esCancelada(r.estado)).length
     const clientesUnicos = new Set(rutas.map((r) => r.clienteId).filter(Boolean)).size
 
-    console.log(`🗺️ Rutas vendedor ${slpCode} (${periodo}): ${rutas.length}`)
+    console.log(`Rutas vendedor ${slpCode} (${periodo}): ${rutas.length}`)
     res.json({
       success: true,
       periodo,
@@ -1955,8 +2072,7 @@ app.get("/api/rutas/mias", async (req, res) => {
 })
 
 // POST /api/rutas/extra - Crear una ruta adicional de urgencia.
-// Requiere cliente + motivo (por qué visita) + observación. Queda marcada
-// como es_extra=1 para diferenciarla de la ruta planificada.
+// Requiere cliente, motivo y observación. Queda marcada con es_extra=1
 app.post("/api/rutas/extra", async (req, res) => {
   try {
     const authHeader = req.headers.authorization || ""
@@ -2019,7 +2135,7 @@ app.post("/api/rutas/extra", async (req, res) => {
       `)
 
     const nuevoId = result.recordset[0].id
-    console.log(`➕ Ruta EXTRA #${nuevoId} vendedor ${slpCode} · cliente ${clienteId} · motivo: ${motivo}`)
+    console.log(`Ruta EXTRA #${nuevoId} vendedor ${slpCode} · cliente ${clienteId} · motivo: ${motivo}`)
     res.json({ success: true, message: "Ruta extra agregada correctamente", data: { id: nuevoId } })
   } catch (error) {
     console.error("Error creando ruta extra:", error.message)
@@ -2028,26 +2144,33 @@ app.post("/api/rutas/extra", async (req, res) => {
 })
 
 // GET /api/clientes/:codigo/tareas - Tareas asignadas al cliente (RUTERO)
+let tareasTablaExiste = false
 app.get("/api/clientes/:codigo/tareas", async (req, res) => {
   try {
     const codigo = req.params.codigo
     const ruta = await connectRuta()
 
-    // La tabla tareas_asignadas_clientes puede no existir aún en algunos entornos
-    const existe = await ruta.request().query(`
-      SELECT COUNT(*) AS n FROM sys.tables WHERE name = 'tareas_asignadas_clientes'
-    `)
-    if (!existe.recordset[0].n) {
+    // La tabla tareas_asignadas_clientes puede no existir aún en algunos
+    // entornos; se comprueba una sola vez por proceso.
+    if (!tareasTablaExiste) {
+      const existe = await ruta.request().query(`
+        SELECT COUNT(*) AS n FROM sys.tables WHERE name = 'tareas_asignadas_clientes'
+      `)
+      tareasTablaExiste = existe.recordset[0].n > 0
+    }
+    if (!tareasTablaExiste) {
       return res.json({
         success: true,
         data: { tareas: [], total: 0, cumplidas: 0, activas: 0, promedio: 0 },
       })
     }
 
+    const limite = limiteDesdeQuery(req.query.limit, 200, 1000)
     const result = await ruta.request()
       .input("clienteId", sql.VarChar, codigo)
+      .input("limite", sql.Int, limite)
       .query(`
-        SELECT id, tarea, lista, subcanal, vendedor, coach,
+        SELECT TOP (@limite) id, tarea, lista, subcanal, vendedor, coach,
                ISNULL(cumplida, 0) AS cumplida,
                ISNULL(activa, 1) AS activa,
                porcentaje_final, comentario, estado_vendedor,
@@ -2084,7 +2207,7 @@ app.get("/api/clientes/:codigo/tareas", async (req, res) => {
       ? Math.round(tareas.reduce((a, t) => a + (t.porcentajeFinal || 0), 0) / tareas.length)
       : 0
 
-    console.log(`📝 Tareas cliente ${codigo}: ${tareas.length} (${cumplidas} cumplidas)`)
+    console.log(`Tareas cliente ${codigo}: ${tareas.length} (${cumplidas} cumplidas)`)
     res.json({
       success: true,
       data: { tareas, total: tareas.length, cumplidas, activas, promedio },
@@ -2141,6 +2264,18 @@ async function ensureVisitasTabla(pool) {
       ALTER TABLE dbo.visitas_clientes ADD referencia_pago NVARCHAR(120) NULL;
   `)
   visitasTablaLista = true
+
+  // Las consultas de visitas filtran por cliente o vendedor y ordenan por fecha
+  try {
+    await pool.request().query(`
+      IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_visitas_cliente_fecha' AND object_id = OBJECT_ID('dbo.visitas_clientes'))
+        CREATE INDEX IX_visitas_cliente_fecha ON dbo.visitas_clientes(cliente_id, fecha DESC);
+      IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_visitas_vendedor_fecha' AND object_id = OBJECT_ID('dbo.visitas_clientes'))
+        CREATE INDEX IX_visitas_vendedor_fecha ON dbo.visitas_clientes(vendedor_id, fecha DESC);
+    `)
+  } catch (e) {
+    console.error("No se pudieron crear los índices de visitas:", e.message)
+  }
 }
 
 // GET /api/clientes/:codigo/visitas-hoy - ¿Cuántas visitas se registraron hoy?
@@ -2152,7 +2287,9 @@ app.get("/api/clientes/:codigo/visitas-hoy", async (req, res) => {
       SELECT COUNT(*) AS total,
              MAX(CONVERT(VARCHAR(19), fecha, 120)) AS ultima
       FROM visitas_clientes
-      WHERE cliente_id = @cliente AND CAST(fecha AS DATE) = CAST(GETDATE() AS DATE)
+      WHERE cliente_id = @cliente
+        AND fecha >= CAST(GETDATE() AS DATE)
+        AND fecha < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
     `)
     const row = r.recordset[0]
     res.json({
@@ -2296,11 +2433,9 @@ app.post("/api/clientes/:codigo/visita", async (req, res) => {
       `)
 
     const row = insert.recordset[0]
-    console.log(`✅ Visita registrada cliente ${codigo}: estado=${estado || "-"} motivo=${motivo || "-"} recaudo=${Number.isNaN(totalRecaudos) ? 0 : totalRecaudos} pago=${metodoPago || "-"}${bancoPago ? "/" + bancoPago : ""}${referenciaPago ? " ref:" + referenciaPago : ""} dur=${duracionSeg || 0}s vend=${slpCode}`)
+    console.log(`Visita registrada cliente ${codigo}: estado=${estado || "-"} motivo=${motivo || "-"} recaudo=${Number.isNaN(totalRecaudos) ? 0 : totalRecaudos} pago=${metodoPago || "-"}${bancoPago ? "/" + bancoPago : ""}${referenciaPago ? " ref:" + referenciaPago : ""} dur=${duracionSeg || 0}s vend=${slpCode}`)
 
-    // Guardar la encuesta en sus tablas dedicadas (cabecera + una fila por
-    // respuesta). No es crítico para la visita: si falla, se registra y se
-    // continúa (el JSON queda igual en visitas_clientes como respaldo).
+    // La encuesta se guarda aparte; si falla, la visita igual queda registrada
     if (encuestaRespuestas) {
       try {
         await ensureEncuestasTablas(ruta)
@@ -2329,20 +2464,19 @@ app.post("/api/clientes/:codigo/visita", async (req, res) => {
           `)
         const encuestaId = encIns.recordset[0].id
 
-        for (const [pid, val] of Object.entries(respuestas)) {
-          const valStr = val == null
-            ? null
-            : (typeof val === "object" ? JSON.stringify(val) : String(val))
-          await ruta.request()
-            .input("encId", sql.Int, encuestaId)
-            .input("pid", sql.NVarChar, pid.toString().slice(0, 80))
-            .input("val", sql.NVarChar, valStr)
-            .query(`
-              INSERT INTO dbo.encuestas_respuestas (encuesta_id, pregunta_id, respuesta)
-              VALUES (@encId, @pid, @val)
-            `)
-        }
-        console.log(`📋 Encuesta #${encuestaId} guardada (visita ${row.id}): ${Object.keys(respuestas).length} respuestas`)
+        // Todas las respuestas en un solo INSERT
+        await insertarFilas(
+          () => ruta.request(),
+          "dbo.encuestas_respuestas",
+          ["encuesta_id", "pregunta_id", "respuesta"],
+          Object.entries(respuestas),
+          ([pid, val]) => [
+            [sql.Int, encuestaId],
+            [sql.NVarChar, pid.toString().slice(0, 80)],
+            [sql.NVarChar, val == null ? null : (typeof val === "object" ? JSON.stringify(val) : String(val))],
+          ],
+        )
+        console.log(`Encuesta #${encuestaId} guardada (visita ${row.id}): ${Object.keys(respuestas).length} respuestas`)
       } catch (e) {
         console.error("Aviso: no se pudo guardar la encuesta estructurada:", e.message)
       }
@@ -2358,8 +2492,7 @@ app.post("/api/clientes/:codigo/visita", async (req, res) => {
   }
 })
 
-// Tabla para la gestión de pedido de la visita (liquidación, condiciones,
-// evidencias, forma de pago). Vive en la BD de Pedidos.
+// Gestión del pedido de la visita (liquidación, condiciones, evidencias, forma de pago)
 let pedidosGestionTablaLista = false
 async function ensurePedidosGestionTabla() {
   if (pedidosGestionTablaLista) return
@@ -2391,9 +2524,7 @@ async function ensurePedidosGestionTabla() {
   pedidosGestionTablaLista = true
 }
 
-// POST /api/pedidos/gestion - Guarda la gestión del pedido hecha en la visita:
-// liquidación (subtotal/descuento/impuesto/flete/total), condiciones (plazo,
-// fecha de entrega, observaciones), forma de pago y # de evidencias.
+// POST /api/pedidos/gestion - Guarda la gestión del pedido hecha en la visita
 app.post("/api/pedidos/gestion", async (req, res) => {
   try {
     const authHeader = req.headers.authorization || ""
@@ -2455,7 +2586,7 @@ app.post("/api/pedidos/gestion", async (req, res) => {
 
     const id = result.recordset[0].id
     const estadoFinal = (b.estado || "GUARDADO").toString().toUpperCase()
-    console.log(`🧾 Gestión de pedido #${id} cliente ${clienteId} total ${num(b.total)} estado ${estadoFinal} vend ${slpCode}`)
+    console.log(`Gestión de pedido #${id} cliente ${clienteId} total ${num(b.total)} estado ${estadoFinal} vend ${slpCode}`)
     res.json({ success: true, message: "Pedido guardado correctamente", data: { id, estado: estadoFinal } })
   } catch (error) {
     console.error("Error guardando gestión de pedido:", error.message)
@@ -2463,8 +2594,7 @@ app.post("/api/pedidos/gestion", async (req, res) => {
   }
 })
 
-// GET /api/encuestas?limit=N&cliente=CODE - Encuestas registradas (cabecera +
-// respuestas). Para verificar/reportar los registros guardados.
+// GET /api/encuestas?limit=N&cliente=CODE - Encuestas registradas (cabecera + respuestas)
 app.get("/api/encuestas", async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 50, 1), 500)
@@ -2513,14 +2643,12 @@ app.get("/api/encuestas", async (req, res) => {
   }
 })
 
-// GET /api/clientes/:codigo/pedidos-total?desde=ISO - Total de pedidos del cliente
-// (desde una fecha; usado para "Total pedidos" de la visita en curso)
+// GET /api/clientes/:codigo/pedidos-total?desde=ISO - Total de pedidos del cliente desde una fecha
 app.get("/api/clientes/:codigo/pedidos-total", async (req, res) => {
   try {
     const codigo = req.params.codigo
-    // La fecha llega como hora LOCAL naive ("2026-07-07T11:30:00.000"), igual
-    // que fecha_creacion (GETDATE() local). Se compara con CONVERT para no
-    // introducir desfases de zona horaria (UTC vs local).
+    // La fecha llega en hora local, igual que fecha_creacion (GETDATE());
+    // se compara con CONVERT para no introducir desfase UTC/local
     const desde = (req.query.desde || "").toString().trim().replace("Z", "").slice(0, 23)
     const r = pedidosPool.request().input("codigo", sql.NVarChar, codigo)
     let filtroFecha = ""
@@ -2607,7 +2735,7 @@ app.get("/api/clientes/:codigo/rutas", async (req, res) => {
     const completadas = rutas.filter((r) => esCompletada(r.estado)).length
     const canceladas = rutas.filter((r) => esCancelada(r.estado)).length
 
-    console.log(`🗺️ Rutas cliente ${req.params.codigo}: ${rutas.length}`)
+    console.log(`Rutas cliente ${req.params.codigo}: ${rutas.length}`)
     res.json({
       success: true,
       data: {
@@ -2623,10 +2751,8 @@ app.get("/api/clientes/:codigo/rutas", async (req, res) => {
   }
 })
 
-// ============================================================
-// GEOCODIFICACIÓN (Nominatim / OpenStreetMap - sin API key)
-// ============================================================
-const geocodeCache = new Map()
+// Geocodificación (una dirección no cambia: se guarda 30 días)
+const geocodeCache = new CacheTTL(2000, 30 * 24 * 60 * 60 * 1000)
 
 // Normaliza abreviaturas de direcciones colombianas para Nominatim
 function normalizarDireccion(dir) {
@@ -2647,15 +2773,14 @@ async function nominatimSearch(q) {
   const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=co&q=${encodeURIComponent(q)}`
   const resp = await fetch(url, {
     headers: { "User-Agent": "OralPlus-Pedidos/1.0 (sistemas@oral-plus.com)" },
+    signal: AbortSignal.timeout(4000),
   })
   if (!resp.ok) return null
   const arr = await resp.json()
   return Array.isArray(arr) && arr.length > 0 ? arr[0] : null
 }
 
-// Google Geocoding: más preciso para direcciones con número de casa.
-// Si la key está denegada/sin habilitar, se desactiva para el resto del proceso
-// (circuit breaker) y se cae a Nominatim sin penalizar cada petición.
+// Google Geocoding. Si la key falla se desactiva y se usa solo Nominatim
 let googleGeocodeDisabled = false
 async function googleGeocode(q) {
   const key = process.env.GOOGLE_MAPS_API_KEY
@@ -2663,7 +2788,7 @@ async function googleGeocode(q) {
 
   try {
     const url = `https://maps.googleapis.com/maps/api/geocode/json?region=co&address=${encodeURIComponent(q)}&key=${key}`
-    const resp = await fetch(url)
+    const resp = await fetch(url, { signal: AbortSignal.timeout(4000) })
     const j = await resp.json()
 
     if (j.status === "OK" && j.results && j.results[0]) {
@@ -2683,12 +2808,12 @@ async function googleGeocode(q) {
 
     if (j.status === "ZERO_RESULTS") return null
 
-    // REQUEST_DENIED / OVER_QUERY_LIMIT / etc.: desactivar Google y usar Nominatim
-    console.log(`⚠️ Google Geocoding no disponible (${j.status}: ${j.error_message || "sin detalle"}). Usando OpenStreetMap.`)
+    // REQUEST_DENIED, OVER_QUERY_LIMIT, etc.
+    console.log(`Google Geocoding no disponible (${j.status}: ${j.error_message || "sin detalle"}); se usa OpenStreetMap`)
     googleGeocodeDisabled = true
     return null
   } catch (e) {
-    console.log("⚠️ Error Google Geocoding:", e.message)
+    console.log("Error Google Geocoding:", e.message)
     googleGeocodeDisabled = true
     return null
   }
@@ -2727,15 +2852,15 @@ app.get("/api/clientes/:codigo/geocode", async (req, res) => {
     const viaMatch = calle.match(/^([A-Za-zÁÉÍÓÚÑáéíóúñ\s]+\d+\s?[A-Za-z]?)/)
     const soloVia = viaMatch ? viaMatch[1].trim() : ""
 
-    // 1º intento: Google (dirección completa, mejor precisión con número de casa)
+    // 1) Google con la dirección completa
     const google = await googleGeocode(partes.join(", "))
     if (google) {
       geocodeCache.set(cacheKey, google)
-      console.log(`📍 Geocode "${direccion}" → ${google.lat},${google.lng} (google/${google.precision})`)
+      console.log(`Geocode "${direccion}" -> ${google.lat},${google.lng} (google/${google.precision})`)
       return res.json({ success: true, data: google })
     }
 
-    // 2º: Nominatim (OpenStreetMap) en cascada de más a menos específico
+    // 2) Nominatim, de más a menos específico
     const intentos = [
       { q: partes.join(", "), precision: "exacta" },
       soloVia && resto ? { q: `${soloVia}, ${resto}`, precision: "via" } : null,
@@ -2753,12 +2878,12 @@ app.get("/api/clientes/:codigo/geocode", async (req, res) => {
           precision: intento.precision,
         }
         geocodeCache.set(cacheKey, data)
-        console.log(`📍 Geocode "${direccion}" → ${data.lat},${data.lng} (osm/${intento.precision})`)
+        console.log(`Geocode "${direccion}" -> ${data.lat},${data.lng} (osm/${intento.precision})`)
         return res.json({ success: true, data })
       }
     }
 
-    console.log(`📍 Geocode sin resultados: "${direccion}"`)
+    console.log(`Geocode sin resultados: "${direccion}"`)
     res.status(404).json({ success: false, message: "No se encontraron coordenadas para la dirección" })
   } catch (error) {
     console.error("Error geocodificando:", error.message)
@@ -2766,9 +2891,7 @@ app.get("/api/clientes/:codigo/geocode", async (req, res) => {
   }
 })
 
-// ============================================================
-// ASISTENTE IA (Claude) - sugerencias y chat para visitas
-// ============================================================
+// Asistente IA (sugerencias y chat de visita)
 let anthropicClient = null
 function getAnthropic() {
   if (!process.env.ANTHROPIC_API_KEY) return null
@@ -2789,16 +2912,22 @@ Usa cifras concretas de los datos (montos en pesos colombianos, días de mora, c
 async function contextoClienteIA(codigo) {
   const ctx = { cliente: null, facturasAbiertas: [], topProductos: [], ultimaCompra: null, proximasRutas: [] }
 
-  try {
+  // Las consultas no dependen entre sí: se lanzan todas a la vez
+  const consultaSap = async (texto) => {
     const sap = await connectSAP()
+    return sap.request().input("c", sql.VarChar, codigo).query(texto)
+  }
+  const consultaRuta = async (texto) => {
+    const ruta = await connectRuta()
+    return ruta.request().input("c", sql.NVarChar, codigo).query(texto)
+  }
 
-    const rCliente = await sap.request().input("c", sql.VarChar, codigo).query(`
+  const [rCliente, rFacturas, rProductos, rUltima, rRutas] = await Promise.allSettled([
+    consultaSap(`
       SELECT CardCode, CardName, Address, City, Phone1, Balance
       FROM OCRD WHERE CardCode = @c
-    `)
-    if (rCliente.recordset.length > 0) ctx.cliente = rCliente.recordset[0]
-
-    const rFacturas = await sap.request().input("c", sql.VarChar, codigo).query(`
+    `),
+    consultaSap(`
       SELECT TOP 10 DocNum, CONVERT(VARCHAR(10), DocDate, 120) AS fecha,
              CONVERT(VARCHAR(10), DocDueDate, 120) AS vence,
              DocTotal, (DocTotal - PaidToDate) AS saldo,
@@ -2806,10 +2935,8 @@ async function contextoClienteIA(codigo) {
       FROM OINV
       WHERE CardCode = @c AND DocStatus = 'O' AND (DocTotal - PaidToDate) > 0
       ORDER BY DocDueDate ASC
-    `)
-    ctx.facturasAbiertas = rFacturas.recordset
-
-    const rProductos = await sap.request().input("c", sql.VarChar, codigo).query(`
+    `),
+    consultaSap(`
       SELECT TOP 8 T1.ItemCode, T1.Dscription AS producto,
              SUM(T1.Quantity) AS cantidad,
              CONVERT(VARCHAR(10), MAX(T0.DocDate), 120) AS ultimaCompra
@@ -2818,33 +2945,34 @@ async function contextoClienteIA(codigo) {
       WHERE T0.CardCode = @c AND T0.DocDate >= DATEADD(month, -6, GETDATE())
       GROUP BY T1.ItemCode, T1.Dscription
       ORDER BY SUM(T1.Quantity) DESC
-    `)
-    ctx.topProductos = rProductos.recordset
-
-    const rUltima = await sap.request().input("c", sql.VarChar, codigo).query(`
+    `),
+    consultaSap(`
       SELECT TOP 1 CONVERT(VARCHAR(10), DocDate, 120) AS fecha,
              DATEDIFF(day, DocDate, GETDATE()) AS diasSinComprar
       FROM OINV WHERE CardCode = @c ORDER BY DocDate DESC
-    `)
-    if (rUltima.recordset.length > 0) ctx.ultimaCompra = rUltima.recordset[0]
-  } catch (e) {
-    console.log("⚠️ IA: contexto SAP incompleto:", e.message)
-  }
-
-  try {
-    const ruta = await connectRuta()
-    const rRutas = await ruta.request().input("c", sql.NVarChar, codigo).query(`
+    `),
+    consultaRuta(`
       SELECT TOP 3 nombre, estado,
              CONVERT(VARCHAR(10), fecha_programada, 120) AS fecha,
              CONVERT(VARCHAR(5), hora_visita, 108) AS hora
       FROM rutas
       WHERE cliente_id = @c AND fecha_programada >= CAST(GETDATE() AS DATE)
       ORDER BY fecha_programada ASC
-    `)
-    ctx.proximasRutas = rRutas.recordset
-  } catch (e) {
-    console.log("⚠️ IA: contexto rutas incompleto:", e.message)
+    `),
+  ])
+
+  const filas = (r, nombre) => {
+    if (r.status === "fulfilled") return r.value.recordset
+    console.log(`IA: contexto ${nombre} incompleto:`, r.reason && r.reason.message)
+    return []
   }
+  const cliente = filas(rCliente, "cliente")
+  if (cliente.length > 0) ctx.cliente = cliente[0]
+  ctx.facturasAbiertas = filas(rFacturas, "facturas")
+  ctx.topProductos = filas(rProductos, "productos")
+  const ultima = filas(rUltima, "ultima compra")
+  if (ultima.length > 0) ctx.ultimaCompra = ultima[0]
+  ctx.proximasRutas = filas(rRutas, "rutas")
 
   return ctx
 }
@@ -2931,13 +3059,16 @@ async function preguntarClaude(contexto, instruccion) {
   if (!anthropic) return null
 
   try {
-    const msg = await anthropic.messages.create({
-      model: "claude-opus-4-8",
-      max_tokens: 16000,
-      thinking: { type: "adaptive" },
-      system: IA_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: `${contexto}\n\n${instruccion}` }],
-    })
+    // La respuesta son 5-6 viñetas: con 1024 tokens sobra y tarda mucho menos
+    const msg = await anthropic.messages.create(
+      {
+        model: "claude-opus-4-8",
+        max_tokens: 1024,
+        system: IA_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: `${contexto}\n\n${instruccion}` }],
+      },
+      { timeout: 25000, maxRetries: 1 },
+    )
     const texto = msg.content
       .filter((b) => b.type === "text")
       .map((b) => b.text)
@@ -2945,21 +3076,22 @@ async function preguntarClaude(contexto, instruccion) {
       .trim()
     return texto || null
   } catch (e) {
-    console.error("⚠️ Error llamando a Claude:", e.message)
+    console.error("Error llamando a Claude:", e.message)
     return null
   }
 }
 
 // Caché de sugerencias por cliente (10 min) para no repetir llamadas
-const sugerenciasCache = new Map()
+const sugerenciasCache = new CacheTTL(500, 10 * 60 * 1000)
 
 // POST /api/clientes/:codigo/ia/sugerencias - Recomendaciones para la visita
+// Con { forzar: true } en el body se ignora la caché (botón "Regenerar").
 app.post("/api/clientes/:codigo/ia/sugerencias", async (req, res) => {
   try {
     const codigo = req.params.codigo
 
-    const cacheado = sugerenciasCache.get(codigo)
-    if (cacheado && Date.now() - cacheado.ts < 10 * 60 * 1000) {
+    const cacheado = req.body && req.body.forzar === true ? undefined : sugerenciasCache.get(codigo)
+    if (cacheado) {
       return res.json({ success: true, data: { respuesta: cacheado.texto, fuente: cacheado.fuente } })
     }
 
@@ -2976,8 +3108,8 @@ app.post("/api/clientes/:codigo/ia/sugerencias", async (req, res) => {
       texto = sugerenciasFallback(ctx)
     }
 
-    sugerenciasCache.set(codigo, { texto, fuente, ts: Date.now() })
-    console.log(`🤖 Sugerencias ${codigo} (${fuente})`)
+    sugerenciasCache.set(codigo, { texto, fuente })
+    console.log(`Sugerencias ${codigo} (${fuente})`)
     res.json({ success: true, data: { respuesta: texto, fuente } })
   } catch (error) {
     console.error("Error generando sugerencias IA:", error.message)
@@ -3002,7 +3134,7 @@ app.post("/api/clientes/:codigo/ia/chat", async (req, res) => {
       texto = `ℹ️ El asistente IA no está disponible. Datos del cliente:\n\n${sugerenciasFallback(ctx)}`
     }
 
-    console.log(`🤖 Chat IA ${codigo}: "${pregunta.slice(0, 60)}"`)
+    console.log(`Chat IA ${codigo}: "${pregunta.slice(0, 60)}"`)
     res.json({ success: true, data: { respuesta: texto } })
   } catch (error) {
     console.error("Error en chat IA:", error.message)
@@ -3014,28 +3146,30 @@ app.post("/api/clientes/:codigo/ia/chat", async (req, res) => {
 app.get("/api/test", (req, res) => {
   res.json({
     success: true,
-    message: "🚀 API SkyPagos funcionando correctamente",
+    message: "API SkyPagos funcionando correctamente",
     timestamp: new Date().toISOString(),
     version: "1.0.0",
     database: pool ? "Conectada" : "Desconectada",
   })
 })
 
-// Ruta de estado de ambas bases de datos
+// Estado de las bases de datos
 app.get("/api/health", async (req, res) => {
   const status = { success: true, timestamp: new Date().toISOString(), databases: {} }
 
+  // Solo se comprueba que cada BD responda; contar tablas enteras aquí
+  // salía caro si un monitor llama a este endpoint con frecuencia.
   try {
-    const usersResult = await pool.request().query("SELECT COUNT(*) as c FROM usuarios")
-    status.databases.SkyPagos = { status: "Conectada", usuarios: usersResult.recordset[0].c }
+    await pool.request().query("SELECT 1 AS ok")
+    status.databases.SkyPagos = { status: "Conectada" }
   } catch (e) {
     status.databases.SkyPagos = { status: "Error", error: e.message }
     status.success = false
   }
 
   try {
-    const pedResult = await pedidosPool.request().query("SELECT COUNT(*) as c FROM pedidos")
-    status.databases.Pedidos = { status: "Conectada", total_pedidos: pedResult.recordset[0].c }
+    await pedidosPool.request().query("SELECT 1 AS ok")
+    status.databases.Pedidos = { status: "Conectada" }
   } catch (e) {
     status.databases.Pedidos = { status: "Error", error: e.message }
     status.success = false
@@ -3044,21 +3178,133 @@ app.get("/api/health", async (req, res) => {
   res.status(status.success ? 200 : 500).json(status)
 })
 
-// Rutas del módulo de control de dispositivos / soporte TI.
-// Se registran ANTES del manejador 404 para que no queden sombreadas por él.
+// Rutas de dispositivos / soporte TI (deben ir antes del 404)
 const requireSoporte = dispositivos.soporteMiddleware(jwt, JWT_SECRET)
 dispositivos.registrarRutas(app, () => pedidosPool, sql, requireSoporte)
 
-// Manejo de errores global
+// Catálogo de productos desde SAP (Service Layer o SQL) con imágenes que
+// administra Soporte TI
+const catalogo = productos.crear({
+  sql,
+  getSapPool: connectSAP,
+  getPedidosPool: () => pedidosPool,
+  env: process.env,
+  log: console,
+})
+catalogo.registrarRutas(app, { requireAuth: authenticateToken, requireSoporte })
+
+// GET /api/usuarios - Soporte: quiénes pueden entrar a la app (vendedores de
+// SAP y usuarios de la tabla usuarios), si son soporte y qué dispositivos tienen
+app.get("/api/usuarios", requireSoporte, async (req, res) => {
+  try {
+    const buscar = (req.query.buscar || "").toString().trim().toUpperCase()
+    const avisos = []
+
+    let vendedores = []
+    try {
+      const sap = await connectSAP()
+      const r = await sap.request().query(`
+        SELECT SlpCode, SlpName, Email, Telephone, Active
+        FROM OSLP WHERE SlpCode > 0 ORDER BY SlpName
+      `)
+      vendedores = r.recordset.map((v) => ({
+        tipo: "vendedor",
+        id: String(v.SlpCode),
+        codigo: `SKV${v.SlpCode}`,
+        documento: String(v.SlpCode),
+        nombre: (v.SlpName || "").trim(),
+        email: v.Email || "",
+        telefono: v.Telephone || "",
+        activo: v.Active !== "N",
+      }))
+    } catch (e) {
+      avisos.push("No se pudieron leer los vendedores de SAP")
+    }
+
+    let usuarios = []
+    try {
+      const r = await pool.request().query(`
+        SELECT id, nombre, apellido, documento, telefono, email, estado
+        FROM usuarios ORDER BY nombre
+      `)
+      usuarios = r.recordset.map((u) => ({
+        tipo: "usuario",
+        id: String(u.id),
+        codigo: u.documento || String(u.id),
+        documento: u.documento || "",
+        nombre: `${u.nombre || ""} ${u.apellido || ""}`.trim(),
+        email: u.email || "",
+        telefono: u.telefono || "",
+        activo: (u.estado || "ACTIVO") === "ACTIVO",
+      }))
+    } catch (e) {
+      avisos.push("No se pudo leer la tabla de usuarios")
+    }
+
+    // Dispositivos agrupados por persona (los vendedores se registran con su
+    // SlpCode como código y documento; los usuarios, con su documento)
+    const dispositivosPor = new Map()
+    try {
+      const r = await pedidosPool.request().query(`
+        SELECT id_servicio, estado, usuario_codigo, usuario_documento, plataforma,
+               CONVERT(VARCHAR(19), fecha_ultimo_acceso, 120) AS fecha_ultimo_acceso
+        FROM dbo.dispositivos
+      `)
+      for (const d of r.recordset) {
+        const clave = `${d.usuario_codigo || ""}|${d.usuario_documento || ""}`
+        if (!dispositivosPor.has(clave)) dispositivosPor.set(clave, [])
+        dispositivosPor.get(clave).push({
+          idServicio: d.id_servicio,
+          estado: d.estado,
+          plataforma: d.plataforma || "",
+          ultimoAcceso: d.fecha_ultimo_acceso,
+        })
+      }
+    } catch (e) {
+      avisos.push("No se pudieron leer los dispositivos")
+    }
+
+    const todos = [...vendedores, ...usuarios].map((u) => {
+      const dispositivosUsuario = dispositivosPor.get(`${u.id}|${u.documento}`) || []
+      return {
+        ...u,
+        esSoporte: esSoporte(u.documento, u.nombre, u.tipo === "vendedor" ? u.codigo : null),
+        dispositivos: dispositivosUsuario,
+        dispositivosActivos: dispositivosUsuario.filter((d) => d.estado === "ACTIVO").length,
+      }
+    })
+
+    const filtrados = buscar
+      ? todos.filter((u) =>
+          [u.nombre, u.codigo, u.documento, u.email].some((v) => (v || "").toUpperCase().includes(buscar)),
+        )
+      : todos
+
+    res.json({
+      success: true,
+      data: filtrados,
+      total: filtrados.length,
+      soporte: SOPORTE_USUARIOS,
+      avisos,
+    })
+  } catch (error) {
+    console.error("Error listando usuarios:", error.message)
+    res.status(500).json({ success: false, message: "Error al listar usuarios", data: [] })
+  }
+})
+
+// Errores no controlados
 app.use((err, req, res, next) => {
-  console.error("Error no manejado:", err)
-  res.status(500).json({
-    error: "Error interno del servidor",
-    message: process.env.NODE_ENV === "development" ? err.message : "Algo salió mal",
+  // Errores del parser de JSON (cuerpo inválido o muy grande) traen su código
+  const status = err.status || err.statusCode || 500
+  if (status >= 500) console.error("Error no manejado:", err)
+  res.status(status).json({
+    error: status >= 500 ? "Error interno del servidor" : "Solicitud inválida",
+    message: status < 500 || process.env.NODE_ENV === "development" ? err.message : "Algo salió mal",
   })
 })
 
-// Manejo de rutas no encontradas
+// 404
 app.use("*", (req, res) => {
   res.status(404).json({
     error: "Ruta no encontrada",
@@ -3066,7 +3312,6 @@ app.use("*", (req, res) => {
   })
 })
 
-// Inicializar servidor
 async function startServer() {
   try {
     await connectDB()
@@ -3076,28 +3321,39 @@ async function startServer() {
     try {
       await dispositivos.ensureTablas(pedidosPool)
     } catch (e) {
-      console.error("⚠️ No se pudo inicializar el módulo de dispositivos:", e.message)
+      console.error("No se pudo inicializar el módulo de dispositivos:", e.message)
     }
 
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`🚀 Servidor corriendo en puerto ${PORT}`)
-      console.log(`📦 BD SkyPagos: auth, usuarios, transacciones`)
-      console.log(`📋 BD Pedidos:  pedidos, detalle, historial`)
-      console.log(`🌐 Test: http://localhost:${PORT}/api/test`)
-      console.log(`💚 Health: http://localhost:${PORT}/api/health`)
-      console.log(`📱 Listo para recibir conexiones de la app Flutter`)
+    // Tabla de configuración del catálogo y primera lectura de SAP (en segundo plano)
+    try {
+      await catalogo.iniciar()
+    } catch (e) {
+      console.error("No se pudo inicializar el catálogo de productos:", e.message)
+    }
+
+    // SAP y Ruta se conectan desde ya; así la primera petición no paga el handshake
+    connectSAP().catch(() => {})
+    connectRuta().catch((e) => console.error("BD Ruta no disponible al arrancar:", e.message))
+
+    const server = app.listen(PORT, "0.0.0.0", () => {
+      console.info(`API de pedidos escuchando en el puerto ${PORT}`)
+      console.info(`Prueba: http://localhost:${PORT}/api/test`)
     })
+    // Detrás del reverse proxy: mantener las conexiones abiertas más que el
+    // proxy evita reconexiones y errores 502 esporádicos
+    server.keepAliveTimeout = 65000
+    server.headersTimeout = 66000
   } catch (error) {
-    console.error("❌ Error iniciando el servidor:", error)
+    console.error("Error iniciando el servidor:", error)
     process.exit(1)
   }
 }
 
 startServer()
 
-// Manejo de cierre graceful
+// Cierre ordenado
 process.on("SIGINT", async () => {
-  console.log("\n🛑 Cerrando servidor...")
+  console.log("Cerrando servidor...")
   if (pool) {
     await pool.close()
     console.log("   SkyPagos cerrada")
@@ -3106,5 +3362,7 @@ process.on("SIGINT", async () => {
     await pedidosPool.close()
     console.log("   Pedidos cerrada")
   }
+  if (sapPool) await sapPool.close().catch(() => {})
+  if (rutaPool) await rutaPool.close().catch(() => {})
   process.exit(0)
 })

@@ -1,10 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../models/producto.dart';
 import '../providers/session_provider.dart';
 import '../providers/cart_provider.dart';
-import '../services/product_data_service.dart';
+import '../services/catalogo_service.dart';
 import '../widgets/product_card.dart';
 import '../widgets/cart_bottom_sheet.dart';
 import '../widgets/product_preview_dialog.dart';
@@ -13,8 +16,6 @@ import '../widgets/codigo_cliente_dialog.dart';
 import '../utils/app_assets.dart';
 import '../utils/theme.dart';
 import '../utils/responsive_utils.dart';
-import '../utils/price_utils.dart';
-import '../services/Sap_service.dart' as sap;
 
 class ProductsTab extends StatefulWidget {
   const ProductsTab({super.key});
@@ -31,7 +32,9 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
   static const Color _surface = Color(0xFFF3F4F6); // gris muy claro
   static const Color _line = Color(0xFFECECEE); // línea sutil
 
-  late TabController _tabController;
+  // Se crea cuando llega el catálogo: una pestaña por categoría del servidor
+  TabController? _tabController;
+  List<String> _categorias = [];
   late AnimationController _fadeController;
   late AnimationController _slideController;
   late AnimationController _scaleController;
@@ -47,20 +50,21 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
   bool _isSearching = false;
   List<Map<String, dynamic>> _allProducts = [];
   List<Map<String, dynamic>> _filteredProducts = [];
+  // Productos agrupados por categoría una sola vez. Son los mismos mapas, así
+  // que los precios SAP actualizados se ven en todas las pestañas.
+  final Map<String, List<Map<String, dynamic>>> _porCategoria = {};
+  Timer? _debounce;
 
-  // SAP and User variables
+  // Catálogo (SAP + configuración de soporte) con los precios del cliente actual
   String _codigoClienteActual = '';
   Map<String, Map<String, dynamic>> _preciosSAP = {};
   Map<String, Map<String, dynamic>> _estadosSAP = {};
-  bool _cargandoPrecios = false;
-  bool _cargandoEstados = false;
+  bool _cargando = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _allProducts = ProductDataService.getAllProducts();
-    _tabController = TabController(length: 7, vsync: this);
-
     _fadeController = AnimationController(duration: const Duration(milliseconds: 800), vsync: this);
     _slideController = AnimationController(duration: const Duration(milliseconds: 600), vsync: this);
     _scaleController = AnimationController(duration: const Duration(milliseconds: 500), vsync: this);
@@ -72,17 +76,16 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
     _startAnimations();
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final session = context.read<SessionProvider>();
-      if (session.codigoCliente.isNotEmpty) {
-        setState(() => _codigoClienteActual = session.codigoCliente);
-        _cargarDatosSAP();
-      }
+      if (!mounted) return;
+      _codigoClienteActual = context.read<SessionProvider>().codigoCliente;
+      _cargarCatalogo();
     });
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _debounce?.cancel();
+    _tabController?.dispose();
     _fadeController.dispose();
     _slideController.dispose();
     _scaleController.dispose();
@@ -99,89 +102,63 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
     }
   }
 
-  Future<void> _cargarDatosSAP() async {
-    if (_codigoClienteActual.isEmpty) return;
-
-    final codigosSAP = <String>{};
-    for (final product in _allProducts) {
-      codigosSAP.add(product['codigoSap'] ?? '');
-      if (product['codigoSapSuave'] != null) codigosSAP.add(product['codigoSapSuave']!);
-      if (product['codigoSapAlternativo'] != null) codigosSAP.add(product['codigoSapAlternativo']!);
-    }
-
-    final codigosLista = codigosSAP.where((codigo) => codigo.isNotEmpty).toList();
-    if (codigosLista.isEmpty) return;
-
-    await Future.wait([
-      _cargarPreciosSAP(codigosLista),
-      _cargarEstadosSAP(codigosLista),
-    ]);
-  }
-
-  Future<void> _cargarPreciosSAP(List<String> codigos) async {
-    if (_codigoClienteActual.isEmpty) return;
-    setState(() => _cargandoPrecios = true);
-
-    try {
-      final resultado = await sap.InvoiceService1.obtenerPreciosSAP(codigos, _codigoClienteActual);
-      if (resultado['success'] == true && resultado['precios'] != null) {
-        setState(() {
-          _preciosSAP = Map<String, Map<String, dynamic>>.from(resultado['precios']);
-        });
-        _actualizarPreciosEnTiempoReal();
-      }
-    } catch (e) {
-      debugPrint('Error loading SAP prices: $e');
-    } finally {
-      if (mounted) setState(() => _cargandoPrecios = false);
-    }
-  }
-
-  Future<void> _cargarEstadosSAP(List<String> codigos) async {
-    if (mounted) setState(() => _cargandoEstados = true);
-    try {
-      final resultado = await sap.InvoiceService1.obtenerEstadosProductosSAP(codigos, _codigoClienteActual.isNotEmpty ? _codigoClienteActual : 'DEFAULT');
-      if (resultado['success'] == true && resultado['productos'] != null) {
-        setState(() {
-          _estadosSAP = Map<String, Map<String, dynamic>>.from(resultado['productos']);
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading SAP states: $e');
-    } finally {
-      if (mounted) setState(() => _cargandoEstados = false);
-    }
-  }
-
-  void _actualizarPreciosEnTiempoReal() {
+  /// Descarga (o toma de caché) el catálogo con los precios del cliente actual.
+  Future<void> _cargarCatalogo({bool forzar = false}) async {
     setState(() {
-      for (int i = 0; i < _allProducts.length; i++) {
-        final codigoSap = _allProducts[i]['codigoSap'] ?? '';
-        if (codigoSap.isNotEmpty && _preciosSAP.containsKey(codigoSap)) {
-          final precio = _preciosSAP[codigoSap]!['precio'];
-          final formatted = sap.InvoiceService1.formatearPrecioSAP(precio);
-          if (formatted != 'Precio no disponible') {
-            _allProducts[i]['price'] = PriceUtils.formatPriceDisplay(formatted);
-          }
-        }
-      }
-      if (_isSearching) _filterAllProducts();
+      _cargando = true;
+      _error = null;
     });
+    final catalogo = await CatalogoService().obtener(_codigoClienteActual, forzar: forzar);
+    if (!mounted) return;
+    if (catalogo == null) {
+      setState(() {
+        _cargando = false;
+        if (_allProducts.isEmpty) _error = 'No se pudo cargar el catálogo. Revisa la conexión e intenta de nuevo.';
+      });
+      return;
+    }
+    _aplicarCatalogo(catalogo);
+  }
+
+  void _aplicarCatalogo(Catalogo catalogo) {
+    final productos = catalogo.productos.map((p) => p.toMapUi()).toList();
+    final porCategoria = <String, List<Map<String, dynamic>>>{};
+    for (final p in productos) {
+      // Texto de búsqueda en minúsculas, calculado una vez
+      p['_busqueda'] = '${p['title'] ?? ''} ${p['codigoSap'] ?? ''} ${p['category'] ?? ''}'.toLowerCase();
+      porCategoria.putIfAbsent(p['category']?.toString() ?? '', () => []).add(p);
+    }
+    final categorias = catalogo.categorias.map((c) => c.nombre).toList();
+    final pestanas = 1 + categorias.length;
+    if (_tabController == null || _tabController!.length != pestanas) {
+      _tabController?.dispose();
+      _tabController = TabController(length: pestanas, vsync: this);
+    }
+    setState(() {
+      _allProducts = productos;
+      _porCategoria
+        ..clear()
+        ..addAll(porCategoria);
+      _categorias = categorias;
+      _preciosSAP = catalogo.preciosPorCodigo;
+      _estadosSAP = catalogo.estadosPorCodigo;
+      _cargando = false;
+      _error = null;
+      if (_isSearching) _filteredProducts = _calcularFiltrados();
+    });
+  }
+
+  List<Map<String, dynamic>> _calcularFiltrados() {
+    final query = _searchQuery.toLowerCase().trim();
+    if (query.isEmpty) return [];
+    return _allProducts
+        .where((p) => (p['_busqueda'] as String? ?? '').contains(query))
+        .toList();
   }
 
   void _filterAllProducts() {
-    if (_searchQuery.isEmpty) {
-      setState(() => _filteredProducts = []);
-      return;
-    }
-    setState(() {
-      _filteredProducts = _allProducts.where((product) {
-        final query = _searchQuery.toLowerCase();
-        return (product['title']?.toString().toLowerCase().contains(query) ?? false) ||
-               (product['codigoSap']?.toString().toLowerCase().contains(query) ?? false) ||
-               (product['category']?.toString().toLowerCase().contains(query) ?? false);
-      }).toList();
-    });
+    if (!mounted) return;
+    setState(() => _filteredProducts = _calcularFiltrados());
   }
 
   void _addToCart(Map<String, dynamic> product) {
@@ -239,7 +216,7 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
     if (result != null && result.isNotEmpty) {
       setState(() => _codigoClienteActual = result);
       context.read<SessionProvider>().setCodigoCliente(result);
-      _cargarDatosSAP();
+      _cargarCatalogo();
     }
   }
 
@@ -255,9 +232,11 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
             child: Column(
               children: [
                 _buildEnhancedSearchBar(),
-                if (!_isSearching) _buildTabs(),
+                if (_tabController != null && !_isSearching) _buildTabs(),
                 Expanded(
-                  child: _isSearching ? _buildSearchResults() : _buildTabContent(),
+                  child: _tabController == null
+                      ? _buildEstadoCatalogo()
+                      : (_isSearching ? _buildSearchResults() : _buildTabContent()),
                 ),
               ],
             ),
@@ -316,7 +295,7 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
       ),
       centerTitle: true,
       actions: [
-        if (_cargandoPrecios || _cargandoEstados)
+        if (_cargando)
           const Center(
             child: SizedBox(
               width: 16,
@@ -340,11 +319,18 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
       child: TextField(
         controller: _searchTextController,
         onChanged: (val) {
-          setState(() {
-            _searchQuery = val;
-            _isSearching = val.isNotEmpty;
-          });
-          _filterAllProducts();
+          _searchQuery = val;
+          final buscando = val.isNotEmpty;
+          if (buscando != _isSearching) {
+            // Al empezar o terminar la búsqueda se refresca de inmediato
+            setState(() {
+              _isSearching = buscando;
+              _filteredProducts = _calcularFiltrados();
+            });
+          }
+          // El resto se filtra cuando el vendedor deja de escribir
+          _debounce?.cancel();
+          _debounce = Timer(const Duration(milliseconds: 250), _filterAllProducts);
         },
         cursorColor: _ink,
         style: const TextStyle(fontSize: 14, color: _ink, fontWeight: FontWeight.w600),
@@ -354,9 +340,11 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
           prefixIcon: const Icon(Icons.search_rounded, color: _gray),
           suffixIcon: _isSearching ? IconButton(icon: const Icon(Icons.clear_rounded, color: _gray), onPressed: () {
             _searchTextController.clear();
+            _debounce?.cancel();
             setState(() {
               _isSearching = false;
               _searchQuery = '';
+              _filteredProducts = [];
             });
           }) : null,
           filled: true,
@@ -375,7 +363,7 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
       color: Colors.white,
       padding: const EdgeInsets.only(bottom: 10),
       child: TabBar(
-        controller: _tabController,
+        controller: _tabController!,
         isScrollable: true,
         tabAlignment: TabAlignment.start,
         indicator: BoxDecoration(
@@ -391,14 +379,9 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
         unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
         labelPadding: const EdgeInsets.symmetric(horizontal: 6),
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        tabs: const [
-          _PillTab(text: 'Todos'),
-          _PillTab(text: 'Cepillos'),
-          _PillTab(text: 'Cremas'),
-          _PillTab(text: 'Enjuagues'),
-          _PillTab(text: 'Sedas'),
-          _PillTab(text: 'Niños'),
-          _PillTab(text: 'Kits'),
+        tabs: [
+          const _PillTab(text: 'Todos'),
+          for (final c in _categorias) _PillTab(text: c),
         ],
       ),
     );
@@ -406,25 +389,51 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
 
   Widget _buildTabContent() {
     return TabBarView(
-      controller: _tabController,
+      controller: _tabController!,
       children: [
         _buildProductGrid('Todos'),
-        _buildProductGrid('Cepillos'),
-        _buildProductGrid('Cremas'),
-        _buildProductGrid('Enjuagues'),
-        _buildProductGrid('Sedas'),
-        _buildProductGrid('Universo Nios'),
-        _buildProductGrid('Kits'),
+        for (final c in _categorias) _buildProductGrid(c),
       ],
     );
   }
 
+  /// Mientras no hay catálogo: cargando, o error con opción de reintentar
+  Widget _buildEstadoCatalogo() {
+    if (_cargando) {
+      return const Center(child: CircularProgressIndicator(color: _inkSoft));
+    }
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off_rounded, size: 64, color: _gray.withOpacity(0.6)),
+            const SizedBox(height: 14),
+            Text(
+              _error ?? 'Sin productos para mostrar',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: _gray, fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => _cargarCatalogo(forzar: true),
+              style: FilledButton.styleFrom(backgroundColor: _ink),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildProductGrid(String category) {
-    final products = category == 'SearchResult' 
+    final products = category == 'SearchResult'
         ? _filteredProducts
-        : (category == 'Todos' 
-            ? _allProducts 
-            : _allProducts.where((p) => p['category'] == category).toList());
+        : (category == 'Todos'
+            ? _allProducts
+            : (_porCategoria[category] ?? const <Map<String, dynamic>>[]));
 
     if (products.isEmpty && category == 'SearchResult') {
       return _buildEmptySearchResults();

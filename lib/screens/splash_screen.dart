@@ -4,6 +4,7 @@ import '../services/api_easy_service.dart';
 import '../utils/app_assets.dart';
 import 'login_screen.dart';
 import 'client_menu_screen.dart';
+import 'soporte/mantenimiento_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -75,13 +76,21 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _initApp() async {
     final api = ApiEasyService();
-    // La barra avanza mientras se restaura la sesión y se preparan los módulos.
-    await Future.wait([
-      api.restoreSession(),
-      _progress.forward().orCancel.catchError((_) {}),
-    ]);
+    // La barra avanza mientras se hace el trabajo real; no hay espera fija.
+    _progress.animateTo(0.9, duration: const Duration(milliseconds: 2600));
+    await api.restoreSession();
+    // Se resuelve el host aquí para que la primera pantalla no tenga que esperar.
+    try {
+      await api.baseUrl().timeout(const Duration(seconds: 8));
+    } catch (_) {}
     if (!mounted) return;
-    _goTo(api.hasSession ? const ClientMenuScreen() : const LoginScreen());
+    await _progress.animateTo(1.0, duration: const Duration(milliseconds: 250));
+    if (!mounted) return;
+    // Misma regla que el login: soporte va a mantenimiento, vendedor al menú
+    final Widget destino = !api.hasSession
+        ? const LoginScreen()
+        : (api.esSoporte ? const MantenimientoScreen() : const ClientMenuScreen());
+    _goTo(destino);
   }
 
   void _goTo(Widget screen) {
@@ -90,7 +99,7 @@ class _SplashScreenState extends State<SplashScreen>
         pageBuilder: (_, __, ___) => screen,
         transitionsBuilder: (_, a, __, c) =>
             FadeTransition(opacity: a, child: c),
-        transitionDuration: const Duration(milliseconds: 450),
+        transitionDuration: const Duration(milliseconds: 250),
       ),
     );
   }
@@ -114,7 +123,7 @@ class _SplashScreenState extends State<SplashScreen>
           child: Column(
             children: [
               const Spacer(flex: 5),
-              // ---- Logo con halo que respira ----
+              // Logo con halo que respira
               FadeTransition(
                 opacity: _fade,
                 child: ScaleTransition(
@@ -173,7 +182,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
               ),
               const Spacer(flex: 4),
-              // ---- Progreso + módulo actual ----
+              // Progreso + módulo actual
               FadeTransition(
                 opacity: _fade,
                 child: AnimatedBuilder(
@@ -252,7 +261,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
               ),
               const Spacer(flex: 2),
-              // ---- Pie de marca ----
+              // Pie de marca
               FadeTransition(
                 opacity: _fade,
                 child: Text(

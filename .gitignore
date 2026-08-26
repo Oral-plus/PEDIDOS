@@ -50,7 +50,7 @@ app.*.map.json
 # Dependencias Node del backend
 node_modules/
 
-# Secretos — NUNCA versionar (las plantillas .env.example sí se versionan)
+# Secretos — NUNCA versionar
 **/.env
 .env
 
@@ -58,3 +58,6 @@ node_modules/
 *.jks
 *.keystore
 android/key.properties
+
+# PNG originales de producto (la app usa los WebP de assets/)
+assets_originales/

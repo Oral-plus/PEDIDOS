@@ -1,23 +1,12 @@
-// =============================================================================
-//  Módulo: Control de dispositivos por "ID de servicio"
-// -----------------------------------------------------------------------------
-//  - Cada instalación de la app genera un ID de servicio único (SVC-XXXX-XXXX).
-//  - El login estampa la identidad del vendedor en el dispositivo (asociación
-//    automática) y solo permite entrar si el dispositivo está en estado ACTIVO.
-//  - El rol "soporte" NO usa cuentas propias: lo asigna server.js en el login
-//    normal a los usuarios designados en SOPORTE_USUARIOS (.env). Ese rol no
-//    pasa por el gate de dispositivo y administra la activación/desactivación.
-//
-//  Tablas (BD Pedidos): dispositivos.
-//  Todas las dependencias (sql, jwt, JWT_SECRET, pool) se inyectan desde
-//  server.js para mantener el módulo desacoplado.
-// =============================================================================
+// Control de dispositivos por ID de servicio.
+// Cada instalación de la app genera un ID (SVC-XXXX-XXXX). El login asocia el
+// vendedor al dispositivo y solo deja entrar si está ACTIVO. Los usuarios de
+// soporte (SOPORTE_USUARIOS en .env) administran la activación y no pasan por
+// este control. Las dependencias (sql, jwt, pool) las inyecta server.js.
 
 const ESTADOS = ["PENDIENTE", "ACTIVO", "DESACTIVADO"]
 
-// -----------------------------------------------------------------------------
-//  Creación de tablas (idempotente, mismo patrón que el resto del server.js)
-// -----------------------------------------------------------------------------
+// Crea la tabla si no existe
 async function ensureTablas(pool) {
   await pool.request().query(`
     IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'dispositivos')
@@ -39,13 +28,11 @@ async function ensureTablas(pool) {
   `)
 }
 
-// -----------------------------------------------------------------------------
-//  Registra el dispositivo (si es nuevo) y le asocia la identidad de la persona
-//  (sin sobreescribir datos previos con nulos). Devuelve el estado actual.
-//  persona puede ser null (registro pre-login, sin identidad todavía).
-// -----------------------------------------------------------------------------
+// Registra el dispositivo si es nuevo y le asocia la persona (sin pisar datos
+// previos con nulos). persona puede ser null antes del login.
 async function registrarYAsociar(pool, sql, idServicio, persona, plataforma) {
-  await pool
+  // El MERGE devuelve el estado con OUTPUT; no hace falta un SELECT aparte
+  const r = await pool
     .request()
     .input("id_servicio", sql.NVarChar, idServicio)
     .input("doc", sql.NVarChar, (persona && persona.documento) || null)
@@ -67,19 +54,62 @@ async function registrarYAsociar(pool, sql, idServicio, persona, plataforma) {
         fecha_ultimo_acceso = GETDATE()
       WHEN NOT MATCHED THEN
         INSERT (id_servicio, usuario_documento, usuario_nombre, usuario_codigo, usuario_telefono, usuario_email, plataforma, fecha_ultimo_acceso)
-        VALUES (@id_servicio, @doc, @nom, @cod, @tel, @email, @plat, GETDATE());
+        VALUES (@id_servicio, @doc, @nom, @cod, @tel, @email, @plat, GETDATE())
+      OUTPUT INSERTED.estado;
     `)
 
+  return (r.recordset[0] && r.recordset[0].estado) || "PENDIENTE"
+}
+
+// Estado de cada dispositivo en caché un minuto: así desactivar desde Soporte
+// corta el acceso casi de inmediato sin consultar la BD en cada petición.
+const ESTADO_TTL_MS = 60 * 1000
+const estadoCache = new Map()
+
+async function estadoDispositivo(pool, sql, idServicio) {
+  const e = estadoCache.get(idServicio)
+  if (e && Date.now() < e.vence) return e.estado
   const r = await pool
     .request()
     .input("id_servicio", sql.NVarChar, idServicio)
     .query("SELECT TOP 1 estado FROM dbo.dispositivos WHERE id_servicio = @id_servicio")
-  return (r.recordset[0] && r.recordset[0].estado) || "PENDIENTE"
+  const estado = r.recordset[0] ? r.recordset[0].estado : null
+  estadoCache.set(idServicio, { estado, vence: Date.now() + ESTADO_TTL_MS })
+  return estado
 }
 
-// -----------------------------------------------------------------------------
-//  Middleware: exige token de rol "soporte".
-// -----------------------------------------------------------------------------
+// Rechaza las peticiones de un dispositivo que Soporte desactivó o eliminó,
+// aunque el token siga vigente. Los usuarios de soporte no pasan por aquí.
+function controlEstadoMiddleware(jwt, JWT_SECRET, getPool, sql) {
+  return async (req, res, next) => {
+    const h = req.headers.authorization
+    if (!h || !h.startsWith("Bearer ")) return next()
+    let decoded
+    try {
+      decoded = jwt.verify(h.slice(7), JWT_SECRET)
+    } catch (_) {
+      return next() // cada ruta responde 401 por su cuenta
+    }
+    if (decoded.rol === "soporte" || !decoded.id_servicio) return next()
+    try {
+      const estado = await estadoDispositivo(getPool(), sql, decoded.id_servicio)
+      if (estado !== "ACTIVO") {
+        return res.status(401).json({
+          success: false,
+          dispositivoDesactivado: true,
+          message: estado
+            ? "Sesión expirada: el dispositivo fue desactivado por Soporte TI"
+            : "Sesión expirada: el dispositivo ya no está registrado",
+        })
+      }
+    } catch (_) {
+      // Sin BD no se bloquea; el login ya hizo la validación
+    }
+    next()
+  }
+}
+
+// Exige token con rol "soporte"
 function soporteMiddleware(jwt, JWT_SECRET) {
   return (req, res, next) => {
     const h = req.headers.authorization
@@ -99,9 +129,7 @@ function soporteMiddleware(jwt, JWT_SECRET) {
   }
 }
 
-// -----------------------------------------------------------------------------
-//  Registro de rutas. getPool() devuelve el pool vivo (BD Pedidos) en cada request.
-// -----------------------------------------------------------------------------
+// Rutas. getPool() devuelve el pool de la BD Pedidos en cada request.
 function registrarRutas(app, getPool, sql, requireSoporte) {
   // App (pre-login, sin auth): registra el dispositivo y devuelve su estado.
   app.post("/api/dispositivos/registrar", async (req, res) => {
@@ -163,6 +191,7 @@ function registrarRutas(app, getPool, sql, requireSoporte) {
       if (((r.recordset[0] && r.recordset[0].afectados) || 0) === 0) {
         return res.status(404).json({ success: false, message: "Dispositivo no encontrado" })
       }
+      estadoCache.delete(idServicio)
       res.json({ success: true, id_servicio: idServicio, estado: nuevo })
     } catch (e) {
       console.error("Error cambiando estado de dispositivo:", e.message)
@@ -184,6 +213,7 @@ function registrarRutas(app, getPool, sql, requireSoporte) {
       if (((r.recordset[0] && r.recordset[0].afectados) || 0) === 0) {
         return res.status(404).json({ success: false, message: "Dispositivo no encontrado" })
       }
+      estadoCache.delete(idServicio)
       res.json({ success: true, id_servicio: idServicio })
     } catch (e) {
       console.error("Error eliminando dispositivo:", e.message)
@@ -197,5 +227,6 @@ module.exports = {
   ensureTablas,
   registrarYAsociar,
   soporteMiddleware,
+  controlEstadoMiddleware,
   registrarRutas,
 }

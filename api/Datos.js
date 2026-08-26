@@ -368,10 +368,17 @@ app.get("/api/obtener_precios_sap", async (req, res) => {
   try {
     const pool = await connectToDatabase();
     const codigosArray = codigos.split(",");
-    const priceList = parseInt(lista_precios) || 1;
+    // Si la app no manda lista_precios, se toma la del cliente (OCRD.ListNum)
+    // en la misma consulta; así la app no tiene que pedirla aparte.
+    const listaPedida = parseInt(lista_precios) || null;
 
     const query = `
-      SELECT 
+      DECLARE @PriceList INT = @PriceListParam;
+      IF @PriceList IS NULL
+        SELECT @PriceList = ISNULL(ListNum, 1) FROM OCRD WHERE CardCode = @CardCode;
+      IF @PriceList IS NULL SET @PriceList = 1;
+
+      SELECT
         T0.ItemCode,
         T0.ItemName,
         ISNULL(T1.Price, 0) as Price,
@@ -381,10 +388,16 @@ app.get("/api/obtener_precios_sap", async (req, res) => {
         (T0.OnHand - T0.IsCommited) as Available
       FROM OITM T0
       LEFT JOIN ITM1 T1 ON T0.ItemCode = T1.ItemCode AND T1.PriceList = @PriceList
-      WHERE T0.ItemCode IN (${codigosArray.map((_, i) => `@codigo${i}`).join(",")})
+      WHERE T0.ItemCode IN (${codigosArray.map((_, i) => `@codigo${i}`).join(",")});
+
+      SELECT @PriceList AS ListNum,
+             (SELECT ListName FROM OPLN WHERE ListNum = @PriceList) AS ListName;
     `;
 
-    const request = pool.request().input("PriceList", sql.Int, priceList);
+    const request = pool
+      .request()
+      .input("PriceListParam", sql.Int, listaPedida)
+      .input("CardCode", sql.VarChar, cliente.trim());
     codigosArray.forEach((codigo, i) => {
       request.input(`codigo${i}`, sql.VarChar, codigo.trim());
     });
@@ -395,8 +408,13 @@ app.get("/api/obtener_precios_sap", async (req, res) => {
     const queryTime = Date.now() - startTime;
     console.log(`⏱️ Consulta precios ejecutada en ${queryTime}ms`);
 
+    const filasPrecios = result.recordsets[0] || [];
+    const infoLista = (result.recordsets[1] && result.recordsets[1][0]) || {};
+    const priceList = parseInt(infoLista.ListNum) || listaPedida || 1;
+    const nombreLista = (infoLista.ListName || "").toString().trim() || `Lista ${priceList}`;
+
     const precios = {};
-    result.recordset.forEach((item) => {
+    filasPrecios.forEach((item) => {
       precios[item.ItemCode] = {
         codigo: item.ItemCode,
         nombre: item.ItemName,
@@ -406,13 +424,16 @@ app.get("/api/obtener_precios_sap", async (req, res) => {
       };
     });
 
-    console.log(`✅ PRECIOS SAP OBTENIDOS: ${Object.keys(precios).length} productos`);
+    console.log(`✅ PRECIOS SAP OBTENIDOS: ${Object.keys(precios).length} productos (lista ${priceList} - ${nombreLista})`);
 
     res.json({
       success: true,
       precios: precios,
       total: Object.keys(precios).length,
       lista_precios_usada: priceList,
+      nombre_lista_precios: nombreLista,
+      // Indica a la app que la lista ya viene resuelta desde el servidor
+      lista_resuelta: true,
       cliente: cliente,
       queryTime: queryTime,
       timestamp: new Date().toISOString(),

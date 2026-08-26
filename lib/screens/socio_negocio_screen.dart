@@ -33,7 +33,7 @@ class _SocioNegocioScreenState extends State<SocioNegocioScreen> {
   bool _loadingHistorico = false;
   bool _historicoExpanded = false;
 
-  // Paleta monocromática (blanco / negro / gris) — igual que el resto de la app
+  // Paleta monocromática (blanco / negro / gris) - igual que el resto de la app
   static const Color _blue = Color(0xFF1F2937); // negro-gris principal
   static const Color _blueLight = Color(0xFF374151); // gris oscuro (degradados)
   static const Color _bluePale = Color(0xFFF3F4F6); // gris muy claro (fondos de ícono)

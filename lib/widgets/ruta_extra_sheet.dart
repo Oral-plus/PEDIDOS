@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_easy_service.dart';
@@ -61,12 +62,25 @@ class _RutaExtraSheetState extends State<_RutaExtraSheet> {
   @override
   void initState() {
     super.initState();
-    _buscar.addListener(() => setState(() {}));
+    _buscar.addListener(_programarFiltro);
     _cargarClientes();
+  }
+
+  // La lista filtrada se recalcula al escribir (con una pausa corta), no en
+  // cada rebuild ni por cada fila.
+  List<Map<String, dynamic>> _clientesFiltrados = [];
+  Timer? _debounce;
+
+  void _programarFiltro() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) setState(() => _clientesFiltrados = _calcularFiltrados());
+    });
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _buscar.dispose();
     _obs.dispose();
     super.dispose();
@@ -82,10 +96,11 @@ class _RutaExtraSheetState extends State<_RutaExtraSheet> {
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
       }
+      _clientesFiltrados = _calcularFiltrados();
     });
   }
 
-  List<Map<String, dynamic>> get _clientesFiltrados {
+  List<Map<String, dynamic>> _calcularFiltrados() {
     final q = _buscar.text.trim().toLowerCase();
     if (q.isEmpty) return _clientes;
     return _clientes.where((c) {

@@ -1,9 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/session_provider.dart';
+import '../services/api_easy_service.dart';
+import '../services/shared_http.dart';
 import '../utils/theme.dart';
 import '../utils/price_utils.dart';
 
@@ -24,8 +25,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
   static const _textMuted = AppTheme.secondaryBlue;
   static const _border = Color(0xFFE5E7EB);
 
-  static const _baseUrl = 'http://localhost:3000';
-
   @override
   void initState() {
     super.initState();
@@ -41,8 +40,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
     if (mounted) setState(() { _isLoading = true; _error = null; });
     try {
-      final url = '$_baseUrl/api/orders?cliente=$codigo';
-      final res = await http.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
+      final base = await ApiEasyService().baseUrl();
+      final url = '$base/api/orders?cliente=$codigo';
+      final res = await SharedHttp.client.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
       final data = jsonDecode(res.body) as Map<String, dynamic>;
 
       if (res.statusCode == 200 && data['success'] == true) {
