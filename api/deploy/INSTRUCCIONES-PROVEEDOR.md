@@ -176,3 +176,30 @@ curl -X POST -H "Content-Type: application/json" \
 # Tras un login correcto, cerrar sesión y repetir una consulta con el mismo token: debe dar 401
 curl -X POST -H "Authorization: Bearer <token>" https://gestores-api.oral-plus.com/api/auth/logout
 ```
+
+## Actualización: todas las rutas exigen sesión
+
+1. **Sesión obligatoria.** Todas las rutas de datos (`/api/clientes/...`,
+   `/api/orders`, `/api/recaudos`, `/api/rutas/...`, `/api/encuestas`,
+   `/api/productos`, etc.) responden 401 sin un token válido. Solo quedan
+   abiertas `/api/test`, `/api/health`, `/api/auth/login` y
+   `/api/dispositivos/registrar` (la app la usa antes del login).
+   `/api/auth/register` (heredada de SkyPagos) queda reservada a Soporte TI.
+2. **Dispositivo obligatorio.** Poner `REQUIRE_DEVICE_ID=true` en el `.env`:
+   un login sin ID de servicio se rechaza y solo entran teléfonos activados por
+   Soporte TI desde la app. Los usuarios de Soporte no pasan por este control.
+3. **Cuentas de servicio.** El `.env` de producción no debe llevar `sa`:
+   ejecutar `api/sql/crear_usuario_pedidos_app.sql` (usuario `pedidos_app`
+   con permisos solo sobre SkyPagos, Pedidos, Ruta y lectura de RBOSKY3) y
+   usar ese usuario en `DB_USER`/`DB_PASSWORD`. Para el Service Layer conviene
+   un usuario de SAP de solo lectura en lugar de `manager`.
+
+Comprobación:
+
+```bash
+# Sin token debe responder 401 (antes respondía con los datos del cliente)
+curl -i https://gestores-api.oral-plus.com/api/clientes/cartera/C1000100148
+# Login sin id_servicio debe responder 400
+curl -X POST -H "Content-Type: application/json" -d "{\"usuario\":\"SKV18\",\"password\":\"SKV1\"}" \
+  https://gestores-api.oral-plus.com/api/auth/login
+```

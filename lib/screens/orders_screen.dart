@@ -42,7 +42,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     try {
       final base = await ApiEasyService().baseUrl();
       final url = '$base/api/orders?cliente=$codigo';
-      final res = await SharedHttp.client.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
+      final res = await SharedHttp.client.get(Uri.parse(url), headers: {'Accept': 'application/json', 'Authorization': 'Bearer ${ApiEasyService().token ?? ''}'}).timeout(const Duration(seconds: 15));
       final data = jsonDecode(res.body) as Map<String, dynamic>;
 
       if (res.statusCode == 200 && data['success'] == true) {

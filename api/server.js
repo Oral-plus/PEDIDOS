@@ -678,8 +678,12 @@ app.post("/api/auth/logout", authenticateToken, async (req, res) => {
 })
 
 // Registro
-app.post("/api/auth/register", async (req, res) => {
+app.post("/api/auth/register", authenticateToken, async (req, res) => {
   try {
+    // Ruta heredada de SkyPagos; la app no la usa. Solo Soporte TI puede crear usuarios.
+    if (req.user.rol !== "soporte") {
+      return res.status(403).json({ success: false, message: "Requiere permisos de soporte TI" })
+    }
     const { nombre, apellido, telefono, email, pin, documento } = req.body
 
     if (!nombre || !apellido || !telefono || !pin || !documento) {
@@ -993,7 +997,7 @@ app.get("/api/notifications", authenticateToken, async (req, res) => {
 // Clientes (SAP)
 
 // GET /api/clientes - Lista de clientes (filtra por vendedor si hay token)
-app.get("/api/clientes", async (req, res) => {
+app.get("/api/clientes", authenticateToken, async (req, res) => {
   try {
     const sap = await connectSAP()
 
@@ -1066,7 +1070,7 @@ app.get("/api/clientes", async (req, res) => {
 })
 
 // GET /api/clientes/:codigo - Detalle de un cliente
-app.get("/api/clientes/:codigo", async (req, res) => {
+app.get("/api/clientes/:codigo", authenticateToken, async (req, res) => {
   try {
     const sap = await connectSAP()
     const result = await sap
@@ -1110,7 +1114,7 @@ app.get("/api/clientes/:codigo", async (req, res) => {
 
 // POST /api/clientes/:codigo/actualizar-datos - Corrección de datos de contacto
 // hecha por el vendedor. Se guarda en nuestra BD (no en SAP).
-app.post("/api/clientes/:codigo/actualizar-datos", async (req, res) => {
+app.post("/api/clientes/:codigo/actualizar-datos", authenticateToken, async (req, res) => {
   try {
     const authHeader = req.headers.authorization || ""
     let slpCode = null
@@ -1197,7 +1201,7 @@ app.post("/api/clientes/:codigo/actualizar-datos", async (req, res) => {
 })
 
 // GET /api/clientes/cartera/:codigo - Cartera completa del cliente
-app.get("/api/clientes/cartera/:codigo", async (req, res) => {
+app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => {
   try {
     const sap = await connectSAP()
     const cardCode = req.params.codigo
@@ -1299,7 +1303,7 @@ app.get("/api/clientes/cartera/:codigo", async (req, res) => {
 })
 
 // GET /api/clientes/:codigo/documentos - Facturas abiertas con saldo y vencimiento (recaudos)
-app.get("/api/clientes/:codigo/documentos", async (req, res) => {
+app.get("/api/clientes/:codigo/documentos", authenticateToken, async (req, res) => {
   try {
     const sap = await connectSAP()
     const cardCode = req.params.codigo
@@ -1383,7 +1387,7 @@ async function ensureRecaudosTablas() {
 }
 
 // POST /api/recaudos - Guarda un recaudo con los documentos cruzados.
-app.post("/api/recaudos", async (req, res) => {
+app.post("/api/recaudos", authenticateToken, async (req, res) => {
   try {
     const authHeader = req.headers.authorization || ""
     let slpCode = null, vendedorNombre = ""
@@ -1480,7 +1484,7 @@ function generatePedidoNumero() {
 }
 
 // Crear pedido
-app.post("/api/orders", async (req, res) => {
+app.post("/api/orders", authenticateToken, async (req, res) => {
   const startTime = Date.now()
   try {
     const { cedula, nombre, direccion, telefono, correo, subtotal, productos, observaciones, codigoCliente, vendedor } = req.body
@@ -1602,7 +1606,7 @@ app.post("/api/orders", async (req, res) => {
 })
 
 // Pedidos de un cliente
-app.get("/api/orders/:codigoCliente", async (req, res) => {
+app.get("/api/orders/:codigoCliente", authenticateToken, async (req, res) => {
   try {
     const { codigoCliente } = req.params
     const { estado, limit = 50, page = 1 } = req.query
@@ -1644,7 +1648,7 @@ app.get("/api/orders/:codigoCliente", async (req, res) => {
 })
 
 // Detalle de un pedido
-app.get("/api/orders/detail/:numeroPedido", async (req, res) => {
+app.get("/api/orders/detail/:numeroPedido", authenticateToken, async (req, res) => {
   try {
     const { numeroPedido } = req.params
 
@@ -1684,7 +1688,7 @@ app.get("/api/orders/detail/:numeroPedido", async (req, res) => {
 // Consulta de pedidos
 
 // GET /api/orders?cliente=CODIGO - Pedidos de un cliente
-app.get("/api/orders", async (req, res) => {
+app.get("/api/orders", authenticateToken, async (req, res) => {
   try {
     const { cliente, estado } = req.query
 
@@ -1747,7 +1751,7 @@ app.get("/api/orders", async (req, res) => {
 })
 
 // GET /api/orders/:id/detail - Detalle de un pedido con sus productos
-app.get("/api/orders/:id/detail", async (req, res) => {
+app.get("/api/orders/:id/detail", authenticateToken, async (req, res) => {
   try {
     const pedidoId = parseInt(req.params.id, 10)
 
@@ -1798,7 +1802,7 @@ app.get("/api/orders/:id/detail", async (req, res) => {
 })
 
 // GET /api/orders/vendedor/:nombre - Pedidos de un vendedor (todos los clientes)
-app.get("/api/orders/vendedor/:nombre", async (req, res) => {
+app.get("/api/orders/vendedor/:nombre", authenticateToken, async (req, res) => {
   try {
     const vendedorNombre = decodeURIComponent(req.params.nombre).trim()
     const { estado } = req.query
@@ -2025,7 +2029,7 @@ function esCancelada(estado) {
 }
 
 // GET /api/rutas/mias?periodo=hoy|semana|mes|todas - Rutas del vendedor logueado
-app.get("/api/rutas/mias", async (req, res) => {
+app.get("/api/rutas/mias", authenticateToken, async (req, res) => {
   try {
     const slpCode = getSlpCodeFromToken(req)
     if (slpCode === null) {
@@ -2108,7 +2112,7 @@ app.get("/api/rutas/mias", async (req, res) => {
 
 // POST /api/rutas/extra - Crear una ruta adicional de urgencia.
 // Requiere cliente, motivo y observación. Queda marcada con es_extra=1
-app.post("/api/rutas/extra", async (req, res) => {
+app.post("/api/rutas/extra", authenticateToken, async (req, res) => {
   try {
     const authHeader = req.headers.authorization || ""
     let slpCode = null
@@ -2180,7 +2184,7 @@ app.post("/api/rutas/extra", async (req, res) => {
 
 // GET /api/clientes/:codigo/tareas - Tareas asignadas al cliente (RUTERO)
 let tareasTablaExiste = false
-app.get("/api/clientes/:codigo/tareas", async (req, res) => {
+app.get("/api/clientes/:codigo/tareas", authenticateToken, async (req, res) => {
   try {
     const codigo = req.params.codigo
     const ruta = await connectRuta()
@@ -2314,7 +2318,7 @@ async function ensureVisitasTabla(pool) {
 }
 
 // GET /api/clientes/:codigo/visitas-hoy - ¿Cuántas visitas se registraron hoy?
-app.get("/api/clientes/:codigo/visitas-hoy", async (req, res) => {
+app.get("/api/clientes/:codigo/visitas-hoy", authenticateToken, async (req, res) => {
   try {
     const ruta = await connectRuta()
     await ensureVisitasTabla(ruta)
@@ -2338,7 +2342,7 @@ app.get("/api/clientes/:codigo/visitas-hoy", async (req, res) => {
 })
 
 // GET /api/clientes/:codigo/ultimo-pedido?desde=ISO - Último pedido del cliente con sus ítems
-app.get("/api/clientes/:codigo/ultimo-pedido", async (req, res) => {
+app.get("/api/clientes/:codigo/ultimo-pedido", authenticateToken, async (req, res) => {
   try {
     const codigo = req.params.codigo
     const desde = (req.query.desde || "").toString().trim().replace("Z", "").slice(0, 23)
@@ -2390,7 +2394,7 @@ app.get("/api/clientes/:codigo/ultimo-pedido", async (req, res) => {
 const ESTADOS_VISITA = ["nuevo", "activo", "sesenta", "perdido"]
 
 // POST /api/clientes/:codigo/visita - Registra / finaliza una visita
-app.post("/api/clientes/:codigo/visita", async (req, res) => {
+app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => {
   try {
     const codigo = req.params.codigo
     const b = req.body || {}
@@ -2560,7 +2564,7 @@ async function ensurePedidosGestionTabla() {
 }
 
 // POST /api/pedidos/gestion - Guarda la gestión del pedido hecha en la visita
-app.post("/api/pedidos/gestion", async (req, res) => {
+app.post("/api/pedidos/gestion", authenticateToken, async (req, res) => {
   try {
     const authHeader = req.headers.authorization || ""
     let slpCode = null
@@ -2630,7 +2634,7 @@ app.post("/api/pedidos/gestion", async (req, res) => {
 })
 
 // GET /api/encuestas?limit=N&cliente=CODE - Encuestas registradas (cabecera + respuestas)
-app.get("/api/encuestas", async (req, res) => {
+app.get("/api/encuestas", authenticateToken, async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 50, 1), 500)
     const cliente = (req.query.cliente || "").toString().trim()
@@ -2679,7 +2683,7 @@ app.get("/api/encuestas", async (req, res) => {
 })
 
 // GET /api/clientes/:codigo/pedidos-total?desde=ISO - Total de pedidos del cliente desde una fecha
-app.get("/api/clientes/:codigo/pedidos-total", async (req, res) => {
+app.get("/api/clientes/:codigo/pedidos-total", authenticateToken, async (req, res) => {
   try {
     const codigo = req.params.codigo
     // La fecha llega en hora local, igual que fecha_creacion (GETDATE());
@@ -2709,7 +2713,7 @@ app.get("/api/clientes/:codigo/pedidos-total", async (req, res) => {
 })
 
 // GET /api/clientes/:codigo/visita/ultima - Última visita registrada
-app.get("/api/clientes/:codigo/visita/ultima", async (req, res) => {
+app.get("/api/clientes/:codigo/visita/ultima", authenticateToken, async (req, res) => {
   try {
     const ruta = await connectRuta()
     await ensureVisitasTabla(ruta)
@@ -2739,7 +2743,7 @@ app.get("/api/clientes/:codigo/visita/ultima", async (req, res) => {
 })
 
 // GET /api/clientes/:codigo/rutas?limite=N - Rutas registradas para un cliente
-app.get("/api/clientes/:codigo/rutas", async (req, res) => {
+app.get("/api/clientes/:codigo/rutas", authenticateToken, async (req, res) => {
   try {
     const limite = Math.min(Number.parseInt(req.query.limite, 10) || 100, 500)
     const slpCode = getSlpCodeFromToken(req)
@@ -2855,7 +2859,7 @@ async function googleGeocode(q) {
 }
 
 // GET /api/clientes/:codigo/geocode?address=... - Coordenadas de la dirección del cliente
-app.get("/api/clientes/:codigo/geocode", async (req, res) => {
+app.get("/api/clientes/:codigo/geocode", authenticateToken, async (req, res) => {
   try {
     let direccion = (req.query.address || "").toString().trim()
 
@@ -3121,7 +3125,7 @@ const sugerenciasCache = new CacheTTL(500, 10 * 60 * 1000)
 
 // POST /api/clientes/:codigo/ia/sugerencias - Recomendaciones para la visita
 // Con { forzar: true } en el body se ignora la caché (botón "Regenerar").
-app.post("/api/clientes/:codigo/ia/sugerencias", async (req, res) => {
+app.post("/api/clientes/:codigo/ia/sugerencias", authenticateToken, async (req, res) => {
   try {
     const codigo = req.params.codigo
 
@@ -3153,7 +3157,7 @@ app.post("/api/clientes/:codigo/ia/sugerencias", async (req, res) => {
 })
 
 // POST /api/clientes/:codigo/ia/chat - Pregunta libre al asistente
-app.post("/api/clientes/:codigo/ia/chat", async (req, res) => {
+app.post("/api/clientes/:codigo/ia/chat", authenticateToken, async (req, res) => {
   try {
     const codigo = req.params.codigo
     const pregunta = (req.body?.pregunta || "").toString().trim()

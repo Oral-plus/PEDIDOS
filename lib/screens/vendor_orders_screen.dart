@@ -73,7 +73,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
       final base = await _obtenerUrlBase();
       final encoded = Uri.encodeComponent(numeroPedido);
       final url = '$base/api/orders/detail/$encoded';
-      final res = await SharedHttp.client.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
+      final res = await SharedHttp.client.get(Uri.parse(url), headers: {'Accept': 'application/json', 'Authorization': 'Bearer ${ApiEasyService().token ?? ''}'}).timeout(const Duration(seconds: 15));
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (res.statusCode != 200 || data['success'] != true) return null;
 
@@ -374,7 +374,7 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
       final base = await _obtenerUrlBase();
       final encoded = Uri.encodeComponent(nombre);
       final url = '$base/api/orders/vendedor/$encoded';
-      final res = await SharedHttp.client.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
+      final res = await SharedHttp.client.get(Uri.parse(url), headers: {'Accept': 'application/json', 'Authorization': 'Bearer ${ApiEasyService().token ?? ''}'}).timeout(const Duration(seconds: 15));
       final data = jsonDecode(res.body) as Map<String, dynamic>;
 
       if (res.statusCode == 200 && data['success'] == true) {
