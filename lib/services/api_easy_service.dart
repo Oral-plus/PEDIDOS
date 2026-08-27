@@ -29,8 +29,10 @@ class ApiEasyService {
   static const _tokenKey = 'auth_token';
   static const _usuarioKey = 'auth_usuario';
   static const _loginUsuarioKey = 'login_usuario';
+  static const _expiraKey = 'auth_expira';
 
   String? _token;
+  DateTime? _expira;
   Map<String, dynamic>? _usuario;
   String _loginUsuario = '';
   String? _resolvedBaseUrl;
@@ -40,7 +42,14 @@ class ApiEasyService {
   String? get token => _token;
   Map<String, dynamic>? get usuario => _usuario;
   String get loginUsuario => _loginUsuario;
-  bool get hasSession => _token != null && _token!.isNotEmpty;
+  bool get hasSession => _token != null && _token!.isNotEmpty && !sesionVencida;
+
+  /// Vencimiento de la sesión (máximo 12 horas desde el login).
+  DateTime? get expira => _expira;
+
+  /// true si ya pasaron las 12 horas o la sesión no tiene vencimiento
+  /// conocido (sesiones de una versión anterior de la app).
+  bool get sesionVencida => _expira == null || !DateTime.now().isBefore(_expira!);
 
   /// true si la sesión actual es de un usuario de Soporte TI.
   bool get esSoporte => _usuario?['rol']?.toString() == 'soporte';
@@ -66,6 +75,18 @@ class ApiEasyService {
       if (storedToken != null && storedToken.isNotEmpty) {
         _token = storedToken;
         _loginUsuario = storedLogin ?? '';
+        final expiraMs = prefs.getInt(_expiraKey);
+        _expira = expiraMs != null
+            ? DateTime.fromMillisecondsSinceEpoch(expiraMs)
+            : _expiraDeToken(storedToken);
+        if (sesionVencida) {
+          // Pasaron las 12 horas: se descarta la sesión y se pide el login
+          _token = null;
+          _expira = null;
+          _loginUsuario = '';
+          await _persistSession();
+          return;
+        }
         if (storedUsuario != null && storedUsuario.isNotEmpty) {
           final decoded = jsonDecode(storedUsuario);
           if (decoded is Map) {
@@ -82,6 +103,11 @@ class ApiEasyService {
       if (_token != null && _token!.isNotEmpty) {
         await prefs.setString(_tokenKey, _token!);
         await prefs.setString(_loginUsuarioKey, _loginUsuario);
+        if (_expira != null) {
+          await prefs.setInt(_expiraKey, _expira!.millisecondsSinceEpoch);
+        } else {
+          await prefs.remove(_expiraKey);
+        }
         if (_usuario != null) {
           await prefs.setString(_usuarioKey, jsonEncode(_usuario));
         } else {
@@ -91,16 +117,56 @@ class ApiEasyService {
         await prefs.remove(_tokenKey);
         await prefs.remove(_usuarioKey);
         await prefs.remove(_loginUsuarioKey);
+        await prefs.remove(_expiraKey);
       }
     } catch (_) {}
   }
 
   Future<void> clearSession() async {
     _token = null;
+    _expira = null;
     _usuario = null;
     _loginUsuario = '';
     _cache.limpiar();
     await _persistSession();
+  }
+
+  /// Cierra la sesión en el servidor (el token deja de servir aunque no haya
+  /// vencido) y borra todo rastro local. Sin red, lo local se borra igual.
+  Future<void> logout() async {
+    final token = _token;
+    if (token != null && token.isNotEmpty) {
+      try {
+        final baseUrl = await _resolveBaseUrl().timeout(const Duration(seconds: 5));
+        await ApiClient.post(
+          '/api/auth/logout',
+          body: const {},
+          customBaseUrl: baseUrl,
+          headers: {'Authorization': 'Bearer $token'},
+          timeout: const Duration(seconds: 6),
+        );
+      } catch (_) {}
+    }
+    await clearSession();
+  }
+
+  /// Vencimiento (claim exp) leído del propio JWT; null si no se puede leer.
+  static DateTime? _expiraDeToken(String token) {
+    try {
+      final partes = token.split('.');
+      if (partes.length != 3) return null;
+      final payload = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(partes[1]))));
+      final exp = payload is Map ? payload['exp'] : null;
+      if (exp is num) return DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000);
+    } catch (_) {}
+    return null;
+  }
+
+  /// Vencimiento informado por el backend en la respuesta del login.
+  static DateTime? _expiraDeRespuesta(Map<String, dynamic> res) {
+    final data = res['data'];
+    if (data is! Map) return null;
+    return DateTime.tryParse(data['expira']?.toString() ?? '')?.toLocal();
   }
 
   Map<String, String> get _headers {
@@ -231,7 +297,7 @@ class ApiEasyService {
 
     return res['message']?.toString() ??
         res['error']?.toString() ??
-        'Usuario o contraseña incorrectos';
+        'Credenciales incorrectas';
   }
 
   /// POST /api/auth/login
@@ -280,6 +346,9 @@ class ApiEasyService {
         }
 
         _token = token;
+        _expira = _expiraDeRespuesta(response) ??
+            _expiraDeToken(token) ??
+            DateTime.now().add(const Duration(hours: 12));
         _usuario = _extractUsuario(response);
         _loginUsuario = usuario;
         // Otro vendedor puede tener otros clientes y rutas
@@ -603,6 +672,7 @@ class ApiEasyService {
 
   /// Detecta si un error corresponde a sesión expirada / no autorizada.
   bool _esSesionExpirada(Object e) {
+    if (e is ApiException) return e.noAutorizado;
     final s = e.toString().toLowerCase();
     return s.contains('401') || s.contains('sesión expirada') || s.contains('sesion expirada');
   }

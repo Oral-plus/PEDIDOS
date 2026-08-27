@@ -144,8 +144,35 @@ desplegar hay que tener en cuenta tres cosas:
 Comprobación:
 
 ```bash
-# Debe responder success:true con el catálogo (requiere un token de vendedor)
-curl -H "Authorization: Bearer <token>" https://gestores-api.oral-plus.com/api/productos
+# Debe responder success:true con el catálogo del cliente (requiere un token de vendedor)
+curl -H "Authorization: Bearer <token>" "https://gestores-api.oral-plus.com/api/productos?cliente=C1000100148"
 # Una foto migrada debe responder image/webp (sale de la base de datos)
 curl -I https://gestores-api.oral-plus.com/api/productos/imagen/50360251
+```
+
+## Actualización: sesiones de 12 horas y cierre de sesión seguro
+
+1. **Duración.** Cada sesión dura como máximo 12 horas desde el login; después
+   la app pide iniciar sesión otra vez. `SESSION_TIMEOUT` del `.env` solo puede
+   acortarla (por ejemplo `8h`); un valor mayor se recorta a 12 h.
+2. **Tabla nueva `sesiones`** en la BD Pedidos: el servidor la crea solo al
+   arrancar (igual que `dispositivos`). Cada token lleva un identificador
+   registrado ahí; cerrar sesión desde la app (`POST /api/auth/logout`) marca la
+   fila y el token deja de servir aunque no haya vencido.
+3. **Tokens anteriores.** Los tokens emitidos por la versión anterior del
+   servidor no tienen registro y reciben 401: al desplegar, todos los
+   vendedores deben iniciar sesión de nuevo (una sola vez).
+4. **Catálogo por cliente.** `GET /api/productos` exige `?cliente=<CardCode>`:
+   sin cliente responde 400 y con un cliente inexistente 404. Los precios salen
+   únicamente de la lista de precios del cliente (sin respaldo a otra lista).
+
+Comprobación:
+
+```bash
+# Debe responder 401 con "Credenciales incorrectas..."
+curl -X POST -H "Content-Type: application/json" \
+  -d "{\"usuario\":\"SKV18\",\"password\":\"incorrecta\"}" \
+  https://gestores-api.oral-plus.com/api/auth/login
+# Tras un login correcto, cerrar sesión y repetir una consulta con el mismo token: debe dar 401
+curl -X POST -H "Authorization: Bearer <token>" https://gestores-api.oral-plus.com/api/auth/logout
 ```

@@ -8,9 +8,9 @@ import 'utils/theme.dart';
 import 'providers/session_provider.dart';
 import 'providers/cart_provider.dart';
 import 'providers/visita_activa_provider.dart';
+import 'services/sesion.dart';
+import 'utils/navegacion.dart';
 // © 2025 Autor: SKY - Todos los derechos reservados.
-
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,8 +28,32 @@ void main() {
   );
 }
 
-class SkyPagosApp extends StatelessWidget {
+class SkyPagosApp extends StatefulWidget {
   const SkyPagosApp({super.key});
+
+  @override
+  State<SkyPagosApp> createState() => _SkyPagosAppState();
+}
+
+class _SkyPagosAppState extends State<SkyPagosApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    // Un 401 del backend o las 12 horas cumplidas devuelven al login
+    Sesion.instalar();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) Sesion.verificarVigencia();
+  }
 
   @override
   Widget build(BuildContext context) {

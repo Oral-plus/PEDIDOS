@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import '../models/producto.dart';
+import 'api_client.dart';
 import 'api_easy_service.dart';
 import 'cache_service.dart';
 import 'shared_http.dart';
@@ -20,6 +22,10 @@ class CatalogoService {
 
   static const _ttl = Duration(minutes: 10);
   final CacheService _cache = CacheService();
+
+  /// Motivo de la última descarga fallida (cliente inexistente, SAP caído,
+  /// sin red). null si la última descarga salió bien.
+  String? ultimoError;
 
   Future<Catalogo?> obtener(String codigoCliente, {bool forzar = false}) {
     final cliente = codigoCliente.trim();
@@ -39,7 +45,9 @@ class CatalogoService {
     final base = await api.baseUrl();
     final guardado = await _leerDisco(cliente);
     final token = api.token;
+    ultimoError = null;
     if (token == null || token.isEmpty) {
+      ultimoError = 'Inicia sesión para ver el catálogo';
       return guardado == null ? null : Catalogo.fromJson(guardado.cuerpo, baseUrl: base);
     }
 
@@ -65,10 +73,26 @@ class CatalogoService {
           return Catalogo.fromJson(cuerpo, baseUrl: base);
         }
       }
+      ultimoError = _mensajeDe(res);
+      if (res.statusCode == 401) {
+        ApiClient.onSesionInvalida?.call(ultimoError ?? 'Tu sesión expiró. Inicia sesión de nuevo.');
+      }
     } catch (_) {
       // Sin red o servidor caído: se usa la copia en disco si existe
+      ultimoError = 'Sin conexión con el servidor. Revisa la red e intenta de nuevo.';
     }
     return guardado == null ? null : Catalogo.fromJson(guardado.cuerpo, baseUrl: base);
+  }
+
+  /// Mensaje del backend en una respuesta de error (400 sin cliente, 404
+  /// cliente inexistente, 503 SAP caído).
+  static String _mensajeDe(http.Response res) {
+    try {
+      final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+      final msg = decoded is Map ? decoded['message']?.toString() : null;
+      if (msg != null && msg.isNotEmpty) return msg;
+    } catch (_) {}
+    return 'No se pudo cargar el catálogo (${res.statusCode})';
   }
 
   static dynamic _decodificar(Uint8List bytes) => jsonDecode(utf8.decode(bytes));

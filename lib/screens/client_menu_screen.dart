@@ -4,9 +4,7 @@ import '../services/api_easy_service.dart';
 import '../utils/app_assets.dart';
 import '../utils/theme.dart';
 import '../widgets/app_dialog.dart';
-import 'package:provider/provider.dart';
-import '../providers/session_provider.dart';
-import 'login_screen.dart';
+import '../services/sesion.dart';
 import 'vendor_orders_screen.dart';
 import 'socio_negocio_screen.dart';
 import 'rutero_screen.dart';
@@ -98,15 +96,8 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     });
   }
 
-  Future<void> _redirectToLogin() async {
-    await _api.clearSession();
-    if (!mounted) return;
-    context.read<SessionProvider>().clear();
-    Navigator.of(context).pushAndRemoveUntil(
-      PageRouteBuilder(pageBuilder: (_, __, ___) => const LoginScreen(), transitionsBuilder: (_, a, __, c) => FadeTransition(opacity: a, child: c), transitionDuration: const Duration(milliseconds: 250)),
-      (route) => false,
-    );
-  }
+  // Sesión vencida o rechazada por el servidor
+  Future<void> _redirectToLogin() => Sesion.expirar();
 
   void _logout() async {
     final salir = await showAppConfirm(
@@ -116,7 +107,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
       confirmText: 'Salir',
       icon: Icons.logout_rounded,
     );
-    if (salir) _redirectToLogin();
+    if (salir) Sesion.cerrar();
   }
 
   @override

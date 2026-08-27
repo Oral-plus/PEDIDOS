@@ -5,6 +5,20 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'shared_http.dart';
 
+/// Error devuelto por el backend, con su código HTTP y el mensaje del cuerpo.
+class ApiException implements Exception {
+  final int statusCode;
+  final String message;
+  final Map<String, dynamic>? body;
+
+  const ApiException(this.statusCode, this.message, {this.body});
+
+  bool get noAutorizado => statusCode == 401;
+
+  @override
+  String toString() => message;
+}
+
 class ApiClient {
   static const List<String> _baseUrls = [
     'https://pedidos.oral-plus.com/api',
@@ -21,6 +35,10 @@ class ApiClient {
   /// Se llama cuando un host no responde (sin red o timeout), para que quien
   /// tenga cacheada esa URL base la descarte.
   static void Function(String baseUrl)? onConnectionError;
+
+  /// Se llama cuando el backend responde 401 fuera del login: la sesión
+  /// venció o fue cerrada y hay que volver a la pantalla de inicio.
+  static void Function(String mensaje)? onSesionInvalida;
 
   static http.Client get _http => SharedHttp.client;
 
@@ -59,7 +77,9 @@ class ApiClient {
 
     try {
       final response = await _http.get(uri, headers: finalHeaders).timeout(timeout);
-      return await _processResponse(response);
+      return await _processResponse(response, endpoint);
+    } on ApiException {
+      rethrow;
     } on SocketException {
       onConnectionError?.call(baseURL);
       throw Exception('Error de red: No se puede conectar al servidor. Verifica tu conexión a internet.');
@@ -89,7 +109,9 @@ class ApiClient {
         headers: finalHeaders,
         body: json.encode(body),
       ).timeout(timeout);
-      return await _processResponse(response);
+      return await _processResponse(response, endpoint);
+    } on ApiException {
+      rethrow;
     } on SocketException {
       onConnectionError?.call(baseURL);
       throw Exception('Error de red: No se puede conectar al servidor. Verifica tu conexión a internet.');
@@ -119,7 +141,9 @@ class ApiClient {
         headers: finalHeaders,
         body: json.encode(body),
       ).timeout(timeout);
-      return await _processResponse(response);
+      return await _processResponse(response, endpoint);
+    } on ApiException {
+      rethrow;
     } on SocketException {
       onConnectionError?.call(baseURL);
       throw Exception('Error de red: No se puede conectar al servidor. Verifica tu conexión a internet.');
@@ -144,7 +168,9 @@ class ApiClient {
 
     try {
       final response = await _http.delete(uri, headers: finalHeaders).timeout(timeout);
-      return await _processResponse(response);
+      return await _processResponse(response, endpoint);
+    } on ApiException {
+      rethrow;
     } on SocketException {
       onConnectionError?.call(baseURL);
       throw Exception('Error de red: No se puede conectar al servidor. Verifica tu conexión a internet.');
@@ -162,7 +188,7 @@ class ApiClient {
 
   static dynamic _decodificar(Uint8List bytes) => json.decode(utf8.decode(bytes));
 
-  static Future<dynamic> _processResponse(http.Response response) async {
+  static Future<dynamic> _processResponse(http.Response response, String endpoint) async {
     final bytes = response.bodyBytes;
     if (bytes.isEmpty) {
       throw Exception('Respuesta vacía del servidor');
@@ -180,9 +206,15 @@ class ApiClient {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return parsed;
     }
-    String errorMsg = parsed['message']?.toString() ??
-        parsed['error']?.toString() ??
+    final Map<String, dynamic>? cuerpo =
+        parsed is Map ? Map<String, dynamic>.from(parsed) : null;
+    final String errorMsg = cuerpo?['message']?.toString() ??
+        cuerpo?['error']?.toString() ??
         'Error del servidor: ${response.statusCode}';
-    throw Exception(errorMsg);
+    // Sesión vencida o cerrada. En el login un 401 es clave incorrecta.
+    if (response.statusCode == 401 && !endpoint.contains('/auth/login')) {
+      onSesionInvalida?.call(errorMsg);
+    }
+    throw ApiException(response.statusCode, errorMsg, body: cuerpo);
   }
 }

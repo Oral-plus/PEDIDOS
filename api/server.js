@@ -9,6 +9,7 @@ const compression = require("compression")
 const rateLimit = require("express-rate-limit")
 const dispositivos = require("./modules/dispositivos")
 const productos = require("./modules/productos")
+const sesiones = require("./modules/sesiones")
 require("dotenv").config()
 
 const app = express()
@@ -24,8 +25,9 @@ const LOG_LEVEL = (process.env.LOG_LEVEL || (process.env.NODE_ENV === "productio
 if (LOG_LEVEL === "warn" || LOG_LEVEL === "error") {
   console.log = () => {}
 }
-// Duración de la sesión (formato de jsonwebtoken: "24h", "7d")
-const SESSION_TIMEOUT = process.env.SESSION_TIMEOUT || "24h"
+// Duración de la sesión en segundos: SESSION_TIMEOUT del .env ("8h", "30m")
+// acotado a un máximo de 12 horas (ver modules/sesiones.js)
+const SESSION_TIMEOUT = sesiones.duracionSesion(process.env)
 
 // Sin estas variables el servidor no debe arrancar
 if (!JWT_SECRET || !process.env.DB_PASSWORD) {
@@ -179,6 +181,8 @@ app.use("/api/", limiter)
 // Un dispositivo desactivado o eliminado por Soporte deja de servir de
 // inmediato, no cuando caduque el token (el estado se cachea un minuto)
 app.use("/api/", dispositivos.controlEstadoMiddleware(jwt, JWT_SECRET, () => pedidosPool, sql))
+// Sesiones cerradas desde la app (o sin registro) dejan de servir aunque el token no haya vencido
+app.use("/api/", sesiones.middleware(jwt, JWT_SECRET, () => pedidosPool, sql, console))
 
 // Rate limit para login: 50 intentos cada 15 minutos por IP
 const loginLimiter = rateLimit({
@@ -474,11 +478,30 @@ async function finalizeLogin(req, res, payload, usuario) {
   // El dispositivo viaja en el token para poder cortar la sesión si Soporte lo desactiva
   if (idServicio && !rolSoporte) payload.id_servicio = idServicio
 
+  // La sesión queda registrada para poder cerrarla desde el servidor
+  let jti
+  try {
+    jti = await sesiones.registrar(pedidosPool, sql, {
+      usuarioCodigo: String(usuario.id != null ? usuario.id : ""),
+      usuarioNombre: usuario.nombre,
+      tipo: payload.tipo || "usuario",
+      rol: payload.rol || null,
+      idServicio: idServicio || null,
+      plataforma: (req.body.plataforma || "").toString(),
+      duracionSeg: SESSION_TIMEOUT,
+    })
+  } catch (e) {
+    console.error("No se pudo registrar la sesión:", e.message)
+    return res.status(503).json({ success: false, message: "No se pudo iniciar la sesión, intente de nuevo" })
+  }
+  payload.jti = jti
+
   const token = jwt.sign(payload, JWT_SECRET, { expiresIn: SESSION_TIMEOUT })
+  const expira = new Date(Date.now() + SESSION_TIMEOUT * 1000).toISOString()
   return res.json({
     success: true,
     message: "Inicio de sesión exitoso",
-    data: { token, usuario },
+    data: { token, usuario, expira, duracionSeg: SESSION_TIMEOUT },
   })
 }
 
@@ -634,11 +657,23 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
     console.log(`Login fallido: ${usuario}`)
     return res.status(401).json({
       success: false,
-      message: "Usuario o contraseña incorrectos",
+      credencialesIncorrectas: true,
+      message: "Credenciales incorrectas. Verifica el usuario y la contraseña",
     })
   } catch (error) {
     console.error("Error en login:", error)
     res.status(500).json({ success: false, message: "Error interno del servidor" })
+  }
+})
+
+// Cierra la sesión en el servidor: el token deja de servir de inmediato
+app.post("/api/auth/logout", authenticateToken, async (req, res) => {
+  try {
+    if (req.user.jti) await sesiones.cerrar(pedidosPool, sql, req.user.jti, "logout")
+    res.json({ success: true, message: "Sesión cerrada" })
+  } catch (e) {
+    console.error("Error cerrando sesión:", e.message)
+    res.status(500).json({ success: false, message: "No se pudo cerrar la sesión" })
   }
 })
 
@@ -3317,11 +3352,12 @@ async function startServer() {
     await connectDB()
     await connectPedidosDB()
 
-    // Tablas del módulo de dispositivos (BD Pedidos)
+    // Tablas de dispositivos y sesiones (BD Pedidos)
     try {
       await dispositivos.ensureTablas(pedidosPool)
+      await sesiones.ensureTabla(pedidosPool)
     } catch (e) {
-      console.error("No se pudo inicializar el módulo de dispositivos:", e.message)
+      console.error("No se pudo inicializar dispositivos o sesiones:", e.message)
     }
 
     // Tabla de configuración del catálogo y primera lectura de SAP (en segundo plano)

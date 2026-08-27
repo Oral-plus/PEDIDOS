@@ -7,22 +7,28 @@ class VarianteProducto {
   final String textura;
   final double precio;
   final int stock;
-  final bool disponible;
+
+  /// Se le vende al cliente (tiene precio en su lista). Es lo único que
+  /// impide agregarla al pedido; el stock solo informa.
+  final bool habilitado;
 
   const VarianteProducto({
     required this.codigo,
     required this.textura,
     required this.precio,
     required this.stock,
-    required this.disponible,
+    required this.habilitado,
   });
+
+  bool get disponible => habilitado;
+  bool get sinStock => stock <= 0;
 
   factory VarianteProducto.fromJson(Map<String, dynamic> j) => VarianteProducto(
         codigo: (j['codigo'] ?? '').toString(),
         textura: (j['textura'] ?? '').toString(),
         precio: (j['precio'] as num?)?.toDouble() ?? 0,
         stock: (j['stock'] as num?)?.toInt() ?? 0,
-        disponible: j['disponible'] == true,
+        habilitado: (j['habilitado'] ?? j['disponible']) == true,
       );
 }
 
@@ -49,7 +55,10 @@ class Producto {
   final String grupoSap;
   final double precio;
   final int stock;
-  final bool disponible;
+
+  /// Se le vende al cliente seleccionado (tiene precio en su lista). Es lo
+  /// único que impide agregarlo al pedido; el stock solo informa.
+  final bool habilitado;
   final String mensajeEstado;
   final String descripcion;
   final String? textura;
@@ -63,7 +72,7 @@ class Producto {
     required this.grupoSap,
     required this.precio,
     required this.stock,
-    required this.disponible,
+    required this.habilitado,
     required this.mensajeEstado,
     required this.descripcion,
     required this.textura,
@@ -81,7 +90,7 @@ class Producto {
       grupoSap: (j['grupoSap'] ?? '').toString(),
       precio: (j['precio'] as num?)?.toDouble() ?? 0,
       stock: (j['stock'] as num?)?.toInt() ?? 0,
-      disponible: j['disponible'] == true,
+      habilitado: (j['habilitado'] ?? j['disponible']) == true,
       mensajeEstado: (j['mensajeEstado'] ?? '').toString(),
       descripcion: (j['descripcion'] ?? '').toString(),
       textura: j['textura']?.toString(),
@@ -93,6 +102,8 @@ class Producto {
   }
 
   bool get tieneVariantes => variantes.isNotEmpty;
+  bool get disponible => habilitado;
+  bool get sinStock => stock <= 0;
 
   /// Mapa con las claves que ya usan las tarjetas, la vista previa, el diálogo
   /// de texturas y el carrito. Mantiene la presentación actual sin tocar esos
@@ -100,12 +111,14 @@ class Producto {
   Map<String, dynamic> toMapUi() {
     final m = <String, dynamic>{
       'title': nombre,
-      'price': PriceUtils.formatPriceDisplay(precio),
+      'price': habilitado ? PriceUtils.formatPriceDisplay(precio) : 'Sin precio',
       'image': imagenUrl ?? '',
       'description': descripcion,
       'codigoSap': codigo,
       'category': categoria,
-      'disponible': disponible,
+      'disponible': habilitado,
+      'habilitado': habilitado,
+      'sinStock': sinStock,
       'mensajeEstado': mensajeEstado,
       'hasTextureOptions': tieneVariantes,
     };
@@ -175,17 +188,23 @@ class Catalogo {
   }
 
   Map<String, Map<String, dynamic>> get estadosPorCodigo {
-    Map<String, dynamic> estado(bool disponible, int stock, String mensaje) => {
-          'estado': disponible ? 'DISPONIBLE' : 'AGOTADO',
-          'disponible': disponible,
+    // 'disponible' significa que se le vende al cliente; el stock va aparte
+    Map<String, dynamic> estado(bool habilitado, int stock, String mensaje) => {
+          'estado': habilitado ? 'DISPONIBLE' : 'NO_DISPONIBLE',
+          'disponible': habilitado,
+          'habilitado': habilitado,
           'stock': stock,
           'mensaje': mensaje,
         };
+    String mensajeVariante(VarianteProducto v) {
+      if (!v.habilitado) return 'No disponible para este cliente';
+      return v.sinStock ? 'Sin stock en bodega' : 'Producto disponible';
+    }
     final m = <String, Map<String, dynamic>>{};
     for (final p in productos) {
-      m[p.codigo] = estado(p.disponible, p.stock, p.mensajeEstado);
+      m[p.codigo] = estado(p.habilitado, p.stock, p.mensajeEstado);
       for (final v in p.variantes) {
-        m[v.codigo] = estado(v.disponible, v.stock, v.disponible ? 'Producto disponible' : 'Sin stock disponible');
+        m[v.codigo] = estado(v.habilitado, v.stock, mensajeVariante(v));
       }
     }
     return m;

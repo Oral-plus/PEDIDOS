@@ -24,10 +24,12 @@ class ProductPreviewDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final codigoSap = product['codigoSap'] ?? '';
     final precioSAP = codigoSap.isNotEmpty ? _obtenerPrecioSAP(codigoSap) : null;
-    final precioMostrar = (precioSAP != null && precioSAP != 'Precio no disponible')
-        ? PriceUtils.formatPriceDisplay(precioSAP)
-        : product['price']!;
     final disponible = _productoDisponible(codigoSap);
+    final precioMostrar = !disponible
+        ? 'Sin precio'
+        : (precioSAP != null && precioSAP != 'Precio no disponible')
+            ? PriceUtils.formatPriceDisplay(precioSAP)
+            : product['price']!;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -425,9 +427,8 @@ class ProductPreviewDialog extends StatelessWidget {
   bool _productoDisponible(String codigoSap) {
     if (estadosSAP.containsKey(codigoSap)) {
       final estado = estadosSAP[codigoSap]!;
-      final disponible = estado['disponible'] ?? true;
-      final stock = estado['stock'] ?? 0;
-      return disponible == true && (stock is num ? stock > 0 : true);
+      // Solo bloquea lo que no se le vende al cliente; el stock no impide pedir
+      return estado['disponible'] == true;
     }
     return true;
   }

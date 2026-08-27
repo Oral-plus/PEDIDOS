@@ -7,7 +7,10 @@ import 'client_menu_screen.dart';
 import 'soporte/mantenimiento_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  /// Mensaje que se muestra al llegar (por ejemplo, sesión vencida).
+  final String? aviso;
+
+  const LoginScreen({super.key, this.aviso});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -42,6 +45,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   @override
   void initState() {
     super.initState();
+    _errorMessage = widget.aviso;
 
     _cargarIdServicio();
 
@@ -131,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
           'No se pudo iniciar sesión. El servidor no devolvió un token válido.');
     } else {
       setState(() => _errorMessage =
-          result['message']?.toString() ?? 'Usuario o contraseña incorrectos');
+          result['message']?.toString() ?? 'Credenciales incorrectas');
     }
   }
 

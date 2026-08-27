@@ -19,7 +19,13 @@ function registrarRutas(app, { repositorio, imagenes, requireAuth, requireSoport
   app.get("/api/productos", requireAuth, async (req, res) => {
     try {
       const cliente = (req.query.cliente || "").toString().trim()
+      if (!cliente) {
+        return res.status(400).json({ success: false, sinCliente: true, message: "Selecciona un cliente para ver el catálogo con sus precios", productos: [] })
+      }
       const lista = await repositorio.listaPreciosDe(cliente)
+      if (lista == null) {
+        return res.status(404).json({ success: false, message: `El cliente ${cliente} no existe en SAP`, productos: [] })
+      }
       const catalogo = await repositorio.paraVendedor(lista)
       const etag = `"${catalogo.version}-${lista}"`
       res.set("ETag", etag)

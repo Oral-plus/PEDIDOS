@@ -131,9 +131,10 @@ class RepositorioProductos {
     return { items, fuenteUsada: "sql" }
   }
 
-  // Lista de precios del cliente (OCRD.ListNum), en caché 10 minutos
+  // Lista de precios del cliente (OCRD.ListNum), en caché 10 minutos.
+  // Devuelve null si el cliente no existe.
   async listaPreciosDe(cardCode) {
-    if (!cardCode) return 1
+    if (!cardCode) return null
     const c = this.listasCliente.get(cardCode)
     if (c && Date.now() < c.vence) return c.lista
     const pool = await this.getSapPool()
@@ -141,7 +142,7 @@ class RepositorioProductos {
       .request()
       .input("cardCode", this.sql.VarChar, cardCode)
       .query("SELECT ISNULL(ListNum, 1) AS lista FROM OCRD WHERE CardCode = @cardCode")
-    const lista = r.recordset[0] ? Number(r.recordset[0].lista) || 1 : 1
+    const lista = r.recordset[0] ? Number(r.recordset[0].lista) || 1 : null
     this.listasCliente.set(cardCode, { lista, vence: Date.now() + 10 * 60 * 1000 })
     return lista
   }
@@ -202,16 +203,22 @@ class RepositorioProductos {
     }
   }
 
+  // El precio es el de la lista del cliente, sin respaldo a otra lista: si su
+  // lista no tiene el artículo, a ese cliente no se le vende y el producto se
+  // muestra pero no se puede agregar. El stock solo informa, no bloquea.
   _proyectar(item, cfg, listaPrecios, variantesCfg, items) {
-    const precio = item.precios[listaPrecios] ?? item.precios[1] ?? 0
+    const precio = item.precios[listaPrecios] ?? 0
+    const habilitado = precio > 0
     const variantes = variantesCfg.map((v) => {
       const it = items.get(v.item_code)
+      const precioVariante = it ? it.precios[listaPrecios] ?? 0 : 0
       return {
         codigo: v.item_code,
         textura: v.textura || "",
-        precio: it ? (it.precios[listaPrecios] ?? it.precios[1] ?? 0) : 0,
+        precio: precioVariante,
         stock: it ? it.stock : 0,
-        disponible: it ? it.stock > 0 : false,
+        habilitado: precioVariante > 0,
+        disponible: precioVariante > 0,
       }
     })
     return {
@@ -221,8 +228,9 @@ class RepositorioProductos {
       grupoSap: item.grupoNombre,
       precio,
       stock: item.stock,
-      disponible: item.stock > 0,
-      mensajeEstado: item.stock > 0 ? "Producto disponible" : "Sin stock disponible",
+      habilitado,
+      disponible: habilitado,
+      mensajeEstado: mensajeEstado(habilitado, item.stock),
       descripcion: (cfg && cfg.descripcion) || item.descripcion || "",
       textura: (cfg && cfg.textura) || (variantes.length > 0 ? "Media" : null),
       orden: cfg && cfg.orden != null ? cfg.orden : null,
@@ -290,6 +298,11 @@ class RepositorioProductos {
     `)
     await this.cargarConfig()
   }
+}
+
+function mensajeEstado(habilitado, stock) {
+  if (!habilitado) return "No disponible para este cliente"
+  return stock > 0 ? "Producto disponible" : "Sin stock en bodega"
 }
 
 function ordenarCategorias(conjunto) {

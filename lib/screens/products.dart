@@ -78,7 +78,12 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _codigoClienteActual = context.read<SessionProvider>().codigoCliente;
-      _cargarCatalogo();
+      if (_codigoClienteActual.isEmpty) {
+        // Sin cliente no hay lista de precios: se pide seleccionarlo primero
+        setState(() => _cargando = false);
+      } else {
+        _cargarCatalogo();
+      }
     });
   }
 
@@ -108,12 +113,25 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
       _cargando = true;
       _error = null;
     });
-    final catalogo = await CatalogoService().obtener(_codigoClienteActual, forzar: forzar);
+    if (_codigoClienteActual.isEmpty) {
+      setState(() => _cargando = false);
+      return;
+    }
+    final servicio = CatalogoService();
+    final catalogo = await servicio.obtener(_codigoClienteActual, forzar: forzar);
     if (!mounted) return;
     if (catalogo == null) {
+      // No hay nada válido para este cliente: se retira lo que hubiera en
+      // pantalla (podía ser de otro cliente con otra lista de precios)
       setState(() {
         _cargando = false;
-        if (_allProducts.isEmpty) _error = 'No se pudo cargar el catálogo. Revisa la conexión e intenta de nuevo.';
+        _tabController?.dispose();
+        _tabController = null;
+        _allProducts = [];
+        _filteredProducts = [];
+        _porCategoria.clear();
+        _error = servicio.ultimoError ??
+            'No se pudo cargar el catálogo. Revisa la conexión e intenta de nuevo.';
       });
       return;
     }
@@ -162,6 +180,14 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
   }
 
   void _addToCart(Map<String, dynamic> product) {
+    if (product['disponible'] == false) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(product['mensajeEstado']?.toString() ??
+            'Este producto no está disponible para el cliente'),
+        duration: const Duration(seconds: 2),
+      ));
+      return;
+    }
     context.read<CartProvider>().addItem(product);
     HapticFeedback.mediumImpact();
     setState(() {
@@ -398,10 +424,39 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
   }
 
   /// Mientras no hay catálogo: cargando, o error con opción de reintentar
+  /// Sin cliente no hay lista de precios: el catálogo se carga al elegirlo.
+  Widget _buildSeleccionarCliente() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.person_search_rounded, size: 64, color: _gray.withOpacity(0.6)),
+            const SizedBox(height: 14),
+            const Text(
+              'Selecciona un cliente para ver el catálogo con su lista de precios',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: _gray, fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _confirmarCodigo,
+              style: FilledButton.styleFrom(backgroundColor: _ink),
+              icon: const Icon(Icons.person_pin_rounded, size: 18),
+              label: const Text('Seleccionar cliente'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEstadoCatalogo() {
     if (_cargando) {
       return const Center(child: CircularProgressIndicator(color: _inkSoft));
     }
+    if (_codigoClienteActual.isEmpty) return _buildSeleccionarCliente();
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -421,6 +476,15 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
               style: FilledButton.styleFrom(backgroundColor: _ink),
               icon: const Icon(Icons.refresh_rounded, size: 18),
               label: const Text('Reintentar'),
+            ),
+            const SizedBox(height: 4),
+            TextButton.icon(
+              onPressed: _confirmarCodigo,
+              icon: const Icon(Icons.person_search_rounded, size: 18, color: _inkSoft),
+              label: const Text(
+                'Cambiar cliente',
+                style: TextStyle(color: _inkSoft, fontWeight: FontWeight.w700),
+              ),
             ),
           ],
         ),

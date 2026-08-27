@@ -47,6 +47,10 @@ class _ProductCardState extends State<ProductCard> {
     final bool disponible = (estadoString != null)
         ? (estadoString.toUpperCase() == 'DISPONIBLE')
         : (product['disponible'] ?? true);
+    // Sin stock en bodega: se informa, pero el producto se puede pedir igual
+    final stockSap = estadoSAP is Map ? estadoSAP['stock'] : null;
+    final bool sinStock = disponible &&
+        (stockSap is num ? stockSap <= 0 : product['sinStock'] == true);
 
     num? precioNum;
     if (precioSAP is num) {
@@ -62,9 +66,11 @@ class _ProductCardState extends State<ProductCard> {
       precioNum = num.tryParse(precioSAP.replaceAll(RegExp(r'[^0-9.\-]'), ''));
     }
 
-    final String precioMostrar = (precioNum != null)
-        ? PriceUtils.formatPriceDisplay(precioNum.toDouble())
-        : (product['price']?.toString() ?? '\$0');
+    final String precioMostrar = !disponible
+        ? 'Sin precio'
+        : (precioNum != null)
+            ? PriceUtils.formatPriceDisplay(precioNum.toDouble())
+            : (product['price']?.toString() ?? '\$0');
 
     final radius = context.responsive(18);
 
@@ -97,7 +103,7 @@ class _ProductCardState extends State<ProductCard> {
             children: [
               Expanded(
                 flex: 5,
-                child: _buildProductImage(context, disponible),
+                child: _buildProductImage(context, disponible, sinStock),
               ),
               Padding(
                 padding: EdgeInsets.fromLTRB(
@@ -163,7 +169,7 @@ class _ProductCardState extends State<ProductCard> {
     );
   }
 
-  Widget _buildProductImage(BuildContext context, bool disponible) {
+  Widget _buildProductImage(BuildContext context, bool disponible, bool sinStock) {
     final topRadius = BorderRadius.vertical(top: Radius.circular(context.responsive(18)));
     Widget img = Padding(
       padding: const EdgeInsets.all(10.0),
@@ -239,25 +245,30 @@ class _ProductCardState extends State<ProductCard> {
                 ),
               ),
             ),
-          // Badge "AGOTADO" (arriba izquierda) en vez del ícono grande
-          if (!disponible)
+          // Distintivo arriba a la izquierda: no se le vende a este cliente,
+          // o se vende pero no hay stock en bodega
+          if (!disponible || sinStock)
             Positioned(
               top: context.responsive(8),
               left: context.responsive(8),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF6B7280),
+                  color: disponible ? const Color(0xFFB45309) : const Color(0xFF6B7280),
                   borderRadius: BorderRadius.circular(30),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.remove_shopping_cart_rounded, color: Colors.white, size: 11),
-                    SizedBox(width: 4),
+                    Icon(
+                      disponible ? Icons.inventory_2_outlined : Icons.block_rounded,
+                      color: Colors.white,
+                      size: 11,
+                    ),
+                    const SizedBox(width: 4),
                     Text(
-                      'AGOTADO',
-                      style: TextStyle(
+                      disponible ? 'SIN STOCK' : 'NO DISPONIBLE',
+                      style: const TextStyle(
                         fontSize: 9,
                         fontWeight: FontWeight.w900,
                         color: Colors.white,

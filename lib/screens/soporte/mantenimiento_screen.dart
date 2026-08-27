@@ -4,8 +4,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../../services/api_easy_service.dart';
 import '../../services/catalogo_service.dart';
+import '../../services/sesion.dart';
 import '../../widgets/producto_imagen.dart';
-import '../login_screen.dart';
 
 /// Plataforma de mantenimiento (Soporte TI).
 /// Dispositivos: lista los dispositivos con la persona asociada y permite
@@ -379,20 +379,10 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
     ));
   }
 
-  Future<void> _cerrarSesion() async {
-    await _api.clearSession();
-    if (!mounted) return;
-    _volverAlLogin();
-  }
+  Future<void> _cerrarSesion() => Sesion.cerrar();
 
-  void _volverAlLogin() {
-    // Mantenimiento es la ruta raíz tras los pushReplacement de splash/login,
-    // por eso se limpia toda la pila.
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
-  }
+  // Sesión vencida o rechazada por el servidor
+  void _volverAlLogin() => Sesion.expirar();
 
   static final DateFormat _fmtFecha = DateFormat('dd/MM/yyyy HH:mm');
 
