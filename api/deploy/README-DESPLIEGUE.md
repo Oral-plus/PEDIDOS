@@ -53,11 +53,3 @@ Para saber qué proxy corre en el servidor: `docker ps` y buscar `caddy`,
    la cuenta de Soporte TI en Mantenimiento > Dispositivos.
 4. Todos los vendedores deben iniciar sesión de nuevo una vez (los tokens de
    la versión anterior ya no sirven).
-
-## Pendientes de seguridad
-
-- Reemplazar la cuenta `sa` del `.env` por el usuario `pedidos_app`
-  (`sql/crear_usuario_pedidos_app.sql`, ejecutar en SSMS) y enviar el `.env`
-  actualizado al proveedor.
-- Crear en SAP un usuario de solo lectura para el Service Layer en lugar de
-  `manager` y actualizar `SL_USER` y `SL_PASSWORD`.
