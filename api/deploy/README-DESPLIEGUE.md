@@ -1,132 +1,63 @@
-# Despliegue del backend PEDIDOS en el servidor 192.168.2.249
+# Despliegue del backend de pedidos (notas internas)
 
-Objetivo: que `https://gestores-api.oral-plus.com/*` llegue al backend de la
-app (server.js, puerto 3000) para que el login funcione desde cualquier red.
-Se usa un subdominio dedicado (no un prefijo de ruta) para no interferir con
-las rutas de la aplicación existente en `pedidos.oral-plus.com`.
+Documento de uso interno de Sistemas. El documento que se entrega al
+proveedor es `INSTRUCCIONES-PROVEEDOR.md`, en esta misma carpeta.
 
-> Todos los comandos del PC se ejecutan en PowerShell o Git Bash desde
-> `c:\Users\skyen\Desktop\PROYECTO VENTAS\PEDIDOS\api`. Reemplaza `USUARIO`
-> por el usuario SSH real del servidor 192.168.2.249.
+Objetivo: que `https://gestores-api.oral-plus.com/*` llegue al backend
+(`server.js`, puerto 3000) en el servidor `192.168.2.249`, para que la app
+funcione desde cualquier red. Se usa un subdominio dedicado y no un prefijo de
+ruta para no interferir con la API SAP que ya corre en `pedidos.oral-plus.com`.
 
-## Paso 0 — Crear el subdominio (DNS)
+## Paquete para el proveedor
 
-En el panel del DNS de `oral-plus.com` (nameservers de mi.com.co):
+Desde `api/`, el ZIP debe contener:
 
-- **CNAME** `gestores-api` → `pedidos.oral-plus.com` (opción simple), o
-- **A** `gestores-api` → `181.205.151.221`
+```
+server.js  modules/  package.json  package-lock.json  .env
+Dockerfile  docker-compose.yml  .dockerignore
+test/integracion/  sql/  INSTRUCCIONES-PROVEEDOR.md
+```
 
-No se toca el router: se reutiliza el port-forward 443 → `.249` existente.
+No van: `node_modules/`, `scripts/` (migración ya ejecutada), `deploy/` ni
+los archivos heredados de otros sistemas (`Datos.js`, `invoice*.js`,
+`server1.js`, `*.php`, `vercel.json`, `iniciar_api.cmd`).
 
-## Paso 1 — Copiar los archivos al servidor (desde este PC)
+Antes de enviar: probar el paquete descomprimido en limpio (`npm install
+--omit=dev`, `node server.js`, `npm run test:integracion`) o con Docker
+(`docker compose up -d --build` y `docker compose exec pedidos-backend node
+test/integracion/run.js`).
+
+## Despliegue directo por SSH (si no lo hace el proveedor)
 
 ```bash
 ssh USUARIO@192.168.2.249 "mkdir -p /opt/pedidos-backend"
-scp server.js package.json package-lock.json .env deploy/Dockerfile deploy/docker-compose.yml USUARIO@192.168.2.249:/opt/pedidos-backend/
-scp -r modules USUARIO@192.168.2.249:/opt/pedidos-backend/
-```
-
-## Paso 2 — Construir y levantar el contenedor (por SSH)
-
-```bash
+scp server.js package.json package-lock.json .env Dockerfile docker-compose.yml .dockerignore USUARIO@192.168.2.249:/opt/pedidos-backend/
+scp -r modules test sql USUARIO@192.168.2.249:/opt/pedidos-backend/
 ssh USUARIO@192.168.2.249
 cd /opt/pedidos-backend
-docker compose up -d --build     # si falla, probar: docker-compose up -d --build
+docker compose up -d --build
 curl http://localhost:3000/api/test
 ```
 
-Debe responder: `{"success":true,"message":"🚀 API SkyPagos funcionando correctamente",...}`
+Reverse proxy y DNS: los mismos pasos 1 y 3 de `INSTRUCCIONES-PROVEEDOR.md`.
+Para saber qué proxy corre en el servidor: `docker ps` y buscar `caddy`,
+`nginx`, `nginx-proxy-manager` o `traefik`.
 
-Verificar también desde el PC: `http://192.168.2.249:3000/api/test`
+## Después del despliegue
 
-## Paso 3 — Publicar el subdominio en el reverse proxy
+1. Verificar desde datos móviles: `curl https://gestores-api.oral-plus.com/api/test`.
+2. Instalar el APK (`Desktop\PROYECTO VENTAS\PEDIDOS-app-release.apk`) en
+   los teléfonos. La app intenta primero `https://gestores-api.oral-plus.com`
+   y, si no responde, `http://192.168.2.249:3000` por LAN.
+3. Cada teléfono queda pendiente de activación la primera vez: se activa desde
+   la cuenta de Soporte TI en Mantenimiento > Dispositivos.
+4. Todos los vendedores deben iniciar sesión de nuevo una vez (los tokens de
+   la versión anterior ya no sirven).
 
-```bash
-docker ps
-```
+## Pendientes de seguridad
 
-Buscar un contenedor tipo `caddy`, `nginx`, `nginx-proxy-manager`, `traefik`
-o `pangolin`. Según cuál sea, aplicar UNA de las secciones siguientes. La
-regla siempre es la misma: **todo** el host `gestores-api.oral-plus.com` →
-puerto 3000, sin prefijos ni reescrituras, con certificado SSL para el nombre.
-
-### Si es Caddy
-
-Agregar un bloque nuevo al Caddyfile (el certificado se emite solo):
-
-```
-gestores-api.oral-plus.com {
-    reverse_proxy 192.168.2.249:3000
-}
-```
-
-Recargar: `docker exec <contenedor> caddy reload --config /etc/caddy/Caddyfile`
-
-### Si es Nginx (o Nginx Proxy Manager)
-
-Server block nuevo para `gestores-api.oral-plus.com` con su certificado
-(certbot) y:
-
-```nginx
-location / {
-    proxy_pass http://192.168.2.249:3000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto https;
-}
-```
-
-En NPM: Hosts → "Add Proxy Host" con dominio `gestores-api.oral-plus.com`,
-destino `192.168.2.249:3000`, y SSL con "Request a new certificate".
-
-### Si es Traefik
-
-Agregar al contenedor `pedidos-backend` (en su docker-compose.yml) estas
-labels y conectarlo a la red de Traefik:
-
-```yaml
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.gestoresapi.rule=Host(`gestores-api.oral-plus.com`)
-      - traefik.http.routers.gestoresapi.tls=true
-      - traefik.http.routers.gestoresapi.tls.certresolver=letsencrypt
-      - traefik.http.services.gestoresapi.loadbalancer.server.port=3000
-```
-
-Luego `docker compose up -d` de nuevo.
-
-## Paso 4 — Prueba final desde internet
-
-Desde cualquier red (o con datos móviles):
-
-```bash
-curl https://gestores-api.oral-plus.com/api/test
-```
-
-Debe responder el JSON de "API SkyPagos". Si responde 404 HTML, la regla del
-proxy no quedó bien; si el certificado falla, el DNS aún no propaga o falta
-emitirlo.
-
-## Paso 5 — Instalar el APK nuevo en los teléfonos
-
-El APK recompilado (con el subdominio de primera en la lista) queda en:
-`build\app\outputs\flutter-apk\app-release.apk`
-(copia de entrega: `Desktop\PROYECTO VENTAS\PEDIDOS-app-release.apk`)
-
-La app prueba las URLs en este orden:
-1. `https://gestores-api.oral-plus.com` (funciona en cualquier red)
-2. `http://192.168.2.249:3000` (LAN directa, por si se cae el internet)
-3. `http://192.168.2.73:3000` (PC de desarrollo, fallback temporal)
-
-## Notas
-
-- El contenedor se conecta al SQL Server de `192.168.2.244:1433` (bases
-  SkyPagos y Pedidos); desde el .249 hay acceso directo por LAN.
-- `restart: always` hace que el backend arranque solo si se reinicia el
-  servidor.
-- No se tocó ni el router: se reutiliza el port-forward 443 → .249 que ya
-  existía. Lo único nuevo en DNS es el registro del subdominio.
-- La API SAP existente (`pedidos.oral-plus.com/api`) no se toca en absoluto.
-- Cuando el contenedor esté estable, el `node server.js` del PC de desarrollo
-  ya no es necesario para producción.
+- Reemplazar la cuenta `sa` del `.env` por el usuario `pedidos_app`
+  (`sql/crear_usuario_pedidos_app.sql`, ejecutar en SSMS) y enviar el `.env`
+  actualizado al proveedor.
+- Crear en SAP un usuario de solo lectura para el Service Layer en lugar de
+  `manager` y actualizar `SL_USER` y `SL_PASSWORD`.

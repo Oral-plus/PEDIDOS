@@ -1241,7 +1241,7 @@ app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => 
     }
 
     const client = clientResult.recordset[0]
-    const vendedorNombre = client.SlpName || "—"
+    const vendedorNombre = client.SlpName || "-"
 
     // Canal de distribución (U_CANAL_DISTRIBUCION -> @DISTRIBUCION). Es una
     // tabla de usuario que puede no existir, por eso va aparte y en caché.
@@ -2174,7 +2174,7 @@ app.post("/api/rutas/extra", authenticateToken, async (req, res) => {
       `)
 
     const nuevoId = result.recordset[0].id
-    console.log(`Ruta EXTRA #${nuevoId} vendedor ${slpCode} · cliente ${clienteId} · motivo: ${motivo}`)
+    console.log(`Ruta EXTRA #${nuevoId} vendedor ${slpCode}, cliente ${clienteId}, motivo: ${motivo}`)
     res.json({ success: true, message: "Ruta extra agregada correctamente", data: { id: nuevoId } })
   } catch (error) {
     console.error("Error creando ruta extra:", error.message)
@@ -3032,7 +3032,7 @@ function contextoATexto(codigo, ctx, extra) {
   if (ctx.facturasAbiertas.length > 0) {
     lineas.push(`- Facturas abiertas (${ctx.facturasAbiertas.length}):`)
     for (const f of ctx.facturasAbiertas) {
-      lineas.push(`  · #${f.DocNum} vence ${f.vence}, saldo ${formatearPesos(f.saldo)}${f.diasMora > 0 ? ` (VENCIDA hace ${f.diasMora} días)` : ""}`)
+      lineas.push(`  - #${f.DocNum} vence ${f.vence}, saldo ${formatearPesos(f.saldo)}${f.diasMora > 0 ? ` (VENCIDA hace ${f.diasMora} días)` : ""}`)
     }
   } else {
     lineas.push("- Sin facturas abiertas (cartera al día)")
@@ -3040,13 +3040,13 @@ function contextoATexto(codigo, ctx, extra) {
   if (ctx.topProductos.length > 0) {
     lineas.push("- Productos más comprados (últimos 6 meses):")
     for (const p of ctx.topProductos) {
-      lineas.push(`  · ${p.producto} (${Math.round(p.cantidad)} und, última: ${p.ultimaCompra})`)
+      lineas.push(`  - ${p.producto} (${Math.round(p.cantidad)} und, última: ${p.ultimaCompra})`)
     }
   }
   if (ctx.proximasRutas.length > 0) {
     lineas.push("- Visitas programadas:")
     for (const r of ctx.proximasRutas) {
-      lineas.push(`  · ${r.fecha}${r.hora ? " " + r.hora : ""} — ${r.nombre} [${r.estado}]`)
+      lineas.push(`  - ${r.fecha}${r.hora ? " " + r.hora : ""}: ${r.nombre} [${r.estado}]`)
     }
   }
   if (extra && extra.ruta && extra.ruta.nombre) {
@@ -3064,30 +3064,30 @@ function sugerenciasFallback(ctx) {
   if (vencidas.length > 0) {
     const total = vencidas.reduce((a, f) => a + Number(f.saldo || 0), 0)
     const maxMora = Math.max(...vencidas.map((f) => f.diasMora))
-    s.push(`💰 Prioriza el recaudo: ${vencidas.length} factura(s) vencida(s) por ${formatearPesos(total)} (la más antigua con ${maxMora} días de mora).`)
+    s.push(`Prioriza el recaudo: ${vencidas.length} factura(s) vencida(s) por ${formatearPesos(total)} (la más antigua con ${maxMora} días de mora).`)
   } else if (ctx.facturasAbiertas.length > 0) {
     const total = ctx.facturasAbiertas.reduce((a, f) => a + Number(f.saldo || 0), 0)
-    s.push(`📋 Cartera al día: ${ctx.facturasAbiertas.length} factura(s) abiertas por ${formatearPesos(total)}, ninguna vencida.`)
+    s.push(`Cartera al día: ${ctx.facturasAbiertas.length} factura(s) abiertas por ${formatearPesos(total)}, ninguna vencida.`)
   } else {
-    s.push("✅ Cliente sin cartera pendiente — buen momento para impulsar un pedido nuevo.")
+    s.push("Cliente sin cartera pendiente: buen momento para impulsar un pedido nuevo.")
   }
 
   if (ctx.ultimaCompra && ctx.ultimaCompra.diasSinComprar > 30) {
-    s.push(`⏰ Lleva ${ctx.ultimaCompra.diasSinComprar} días sin comprar (última: ${ctx.ultimaCompra.fecha}) — enfócate en reactivarlo.`)
+    s.push(`Lleva ${ctx.ultimaCompra.diasSinComprar} días sin comprar (última: ${ctx.ultimaCompra.fecha}): enfócate en reactivarlo.`)
   }
 
   if (ctx.topProductos.length > 0) {
     const top = ctx.topProductos.slice(0, 3).map((p) => p.producto).join(", ")
-    s.push(`🛒 Sugiere reposición de sus productos frecuentes: ${top}.`)
+    s.push(`Sugiere reposición de sus productos frecuentes: ${top}.`)
   }
 
   if (ctx.proximasRutas.length > 0) {
     const r = ctx.proximasRutas[0]
-    s.push(`🗓️ Visita programada: ${r.fecha}${r.hora ? " a las " + r.hora : ""} (${r.estado}).`)
+    s.push(`Visita programada: ${r.fecha}${r.hora ? " a las " + r.hora : ""} (${r.estado}).`)
   }
 
   if (s.length === 0) {
-    s.push("ℹ️ No hay datos históricos de este cliente. Aprovecha la visita para levantar información y ofrecer el portafolio.")
+    s.push("No hay datos históricos de este cliente. Aprovecha la visita para levantar información y ofrecer el portafolio.")
   }
 
   return s.join("\n")
@@ -3170,7 +3170,7 @@ app.post("/api/clientes/:codigo/ia/chat", authenticateToken, async (req, res) =>
 
     let texto = await preguntarClaude(contexto, `Pregunta del vendedor: ${pregunta}`)
     if (!texto) {
-      texto = `ℹ️ El asistente IA no está disponible. Datos del cliente:\n\n${sugerenciasFallback(ctx)}`
+      texto = `El asistente IA no está disponible. Datos del cliente:\n\n${sugerenciasFallback(ctx)}`
     }
 
     console.log(`Chat IA ${codigo}: "${pregunta.slice(0, 60)}"`)
