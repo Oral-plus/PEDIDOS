@@ -16,7 +16,7 @@ function llamar(metodo, ruta, { body, token, headers = {}, raw = false } = {}) {
     if (datos && !Buffer.isBuffer(body)) h["Content-Type"] = "application/json"
     if (datos) h["Content-Length"] = datos.length
     if (token) h.Authorization = `Bearer ${token}`
-    const req = http.request(BASE + ruta, { method: metodo, headers: h }, (res) => {
+    const req = (BASE.startsWith("https") ? require("https") : http).request(BASE + ruta, { method: metodo, headers: h }, (res) => {
       const trozos = []
       res.on("data", (c) => trozos.push(c))
       res.on("end", () => {
@@ -50,7 +50,7 @@ async function esperar() {
 ;(async () => {
   const out = []
   const ok = (n, c, extra) => out.push([n + (extra ? `  [${extra}]` : ""), !!c])
-  if (!(await esperar())) { process.stdout.write("FALLA el servidor no escucha en 3050\n"); process.exit(1) }
+  if (!(await esperar())) { process.stdout.write("FALLA el servidor no responde en " + BASE + "\n"); process.exit(1) }
 
   const cfgDb = (db) => ({ server: process.env.DB_SERVER, database: db, user: process.env.DB_USER, password: process.env.DB_PASSWORD, port: 1433, options: { encrypt: false, trustServerCertificate: true } })
   const sap = await new sql.ConnectionPool(cfgDb(process.env.SAP_DB_NAME || "RBOSKY3")).connect()

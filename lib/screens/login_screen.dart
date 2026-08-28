@@ -19,6 +19,9 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin {
   final _usuarioController = TextEditingController();
   final _passwordController = TextEditingController();
+  // Solo compilaciones de prueba: servidor editable
+  late final _servidorController =
+      TextEditingController(text: _api.servidorActual);
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _errorMessage;
@@ -95,6 +98,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     _logoController.dispose();
     _usuarioController.dispose();
     _passwordController.dispose();
+    _servidorController.dispose();
     super.dispose();
   }
 
@@ -435,13 +439,35 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: const Color(0xFFF59E0B)),
               ),
-              child: Text(
-                'APK DE PRUEBAS · servidor ${ApiEasyService.servidorPruebas}',
-                style: const TextStyle(
-                  color: Color(0xFFB45309),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'APK DE PRUEBAS',
+                    style: TextStyle(
+                      color: Color(0xFFB45309),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: _servidorController,
+                    keyboardType: TextInputType.url,
+                    autocorrect: false,
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'Servidor',
+                      labelStyle: TextStyle(fontSize: 11, color: Color(0xFFB45309)),
+                      helperText: 'Si el túnel cambia de URL, escribir aquí la nueva',
+                      helperStyle: TextStyle(fontSize: 10, color: Color(0xFFB45309)),
+                      contentPadding: EdgeInsets.symmetric(vertical: 6),
+                      border: UnderlineInputBorder(),
+                    ),
+                    onChanged: (v) => _api.setServidorPruebas(v),
+                  ),
+                ],
               ),
             ),
           ],

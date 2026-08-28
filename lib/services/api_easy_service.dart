@@ -21,6 +21,36 @@ class ApiEasyService {
   static const String servidorPruebas = String.fromEnvironment('API_BASE_URL');
   static bool get esCompilacionDePruebas => servidorPruebas.isNotEmpty;
 
+  /// En compilaciones de prueba el servidor se puede cambiar desde el login
+  /// (los túneles de prueba cambian de URL); se guarda en preferencias.
+  static const _servidorPruebasKey = 'servidor_pruebas';
+  String? _servidorManual;
+
+  /// Servidor que usa la compilación de pruebas (el escrito por el usuario o
+  /// el fijado al compilar).
+  String get servidorActual =>
+      (_servidorManual != null && _servidorManual!.isNotEmpty)
+          ? _servidorManual!
+          : servidorPruebas;
+
+  Future<void> setServidorPruebas(String url) async {
+    var limpio = url.trim();
+    while (limpio.endsWith('/')) {
+      limpio = limpio.substring(0, limpio.length - 1);
+    }
+    if (limpio.isNotEmpty && !limpio.startsWith('http')) limpio = 'https://$limpio';
+    _servidorManual = limpio;
+    _resolvedBaseUrl = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (limpio.isEmpty) {
+        await prefs.remove(_servidorPruebasKey);
+      } else {
+        await prefs.setString(_servidorPruebasKey, limpio);
+      }
+    } catch (_) {}
+  }
+
   static const List<String> _baseUrls = servidorPruebas != ''
       ? [servidorPruebas]
       : [
@@ -76,6 +106,9 @@ class ApiEasyService {
 
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (esCompilacionDePruebas) {
+        _servidorManual = prefs.getString(_servidorPruebasKey);
+      }
       final storedToken = prefs.getString(_tokenKey);
       final storedUsuario = prefs.getString(_usuarioKey);
       final storedLogin = prefs.getString(_loginUsuarioKey);
@@ -210,6 +243,11 @@ class ApiEasyService {
   /// vez (guardado en preferencias) y, si no, el primero de la lista que
   /// responda. Solo se cachea un host que haya respondido.
   Future<String> _buscarBaseUrl() async {
+    // Compilación de pruebas: un solo servidor, sin sondeo
+    if (esCompilacionDePruebas) {
+      _resolvedBaseUrl = servidorActual;
+      return servidorActual;
+    }
     // Si hace poco no respondió ninguno, no se vuelve a sondear todavía
     final fallo = _ultimaBusquedaFallida;
     if (fallo != null &&

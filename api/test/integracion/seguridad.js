@@ -18,7 +18,7 @@ function llamar(metodo, ruta, { body, token } = {}) {
     const h = { Accept: "application/json" }
     if (datos) { h["Content-Type"] = "application/json"; h["Content-Length"] = Buffer.byteLength(datos) }
     if (token) h.Authorization = `Bearer ${token}`
-    const req = http.request(BASE + ruta, { method: metodo, headers: h }, (res) => {
+    const req = (BASE.startsWith("https") ? require("https") : http).request(BASE + ruta, { method: metodo, headers: h }, (res) => {
       const trozos = []
       res.on("data", (c) => trozos.push(c))
       res.on("end", () => {
@@ -81,7 +81,7 @@ const RUTAS = [
 ;(async () => {
   const out = []
   const ok = (n, c, extra) => out.push([n + (extra ? `  [${extra}]` : ""), !!c])
-  if (!(await esperar())) { process.stdout.write("FALLA el servidor no escucha en 3000\n"); process.exit(1) }
+  if (!(await esperar())) { process.stdout.write("FALLA el servidor no responde en " + BASE + "\n"); process.exit(1) }
 
   // 1) Sin token: todo 401
   let abiertas = []
