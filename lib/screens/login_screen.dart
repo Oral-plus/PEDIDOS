@@ -78,6 +78,14 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     Future.delayed(const Duration(milliseconds: 350), () {
       if (mounted) _cardController.forward();
     });
+
+    // Aviso de llegada (sesión vencida o cerrada) como ventana emergente
+    final aviso = widget.aviso;
+    if (aviso != null && aviso.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _mostrarError('Sesión finalizada', aviso);
+      });
+    }
   }
 
   @override
@@ -131,12 +139,55 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       _mostrarDialogoActivacion(
           result['id_servicio']?.toString() ?? _idServicio ?? '');
     } else if (result['success'] == true) {
-      setState(() => _errorMessage =
-          'No se pudo iniciar sesión. El servidor no devolvió un token válido.');
+      const mensaje =
+          'No se pudo iniciar sesión. El servidor no devolvió un token válido.';
+      setState(() => _errorMessage = mensaje);
+      _mostrarError('No se pudo iniciar sesión', mensaje);
     } else {
-      setState(() => _errorMessage =
-          result['message']?.toString() ?? 'Credenciales incorrectas');
+      final mensaje =
+          result['message']?.toString() ?? 'Credenciales incorrectas';
+      setState(() => _errorMessage = mensaje);
+      _mostrarError(
+        _esErrorDeCredenciales(mensaje)
+            ? 'Credenciales incorrectas'
+            : 'No se pudo iniciar sesión',
+        mensaje,
+      );
     }
+  }
+
+  bool _esErrorDeCredenciales(String mensaje) {
+    final m = mensaje.toLowerCase();
+    return m.contains('credencial') || m.contains('incorrect');
+  }
+
+  /// Ventana emergente con el motivo por el que no se pudo entrar
+  /// (credenciales incorrectas, servidor sin respuesta, sesión vencida...).
+  void _mostrarError(String titulo, String mensaje) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.error_outline_rounded, color: _errorColor),
+            const SizedBox(width: 10),
+            Expanded(child: Text(titulo)),
+          ],
+        ),
+        content: Text(mensaje, style: const TextStyle(fontSize: 14)),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: _accent, foregroundColor: Colors.white),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _copiarId(String id) {
