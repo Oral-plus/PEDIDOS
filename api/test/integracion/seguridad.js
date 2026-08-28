@@ -76,6 +76,10 @@ const RUTAS = [
   ["GET", "/api/productos/admin"],
   ["GET", "/api/usuarios"],
   ["GET", "/api/dispositivos"],
+  ["GET", "/api/clientes/C1000100148/comentarios"],
+  ["POST", "/api/clientes/C1000100148/comentarios", { comentario: "x" }],
+  ["PUT", "/api/clientes/C1000100148/free-text", { texto: "x" }],
+  ["GET", "/api/clientes/C1000100148/facturas-historico"],
 ]
 
 ;(async () => {
@@ -131,6 +135,30 @@ const RUTAS = [
   ok("con sesión: cartera, clientes y pedidos responden 200", cartera.status === 200 && clientes.status === 200 && pedidosCli.status === 200 && detalleVend.status === 200, `${cartera.status}/${clientes.status}/${pedidosCli.status}/${detalleVend.status}`)
   const reg = await llamar("POST", "/api/auth/register", { token, body: { nombre: "a", apellido: "b", telefono: "1", pin: "1", documento: "1" } })
   ok("con sesión de vendedor: /api/auth/register responde 403", reg.status === 403 && decoded.rol !== "soporte" || (decoded.rol === "soporte" && reg.status !== 401), `rol=${decoded.rol || "vendedor"} status=${reg.status}`)
+
+  // 5b) Rutas de cliente que usa la app: comentarios, texto libre SAP e histórico
+  const CLIENTE = "C1000100148"
+  const com0 = await llamar("GET", `/api/clientes/${CLIENTE}/comentarios`, { token })
+  ok("comentarios: GET 200 con lista y freeText", com0.status === 200 && Array.isArray(com0.json.data) && typeof com0.json.freeText === "string", `${com0.status} ${com0.json && com0.json.total} comentarios`)
+  const comVacio = await llamar("POST", `/api/clientes/${CLIENTE}/comentarios`, { token, body: { comentario: "   " } })
+  ok("comentarios: POST vacío responde 400", comVacio.status === 400)
+  const textoPrueba = `prueba-seguridad ${Date.now()}`
+  const comNuevo = await llamar("POST", `/api/clientes/${CLIENTE}/comentarios`, { token, body: { comentario: textoPrueba } })
+  const nuevo = comNuevo.json && comNuevo.json.data
+  ok("comentarios: POST 200 devuelve id, comentario, usuarioNombre y fechaCreacion", comNuevo.status === 200 && nuevo && nuevo.id && nuevo.comentario === textoPrueba && nuevo.usuarioNombre && nuevo.fechaCreacion, nuevo && `${nuevo.usuarioNombre} ${nuevo.fechaCreacion}`)
+  const com1 = await llamar("GET", `/api/clientes/${CLIENTE}/comentarios`, { token })
+  ok("comentarios: el nuevo aparece de primero", com1.status === 200 && com1.json.data[0] && com1.json.data[0].id === (nuevo && nuevo.id))
+  if (nuevo && nuevo.id) {
+    await pedidos.request().input("id", sql.Int, nuevo.id).query("DELETE FROM dbo.comentarios_clientes WHERE id = @id")
+  }
+  const hist = await llamar("GET", `/api/clientes/${CLIENTE}/facturas-historico?limite=20`, { token })
+  const h = hist.json && hist.json.data
+  ok("facturas-historico: 200 con facturas (numero, fecha, total, saldo, estado) y totales", hist.status === 200 && h && Array.isArray(h.facturas) && h.facturas.length > 0 && h.facturas.every((f) => f.numero && f.fecha && typeof f.total === "number" && typeof f.saldo === "number" && ["PAGADA", "ABIERTA", "VENCIDA"].includes(f.estado)) && typeof h.totalCompras === "number", h && `${h.total} facturas, ${h.pagadas} pagadas, ${h.abiertas} abiertas`)
+  // El texto libre se reescribe con su valor actual: prueba el Service Layer sin cambiar datos
+  const ft = await llamar("PUT", `/api/clientes/${CLIENTE}/free-text`, { token, body: { texto: com0.json.freeText || "" } })
+  ok("free-text: PUT (mismo valor) responde 200 con freeText", ft.status === 200 && ft.json && typeof ft.json.freeText === "string", ft.json && (ft.json.message || "ok"))
+  const ftNo = await llamar("PUT", "/api/clientes/CNOEXISTE999/free-text", { token, body: { texto: "x" } })
+  ok("free-text: cliente inexistente responde 404", ftNo.status === 404, ftNo.json && ftNo.json.message)
 
   // 6) Soporte desactiva el dispositivo por la ruta de la app: la sesión cae
   const desactivar = await llamar("POST", `/api/dispositivos/${encodeURIComponent(DISPOSITIVO)}/estado`, { token: tokenSoporte, body: { estado: "DESACTIVADO" } })

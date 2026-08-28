@@ -21,12 +21,14 @@ node test/integracion/seguridad.js   # una sola suite
 
 ## Qué verifica cada suite
 
-- `seguridad.js`: las 32 rutas de datos responden 401 sin sesión; `/api/test` y
+- `seguridad.js`: las 36 rutas de datos responden 401 sin sesión; `/api/test` y
   `/api/health` siguen abiertas; el login sin ID de servicio se rechaza; Soporte TI
   entra sin dispositivo y, por las rutas de la app, ve el dispositivo pendiente, lo
   activa, lo desactiva y lo elimina; un
   dispositivo nuevo queda pendiente y uno activado entra; `/api/auth/register`
-  solo para Soporte; al desactivar el dispositivo la sesión cae.
+  solo para Soporte; al desactivar el dispositivo la sesión cae; comentarios del
+  cliente (listar, crear y borrar el de prueba), histórico de facturas y texto libre
+  SAP (se reescribe con su valor actual, sin cambiar datos).
 - `sesion.js`: credenciales incorrectas (401 con mensaje); token con registro
   (jti) y vencimiento de 12 h; catálogo exige cliente (400) y cliente inexistente
   (404); precios solo por la lista del cliente (lista 6 vs 43, sin respaldo a la

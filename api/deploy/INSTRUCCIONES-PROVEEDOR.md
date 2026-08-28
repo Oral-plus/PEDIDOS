@@ -59,7 +59,7 @@ Respuesta esperada:
 
 Al arrancar, el servicio crea por sí mismo las tablas que necesita en la base
 de datos Pedidos (`dispositivos`, `sesiones`, `productos_config`,
-`productos_imagenes`) si no existen.
+`productos_imagenes`, `comentarios_clientes`) si no existen.
 
 ## Paso 3. Reverse proxy
 
@@ -139,6 +139,10 @@ Debe terminar con `TODAS LAS SUITES OK`.
 
 ## Comportamiento de esta versión
 
+- Las claves del login no están en el código: `CLAVE_MAESTRA` (vacía = sin clave
+  maestra) y `PREFIJO_CLAVE_VENDEDOR` se configuran en el `.env`.
+- Comentarios del cliente (tabla `comentarios_clientes`), histórico de facturas (SAP)
+  y edición del texto libre del cliente (`OCRD.Free_Text`, vía Service Layer).
 - Todas las rutas de datos exigen sesión (token). Solo quedan abiertas
   `/api/test`, `/api/health`, `/api/auth/login` y `/api/dispositivos/registrar`.
 - Cada sesión dura como máximo 12 horas; `SESSION_TIMEOUT` en el `.env` solo

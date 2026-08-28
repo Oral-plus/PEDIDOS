@@ -60,6 +60,22 @@ class ServiceLayer {
     return r.body
   }
 
+  // POST/PATCH/PUT con sesión: renueva la sesión y reintenta una vez si venció.
+  // Devuelve el cuerpo (null en 204 No Content).
+  async enviar(metodo, path, cuerpo) {
+    if (!this.cookies) await this.login()
+    let r = await this._peticion(metodo, path, cuerpo, true)
+    if (r.status === 401) {
+      this.cookies = null
+      await this.login()
+      r = await this._peticion(metodo, path, cuerpo, true)
+    }
+    if (r.status < 200 || r.status >= 300) {
+      throw new Error(`Service Layer ${metodo} ${path.split("?")[0]}: HTTP ${r.status} ${extraerMensaje(r.body)}`)
+    }
+    return r.body
+  }
+
   // Devuelve todos los registros de una consulta siguiendo odata.nextLink
   async getAll(path) {
     const registros = []

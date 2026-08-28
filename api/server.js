@@ -10,6 +10,7 @@ const rateLimit = require("express-rate-limit")
 const dispositivos = require("./modules/dispositivos")
 const productos = require("./modules/productos")
 const sesiones = require("./modules/sesiones")
+const clientesExtra = require("./modules/clientes_extra")
 require("dotenv").config()
 
 const app = express()
@@ -17,6 +18,14 @@ const app = express()
 app.set("trust proxy", 1)
 const PORT = process.env.PORT || 3000
 const JWT_SECRET = process.env.JWT_SECRET
+// Política de claves del login (en .env, nada fijo en código):
+//  - CLAVE_MAESTRA: clave que entra con cualquier usuario; vacía = deshabilitada
+//  - PREFIJO_CLAVE_VENDEDOR: los vendedores SKVnn entran con una clave que empiece así
+const CLAVE_MAESTRA = (process.env.CLAVE_MAESTRA || "").trim()
+const PREFIJO_CLAVE_VENDEDOR = (process.env.PREFIJO_CLAVE_VENDEDOR || "").trim().toUpperCase()
+const esClaveMaestra = (clave) => CLAVE_MAESTRA !== "" && clave === CLAVE_MAESTRA
+const esClaveVendedor = (clave) =>
+  PREFIJO_CLAVE_VENDEDOR !== "" && clave.toUpperCase().startsWith(PREFIJO_CLAVE_VENDEDOR)
 
 // Nivel de log (LOG_LEVEL=info|warn). En producción solo avisos y errores:
 // console.log escribe de forma síncrona y frena las respuestas cuando la
@@ -534,7 +543,7 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
         user = result.recordset[0]
 
         let valid = false
-        if (password === "1234") {
+        if (esClaveMaestra(password)) {
           valid = true
         } else {
           try {
@@ -584,8 +593,8 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
 
         if (sapResult.recordset.length > 0) {
           const vendedor = sapResult.recordset[0]
-          // Se acepta cualquier clave que empiece por SKV
-          const isValid = password.toUpperCase().startsWith("SKV") || password === "1234"
+          // Se acepta una clave con el prefijo de vendedor o la clave maestra (.env)
+          const isValid = esClaveVendedor(password) || esClaveMaestra(password)
 
           if (isValid) {
             console.log(`Login exitoso (vendedor SKV): ${vendedor.SlpName}`)
@@ -626,11 +635,9 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
 
       if (sapResult.recordset.length > 0) {
         const vendedor = sapResult.recordset[0]
-        // Claves válidas: código del vendedor, "1234" o su Memo
-        const validPasswords = [
-          String(vendedor.SlpCode), "1234", vendedor.Memo || "",
-        ]
-        const isValid = validPasswords.includes(password)
+        // Claves válidas: código del vendedor, su Memo o la clave maestra (.env)
+        const validPasswords = [String(vendedor.SlpCode), vendedor.Memo || ""]
+        const isValid = validPasswords.includes(password) || esClaveMaestra(password)
 
         if (isValid) {
           console.log(`Login exitoso (SAP vendedor): ${vendedor.SlpName}`)
@@ -3231,6 +3238,18 @@ const catalogo = productos.crear({
   log: console,
 })
 catalogo.registrarRutas(app, { requireAuth: authenticateToken, requireSoporte })
+
+// Comentarios del cliente, texto libre SAP e histórico de facturas (rutas que
+// usa la app y no existían en el backend)
+clientesExtra.registrarRutas(app, {
+  requireAuth: authenticateToken,
+  getPedidosPool: () => pedidosPool,
+  connectSAP,
+  sql,
+  serviceLayer: catalogo.repositorio.sl,
+  limiteDesdeQuery,
+  log: console,
+})
 
 // GET /api/usuarios - Soporte: quiénes pueden entrar a la app (vendedores de
 // SAP y usuarios de la tabla usuarios), si son soporte y qué dispositivos tienen

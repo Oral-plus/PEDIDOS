@@ -41,6 +41,10 @@ class RepositorioProductos {
       user: env.SL_USER,
       password: env.SL_PASSWORD,
       tlsInsecure: (env.SL_TLS_INSECURE || "true").toLowerCase() === "true",
+      // La consulta del catálogo pesa ~17 MB por página de 200 artículos (precios y
+      // bodegas de cada uno): tiempo de espera y tamaño de página van en el .env
+      timeoutMs: Number.parseInt(env.SL_TIMEOUT_MS, 10) || 120000,
+      pageSize: Number.parseInt(env.SL_PAGE_SIZE, 10) || 100,
     })
 
     this.catalogo = null // { items: Map codigo -> item SAP, actualizado, fuente }
