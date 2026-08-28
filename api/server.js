@@ -1528,8 +1528,9 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       }
     })
 
-    const iva = subtotalNum * 0.19
-    const total = subtotalNum + iva
+    // Los precios de la lista son el valor final: no se calcula IVA aparte
+    const iva = 0
+    const total = subtotalNum
 
     const transaction = pedidosPool.transaction()
     await transaction.begin()

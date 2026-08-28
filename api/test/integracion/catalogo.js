@@ -80,24 +80,29 @@ async function esperar() {
     if (r1.status === 200) break
     await new Promise((r) => setTimeout(r, 1500))
   }
-  const cat = r1.json || {}
+  let cat = r1.json || {}
+  // Si el arranque cayó a SQL (Service Layer lento o cortó la conexión), Soporte
+  // fuerza un refresco, como haría desde la app, antes de dar por mala la fuente
+  for (let i = 0; i < 2 && cat.fuente !== "service layer"; i++) {
+    await llamar("POST", "/api/productos/refrescar", { token: soporte })
+    r1 = await llamar("GET", `/api/productos?cliente=${encodeURIComponent(cliente)}`, { token: vendedor })
+    cat = r1.json || {}
+  }
   const productos = cat.productos || []
   ok("catálogo: 200 y success", r1.status === 200 && cat.success === true)
   ok("catálogo: viene del Service Layer (usuario manager)", cat.fuente === "service layer", `fuente ${cat.fuente}`)
-  ok("catálogo: más de 200 productos", productos.length > 200, `${productos.length} productos`)
+  ok("catálogo: al menos 100 productos con precio para la lista del cliente", productos.length >= 100, `${productos.length} productos`)
   ok("catálogo: lista de precios del cliente", cat.listaPrecios === listaEsperada, `cliente ${cliente} lista ${cat.listaPrecios}`)
   const cats = (cat.categorias || []).map((x) => x.nombre)
   ok("catálogo: categorías con Cepillos, Niños y Ortodoncia", ["Cepillos", "Niños", "Ortodoncia"].every((x) => cats.includes(x)), cats.join(", "))
-  // En SAP la lista 6 no tiene precio para cerca del 30 % de los artículos del catálogo
-  const conPrecio = productos.filter((p) => p.precio > 0).length
-  ok("catálogo: más del 60 % con precio en la lista del cliente", conPrecio > productos.length * 0.6, conPrecio + " de " + productos.length)
-  ok("catálogo: sin precio en la lista = no disponible, y viceversa", productos.every((p) => (p.precio > 0) === p.disponible))
+  // En SAP la lista 6 no tiene precio para cerca del 30 % de los artículos: esos no se entregan
+  ok("catálogo: todos los productos entregados tienen precio en la lista del cliente y están disponibles", productos.length >= 100 && productos.every((p) => p.precio > 0 && p.disponible === true), productos.length + " productos con precio")
   const conImagen = productos.filter((p) => p.imagenUrl).length
   ok("catálogo: al menos 60 productos con imagen migrada (desde la BD)", conImagen >= 60, `${conImagen} con imagen`)
   ok("catálogo: ortodoncia presente", productos.some((p) => p.codigo === "50360269" && p.categoria === "Ortodoncia"))
   const original = productos.find((p) => p.codigo === "50360251")
   ok("catálogo: Cepillo Original con variante Suave", original && original.variantes.some((v) => v.codigo === "50360256"))
-  ok("catálogo: sin stock visibles como agotados", productos.some((p) => !p.disponible) && productos.every((p) => typeof p.disponible === "boolean"))
+  ok("catálogo: los artículos sin stock se entregan (disponibles, con aviso de sin stock)", productos.every((p) => typeof p.disponible === "boolean") && productos.some((p) => p.stock <= 0 && p.disponible === true && /sin stock/i.test(p.mensajeEstado)))
   const r304 = await llamar("GET", `/api/productos?cliente=${encodeURIComponent(cliente)}`, { token: vendedor, headers: { "If-None-Match": r1.headers.etag } })
   ok("catálogo: If-None-Match responde 304", r304.status === 304)
 

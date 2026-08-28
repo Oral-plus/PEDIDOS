@@ -12,7 +12,7 @@ import '../widgets/app_dialog.dart';
 /// visita ni seleccionar cliente. No genera pedido real ni toca el carrito:
 /// es una calculadora comercial con los precios del catálogo.
 ///
-/// Muestra siempre los precios con y sin IVA (19%).
+/// Muestra el precio de lista de cada producto y el total simulado.
 class SimuladorPedidoScreen extends StatefulWidget {
   const SimuladorPedidoScreen({super.key});
 
@@ -85,11 +85,11 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
     }).toList();
   }
 
-  // Totales de la simulación (precio catálogo = c/IVA)
+  // Totales de la simulación (precio de lista = valor final)
   int get _totalUnidades => _cantidades.values.fold(0, (a, b) => a + b);
   int get _totalProductos => _cantidades.entries.where((e) => e.value > 0).length;
 
-  double get _totalConIva {
+  double get _total {
     double t = 0;
     for (final p in _productos) {
       final q = _cantidades[_keyDe(p)] ?? 0;
@@ -97,9 +97,6 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
     }
     return t;
   }
-
-  double get _totalSinIva => _totalConIva / 1.19;
-  double get _totalIva => _totalConIva - _totalSinIva;
 
   void _cambiar(Map<String, dynamic> p, int delta) {
     HapticFeedback.selectionClick();
@@ -268,7 +265,6 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
 
   Widget _productoRow(Map<String, dynamic> p) {
     final precio = _precioDe(p);
-    final sinIva = precio / 1.19;
     final k = _keyDe(p);
     final q = _cantidades[k] ?? 0;
     final activo = q > 0;
@@ -300,7 +296,7 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
           ),
         ),
         const SizedBox(width: 12),
-        // Título + precios c/ y sin IVA
+        // Título + precio de lista
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(p['title']?.toString() ?? 'Producto',
@@ -308,12 +304,8 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
                 maxLines: 2, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 4),
             Text(
-              '${PriceUtils.formatPriceDisplay(precio)} c/IVA',
+              PriceUtils.formatPriceDisplay(precio),
               style: const TextStyle(color: _ink, fontSize: 12.5, fontWeight: FontWeight.w800),
-            ),
-            Text(
-              '${PriceUtils.formatPriceDisplay(sinIva)} sin IVA',
-              style: const TextStyle(color: _gray, fontSize: 11, fontWeight: FontWeight.w600),
             ),
           ]),
         ),
@@ -407,10 +399,6 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
                               decoration: TextDecoration.underline)),
                     ),
                   ]),
-                  const SizedBox(height: 12),
-                  _filaTotal('Subtotal (sin IVA)', PriceUtils.formatPriceDisplay(_totalSinIva), false),
-                  const SizedBox(height: 5),
-                  _filaTotal('IVA (19%)', PriceUtils.formatPriceDisplay(_totalIva), false),
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 9),
                     child: Divider(height: 1, color: _line),
@@ -418,11 +406,11 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Total simulado (c/IVA)',
+                      const Text('Total simulado',
                           style: TextStyle(color: _ink, fontSize: 15, fontWeight: FontWeight.w800)),
                       ShaderMask(
                         shaderCallback: (r) => const LinearGradient(colors: [_ink, _inkDeep]).createShader(r),
-                        child: Text(PriceUtils.formatPriceDisplay(_totalConIva),
+                        child: Text(PriceUtils.formatPriceDisplay(_total),
                             style: const TextStyle(
                                 color: Colors.white, fontSize: 23, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
                       ),
@@ -431,24 +419,6 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
                 ]),
         ),
       ),
-    );
-  }
-
-  Widget _filaTotal(String label, String valor, bool bold) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label,
-            style: TextStyle(
-                color: bold ? _ink : _gray,
-                fontSize: bold ? 14 : 12.5,
-                fontWeight: bold ? FontWeight.w800 : FontWeight.w500)),
-        Text(valor,
-            style: TextStyle(
-                color: bold ? _ink : _gray,
-                fontSize: bold ? 16 : 12.5,
-                fontWeight: bold ? FontWeight.w900 : FontWeight.w600)),
-      ],
     );
   }
 }

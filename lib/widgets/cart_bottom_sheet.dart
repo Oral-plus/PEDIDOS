@@ -430,9 +430,7 @@ class _CartBottomSheetState extends State<CartBottomSheet>
             ),
             child: Column(
               children: [
-                _priceRow('Unidad c/IVA', item.formattedPrice, false),
-                const SizedBox(height: 4),
-                _priceRow('Unidad sin IVA', item.formattedPriceSinIVA, false),
+                _priceRow('Precio unidad', item.formattedPrice, false),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   child: Divider(
@@ -440,17 +438,7 @@ class _CartBottomSheetState extends State<CartBottomSheet>
                     color: const Color(0xFFE5E7EB).withOpacity(0.5),
                   ),
                 ),
-                _priceRow('Sin IVA', item.formattedTotalPriceSinIVA, false),
-                const SizedBox(height: 4),
-                _priceRow('IVA (19%)', item.formattedIVA, false),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Divider(
-                    height: 1,
-                    color: const Color(0xFFE5E7EB).withOpacity(0.5),
-                  ),
-                ),
-                _priceRow('Total c/IVA', item.formattedTotalPrice, true),
+                _priceRow('Total', item.formattedTotalPrice, true),
               ],
             ),
           ),
@@ -633,17 +621,7 @@ class _CartBottomSheetState extends State<CartBottomSheet>
             ),
             child: Column(
               children: [
-                _footerPriceRow('Sin IVA', PriceUtils.formatPriceDisplay(cartProvider.totalAmount / 1.19), false),
-                const SizedBox(height: 5),
-                _footerPriceRow('IVA (19%)', PriceUtils.formatPriceDisplay(cartProvider.totalAmount - (cartProvider.totalAmount / 1.19)), false),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Divider(
-                    height: 1,
-                    color: const Color(0xFFE5E7EB).withOpacity(0.5),
-                  ),
-                ),
-                _footerPriceRow('Total c/IVA', PriceUtils.formatPriceDisplay(cartProvider.totalAmount), true, animate: true),
+                _footerPriceRow('Total', PriceUtils.formatPriceDisplay(cartProvider.totalAmount), true, animate: true),
               ],
             ),
           ),

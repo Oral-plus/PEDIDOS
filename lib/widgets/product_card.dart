@@ -144,17 +144,6 @@ class _ProductCardState extends State<ProductCard> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (disponible) ...[
-                          const SizedBox(width: 5),
-                          Text(
-                            'c/IVA',
-                            style: TextStyle(
-                              color: AppTheme.textSecondary.withOpacity(0.7),
-                              fontSize: context.clampFont(8, 10, 9),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                     SizedBox(height: context.responsive(9)),

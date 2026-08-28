@@ -497,9 +497,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             children: [
               Text(PriceUtils.formatPriceDisplay(item.totalPrice),
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.darkBlue)),
-              const SizedBox(height: 2),
-              Text('c/IVA · sin IVA: ${PriceUtils.formatPriceDisplay(item.totalPriceSinIVA)}',
-                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: AppTheme.textSecondary)),
               const SizedBox(height: 8),
               InkWell(
                 borderRadius: BorderRadius.circular(9),
@@ -698,8 +695,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _totalBar() {
-    final sinIva = _total / 1.19;
-    final iva = _total - sinIva;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(color: AppTheme.primaryBlue.withOpacity(0.05), borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.15))),
@@ -708,26 +703,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Subtotal (sin IVA)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
-              Text(PriceUtils.formatPriceDisplay(sinIva), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSecondary)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('IVA (19%)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
-              Text(PriceUtils.formatPriceDisplay(iva), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSecondary)),
-            ],
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 10),
-            child: Divider(height: 1, color: AppTheme.borderColor),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Total a pagar (c/IVA)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.darkBlue)),
+              const Text('Total a pagar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.darkBlue)),
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 260),
                 transitionBuilder: (c, a) => FadeTransition(

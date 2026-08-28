@@ -337,8 +337,6 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
 
   Widget _detalleTotales(Map<String, dynamic> p) {
     final formatter = NumberFormat('#,##0', 'es_CO');
-    final subtotal = (p['subtotal'] as num?)?.toDouble() ?? 0;
-    final iva = (p['iva'] as num?)?.toDouble() ?? 0;
     final total = (p['total'] as num?)?.toDouble() ?? 0;
     return Container(
       padding: const EdgeInsets.all(16),
@@ -349,12 +347,6 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
       ),
       child: Column(
         children: [
-          if (iva > 0) ...[
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Subtotal', style: TextStyle(fontSize: 14, color: _textMuted)), Text('\$${formatter.format(subtotal.round())}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))]),
-            const SizedBox(height: 4),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('IVA', style: TextStyle(fontSize: 14, color: _textMuted)), Text('\$${formatter.format(iva.round())}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))]),
-            const SizedBox(height: 8),
-          ],
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('TOTAL', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _textDark)), Text('\$${formatter.format(total.round())}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: _blue))]),
         ],
       ),

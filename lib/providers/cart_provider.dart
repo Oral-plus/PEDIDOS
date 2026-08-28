@@ -18,8 +18,6 @@ class CartProvider extends ChangeNotifier {
   double get totalAmount => _totalAmount;
 
   String get formattedTotal => PriceUtils.formatPriceDisplay(totalAmount);
-  String get formattedTotalSinIva => PriceUtils.formatPriceDisplay(totalAmount / 1.19);
-  String get formattedIVA => PriceUtils.formatPriceDisplay(totalAmount - (totalAmount / 1.19));
 
   // Los totales se recalculan una vez por cambio, no en cada lectura.
   void _actualizar() {

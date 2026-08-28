@@ -122,12 +122,22 @@ class RepositorioProductos {
     const opciones = { bodega: this.bodega, grupos: this.grupos }
     const usarSl = this.modoFuente !== "sql" && this.sl.configurado
     if (usarSl) {
-      try {
-        const items = await fuente.leerPorServiceLayer(this.sl, opciones)
-        return { items, fuenteUsada: "service layer" }
-      } catch (e) {
-        if (this.modoFuente === "sl") throw e
-        this.log.error("Service Layer no disponible, se usa SQL:", e.message)
+      // El Service Layer a veces corta la primera conexión ("socket hang up"):
+      // se reintenta una vez antes de caer a SQL
+      for (let intento = 1; intento <= 2; intento++) {
+        try {
+          const items = await fuente.leerPorServiceLayer(this.sl, opciones)
+          return { items, fuenteUsada: "service layer" }
+        } catch (e) {
+          if (this.modoFuente === "sl") throw e
+          if (intento === 1) {
+            this.log.error("Service Layer falló, se reintenta en 3 s:", e.message)
+            this.sl.cookies = null
+            await new Promise((r) => setTimeout(r, 3000))
+          } else {
+            this.log.error("Service Layer no disponible, se usa SQL:", e.message)
+          }
+        }
       }
     }
     const pool = await this.getSapPool()
@@ -175,11 +185,16 @@ class RepositorioProductos {
       }
     }
 
+    // Solo se entregan los artículos con precio en la lista del cliente: lo que
+    // está en 0 para su tipo de cliente no aparece (tampoco sus variantes en 0)
     const productos = []
     for (const item of items.values()) {
       const cfg = this.config.get(item.codigo)
       if (cfg && (cfg.visible === false || cfg.variante_de)) continue
-      productos.push(this._proyectar(item, cfg, listaPrecios, variantesPor.get(item.codigo) || [], items))
+      const p = this._proyectar(item, cfg, listaPrecios, variantesPor.get(item.codigo) || [], items)
+      if (!(p.precio > 0)) continue
+      p.variantes = p.variantes.filter((v) => v.precio > 0)
+      productos.push(p)
     }
 
     const categorias = ordenarCategorias(new Set(productos.map((p) => p.categoria)))

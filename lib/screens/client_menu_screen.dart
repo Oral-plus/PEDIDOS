@@ -545,7 +545,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
               Text('Simulador de pedido',
                   style: TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: -0.2)),
               const SizedBox(height: 2),
-              Text('Cotiza con y sin IVA · sin entrar a una visita',
+              Text('Cotiza con precios de lista · sin entrar a una visita',
                   style: TextStyle(color: _textMuted, fontSize: 11, fontWeight: FontWeight.w500)),
             ]),
           ),

@@ -64,20 +64,16 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
 
   double _n(dynamic v) => (v is num) ? v.toDouble() : (double.tryParse('${v ?? ''}') ?? 0);
 
+  // El precio de lista es el valor final: no se liquida IVA aparte
   double get _subtotal {
     final s = _n(widget.ultimoPedido?['subtotal']);
     if (s > 0) return s;
-    final t = _n(widget.ultimoPedido?['total']);
-    return t > 0 ? t / 1.19 : 0;
+    return _n(widget.ultimoPedido?['total']);
   }
 
-  double get _impuesto {
-    final i = _n(widget.ultimoPedido?['iva']);
-    if (i > 0) return i;
-    return _subtotal * 0.19;
-  }
+  double get _impuesto => 0;
 
-  double get _total => (_subtotal + _impuesto - _descuentoMonto + _flete).clamp(0, double.infinity);
+  double get _total => (_subtotal - _descuentoMonto + _flete).clamp(0, double.infinity);
 
   // Cupo (límite de crédito) del cliente
   double get _cupoAsignado => _n(widget.cartera?['limiteCredito']);
@@ -218,8 +214,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
         const SizedBox(height: 7),
         _fila('Descuento (${_descuentoPct.toStringAsFixed(0)}%)', '- ${_pesos(_descuentoMonto)}',
             valor: _descuentoPct > 0 ? const Color(0xFFDC2626) : _gray),
-        const SizedBox(height: 7),
-        _fila('Impuesto (IVA 19%)', _pesos(_impuesto)),
         const SizedBox(height: 7),
         _fila('Total flete', _pesos(_flete)),
         const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Divider(height: 1, color: _line)),

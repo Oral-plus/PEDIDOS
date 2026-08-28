@@ -100,15 +100,16 @@ async function esperar() {
   ok("cliente lista 6: 50360168 a 3.883 y habilitado", c6.status === 200 && c6.json.listaPrecios === 6 && item6 && item6.precio === 3883 && item6.habilitado === true && item6.disponible === true, `cliente ${cliente6}`)
   const itemSinStock = codigoSinStock && p6.find((p) => p.codigo === codigoSinStock)
   ok("cliente lista 6: artículo sin stock sigue disponible (solo informa)", itemSinStock && itemSinStock.stock <= 0 && itemSinStock.disponible === true && /sin stock/i.test(itemSinStock.mensajeEstado), codigoSinStock)
-  ok("cliente lista 6: todo lo que tiene precio está habilitado y viceversa", p6.every((p) => (p.precio > 0) === p.habilitado && p.disponible === p.habilitado))
+  ok("cliente lista 6: todo lo entregado tiene precio y está habilitado (lo que está en 0 no sale)", p6.length > 0 && p6.every((p) => p.precio > 0 && p.habilitado === true && p.disponible === true))
 
   const c43 = await llamar("GET", `/api/productos?cliente=${encodeURIComponent(cliente43)}`, { token })
   const p43 = (c43.json && c43.json.productos) || []
   const item43 = p43.find((p) => p.codigo === "50360168")
-  ok("cliente lista 43: 50360168 en 0, visible pero no disponible", c43.status === 200 && c43.json.listaPrecios === 43 && item43 && item43.precio === 0 && item43.habilitado === false && item43.disponible === false && /no disponible/i.test(item43.mensajeEstado), `cliente ${cliente43}`)
+  ok("cliente lista 43: 50360168 está en 0 para su lista y por eso no aparece", c43.status === 200 && c43.json.listaPrecios === 43 && !item43, `cliente ${cliente43}, ${p43.length} productos`)
   const calipso = p43.find((p) => p.codigo === "50360072")
-  ok("cliente lista 43: 50360072 ya no muestra el precio viejo de la lista 1 (7.497)", calipso && calipso.precio === 0 && calipso.disponible === false, calipso && `precio ${calipso.precio}`)
-  ok("cliente lista 43: ninguna variante usa respaldo (precio 0 => no disponible)", p43.every((p) => p.variantes.every((v) => (v.precio > 0) === v.disponible)))
+  ok("cliente lista 43: 50360072 no muestra el precio viejo de la lista 1 (7.497): no aparece", !calipso)
+  ok("cliente lista 43: nada en 0 ni con respaldo (productos y variantes con precio > 0)", p43.length > 0 && p43.every((p) => p.precio > 0 && p.variantes.every((v) => v.precio > 0 && v.disponible === true)))
+  ok("cliente lista 43: tiene menos productos que la lista 6 (los de precio 0 se ocultan por tipo de cliente)", p43.length < p6.length, `${p43.length} vs ${p6.length}`)
 
   // 4) Cierre de sesión seguro
   const antes = await llamar("GET", "/api/clientes", { token })

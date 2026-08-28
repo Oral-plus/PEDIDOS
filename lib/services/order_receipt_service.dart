@@ -159,8 +159,6 @@ class OrderReceiptService {
     final vendedor = pedido['vendedor']?.toString() ?? '—';
     final estado = pedido['estado']?.toString() ?? 'PENDIENTE';
     final total = (pedido['total'] as num?)?.toDouble() ?? 0;
-    final subtotal = (pedido['subtotal'] as num?)?.toDouble() ?? 0;
-    final iva = (pedido['iva'] as num?)?.toDouble() ?? 0;
     final observaciones = pedido['observaciones']?.toString() ?? '';
 
     pdf.addPage(
@@ -271,8 +269,6 @@ class OrderReceiptService {
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
-                      if (iva > 0) pw.Text('Subtotal: \$${formatter.format(subtotal.round())}', style: const pw.TextStyle(fontSize: 10)),
-                      if (iva > 0) pw.Text('IVA: \$${formatter.format(iva.round())}', style: const pw.TextStyle(fontSize: 10)),
                       pw.SizedBox(height: 4),
                       pw.Text('TOTAL: \$${formatter.format(total.round())}', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
                     ],

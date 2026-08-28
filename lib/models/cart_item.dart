@@ -45,13 +45,8 @@ class CartItem {
     return double.tryParse(s) ?? 0.0;
   }
 
-  // Precio total del item (con IVA)
+  // Precio total del item (el precio de la lista es el valor final)
   double get totalPrice => price * quantity;
-
-  // Precio sin IVA (API devuelve precio con IVA, despejamos)
-  double get priceSinIVA => price / 1.19;
-  double get totalPriceSinIVA => priceSinIVA * quantity;
-  double get totalIVA => totalPrice - totalPriceSinIVA;
 
   // Precio total original del item
   double get totalOriginalPrice => originalPrice * quantity;
@@ -91,20 +86,6 @@ class CartItem {
   // Precio total formateado
   String get formattedTotalPrice {
     return '\$${_fmt.format(totalPrice)}';
-  }
-
-  // Precio sin IVA formateado
-  String get formattedPriceSinIVA {
-    return '\$${_fmt.format(priceSinIVA)}';
-  }
-
-  String get formattedTotalPriceSinIVA {
-    return '\$${_fmt.format(totalPriceSinIVA)}';
-  }
-
-  // IVA formateado
-  String get formattedIVA {
-    return '\$${_fmt.format(totalIVA)}';
   }
 
   // Descuento formateado

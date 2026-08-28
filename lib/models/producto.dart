@@ -169,8 +169,11 @@ class Catalogo {
             .map((c) => CategoriaProducto.fromJson(Map<String, dynamic>.from(c as Map)))
             .toList()
           ..sort((a, b) => a.orden.compareTo(b.orden)),
+        // Solo productos con precio en la lista del cliente (el backend ya los
+        // filtra; aquí por si llega un catálogo de una versión anterior)
         productos: ((j['productos'] as List<dynamic>?) ?? [])
             .map((p) => Producto.fromJson(Map<String, dynamic>.from(p as Map), baseUrl: baseUrl))
+            .where((p) => p.habilitado && p.precio > 0)
             .toList(),
       );
 

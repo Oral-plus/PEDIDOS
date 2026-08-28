@@ -203,11 +203,8 @@ class ProductPreviewDialog extends StatelessWidget {
     );
   }
 
+  // Al consultar un producto solo se muestra el total (precio de lista)
   Widget _buildPriceBreakdown(BuildContext context, String precioMostrar, bool disponible) {
-    final conIVA = _parsePrecioNumerico(precioMostrar);
-    final sinIVA = conIVA / 1.19;
-    final iva = conIVA - sinIVA;
-
     return Container(
       padding: EdgeInsets.all(context.responsive(16)),
       decoration: BoxDecoration(
@@ -217,18 +214,11 @@ class ProductPreviewDialog extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _priceRow('Precio sin IVA', PriceUtils.formatPriceDisplay(sinIVA), false),
-          const SizedBox(height: 8),
-          _priceRow('IVA (19%)', PriceUtils.formatPriceDisplay(iva), false),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Divider(height: 1),
-          ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'Total con IVA',
+                'Total',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -247,30 +237,6 @@ class ProductPreviewDialog extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _priceRow(String label, String value, bool bold) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
-            color: AppTheme.textSecondary,
-          ),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: bold ? FontWeight.w700 : FontWeight.w600,
-            color: AppTheme.textPrimary,
-          ),
-        ),
-      ],
     );
   }
 
@@ -431,14 +397,5 @@ class ProductPreviewDialog extends StatelessWidget {
       return estado['disponible'] == true;
     }
     return true;
-  }
-
-  double _parsePrecioNumerico(String precioStr) {
-    try {
-      String s = precioStr.replaceAll(RegExp(r'[^\d.]'), '').trim();
-      return double.tryParse(s) ?? 0.0;
-    } catch (_) {
-      return 0.0;
-    }
   }
 }
