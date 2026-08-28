@@ -425,37 +425,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
               ),
             ],
           ),
-          if (ApiEasyService.esCompilacionDePruebas) ...[
-            const SizedBox(height: 14),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF7ED),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFF59E0B)),
-              ),
-              child: FutureBuilder<String>(
-                future: _api.baseUrl(),
-                builder: (_, snap) {
-                  final enUso = _api.servidorEnUso;
-                  final texto = !snap.hasData
-                      ? 'buscando servidor…'
-                      : (enUso.isEmpty
-                          ? 'sin servidor disponible (${snap.data})'
-                          : 'servidor $enUso');
-                  return Text(
-                    'APK DE PRUEBAS · $texto',
-                    style: const TextStyle(
-                      color: Color(0xFFB45309),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
           const SizedBox(height: 24),
           TextField(
             controller: _usuarioController,

@@ -15,85 +15,16 @@ class ApiEasyService {
   static final ApiEasyService _instance = ApiEasyService._();
   factory ApiEasyService() => _instance;
 
-  /// Servidor fijo para compilaciones de prueba:
-  ///   flutter build apk --dart-define=API_BASE_URL=http://192.168.2.73:3000
-  /// Vacío (compilación normal) => se usa la lista de hosts de producción.
-  static const String servidorPruebas = String.fromEnvironment('API_BASE_URL');
-  static bool get esCompilacionDePruebas => servidorPruebas.isNotEmpty;
-
-  /// Compilación de pruebas: el servidor se descubre solo. El túnel de pruebas
-  /// publica su URL actual en estos "punteros" (servidor .242: salida pública
-  /// fija y LAN); si no se pueden leer se usa la URL fijada al compilar y, en
-  /// la oficina, el PC de pruebas por LAN.
-  static const List<String> _punterosPruebas = [
-    'https://181.205.151.218:4430/pruebas-pedidos/servidor.txt',
-    'http://192.168.2.242:8080/pruebas-pedidos/servidor.txt',
+  static const List<String> _baseUrls = [
+    // Subdominio público (funciona dentro y fuera de la oficina)
+    'https://gestores-api.oral-plus.com',
+    // LAN directa al servidor .249 (por si falla el internet)
+    'http://192.168.2.249:3000',
+    // PC de desarrollo
+    'http://192.168.2.73:3000',
+    'http://10.0.2.2:3000',
+    'http://localhost:3000',
   ];
-  static const String _lanPruebas = 'http://192.168.2.73:3000';
-
-  /// Servidor que quedó en uso en la compilación de pruebas (para mostrarlo).
-  String servidorEnUso = '';
-
-  /// Lee un puntero (texto con la URL del túnel). El puntero público del .242
-  /// usa un certificado propio, que solo se acepta para ese host.
-  static Future<String?> _leerPuntero(String url) async {
-    final cliente = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 4)
-      ..badCertificateCallback =
-          (cert, host, port) => host == '181.205.151.218';
-    try {
-      final req = await cliente.getUrl(Uri.parse(url)).timeout(const Duration(seconds: 4));
-      final res = await req.close().timeout(const Duration(seconds: 4));
-      if (res.statusCode != 200) return null;
-      final texto = await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 4));
-      final m = RegExp(r'https?://[^\s]+').firstMatch(texto);
-      if (m == null) return null;
-      var u = m.group(0)!;
-      while (u.endsWith('/')) {
-        u = u.substring(0, u.length - 1);
-      }
-      return u;
-    } catch (_) {
-      return null;
-    } finally {
-      cliente.close(force: true);
-    }
-  }
-
-  /// Candidatos en orden y el primero que responda a /api/test gana.
-  Future<String> _descubrirServidorPruebas() async {
-    final candidatos = <String>[];
-    void agregar(String? u) {
-      if (u != null && u.isNotEmpty && !candidatos.contains(u)) candidatos.add(u);
-    }
-    // Los dos punteros a la vez (uno puede tardar en fallar)
-    final leidos = await Future.wait(_punterosPruebas.map(_leerPuntero));
-    leidos.forEach(agregar);
-    agregar(servidorPruebas);
-    agregar(_lanPruebas);
-    for (final c in candidatos) {
-      if (await _responde(c)) {
-        _resolvedBaseUrl = c;
-        servidorEnUso = c;
-        return c;
-      }
-    }
-    servidorEnUso = '';
-    return candidatos.first;
-  }
-
-  static const List<String> _baseUrls = servidorPruebas != ''
-      ? [servidorPruebas]
-      : [
-          // Subdominio público (funciona dentro y fuera de la oficina)
-          'https://gestores-api.oral-plus.com',
-          // LAN directa al servidor .249 (por si falla el internet)
-          'http://192.168.2.249:3000',
-          // PC de desarrollo
-          'http://192.168.2.73:3000',
-          'http://10.0.2.2:3000',
-          'http://localhost:3000',
-        ];
 
   static const _tokenKey = 'auth_token';
   static const _usuarioKey = 'auth_usuario';
@@ -271,8 +202,6 @@ class ApiEasyService {
   /// vez (guardado en preferencias) y, si no, el primero de la lista que
   /// responda. Solo se cachea un host que haya respondido.
   Future<String> _buscarBaseUrl() async {
-    // Compilación de pruebas: descubrimiento automático del servidor
-    if (esCompilacionDePruebas) return _descubrirServidorPruebas();
     // Si hace poco no respondió ninguno, no se vuelve a sondear todavía
     final fallo = _ultimaBusquedaFallida;
     if (fallo != null &&
