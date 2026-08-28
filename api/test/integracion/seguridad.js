@@ -105,10 +105,18 @@ const RUTAS = [
   const pendiente = await llamar("POST", "/api/auth/login", { body: { usuario: "SKV18", password: "SKV1", id_servicio: DISPOSITIVO, plataforma: "prueba" } })
   ok("login con dispositivo nuevo: needsActivation y sin token", pendiente.status === 200 && pendiente.json.needsActivation === true && !(pendiente.json.data && pendiente.json.data.token))
 
-  // 4) Soporte activa el dispositivo (simulado en BD) y el login funciona
-  await pedidos.request().input("d", sql.NVarChar, DISPOSITIVO).query("UPDATE dbo.dispositivos SET estado = 'ACTIVO', activado_por = 'prueba-seguridad', fecha_activacion = GETDATE() WHERE id_servicio = @d")
-  // Esperar a que venza la caché de estado del dispositivo (60 s) no hace
-  // falta: el estado se consulta al iniciar sesión sin caché
+  // 4) Soporte TI entra (sin dispositivo) y activa el dispositivo por la ruta
+  //    real de la app; después el login del gestor funciona
+  const usuarioSoporte = (process.env.SOPORTE_USUARIOS || "").split(",")[0].trim()
+  const loginSoporte = await llamar("POST", "/api/auth/login", { body: { usuario: usuarioSoporte, password: "SKV1", plataforma: "prueba" } })
+  const tokenSoporte = loginSoporte.json && loginSoporte.json.data && loginSoporte.json.data.token
+  const rolSoporte = tokenSoporte ? (jwt.decode(tokenSoporte) || {}).rol : null
+  ok(`soporte ${usuarioSoporte}: entra sin ID de servicio y con rol soporte`, loginSoporte.status === 200 && tokenSoporte && rolSoporte === "soporte", loginSoporte.json && loginSoporte.json.message)
+  const lista = await llamar("GET", `/api/dispositivos?buscar=${encodeURIComponent(DISPOSITIVO)}`, { token: tokenSoporte })
+  const fila = lista.json && Array.isArray(lista.json.data) ? lista.json.data.find((d) => d.id_servicio === DISPOSITIVO) : null
+  ok("soporte: ve el dispositivo PENDIENTE asociado al gestor", lista.status === 200 && fila && fila.estado === "PENDIENTE" && fila.usuario_codigo === "18", fila && `${fila.estado} ${fila.usuario_nombre}`)
+  const activar = await llamar("POST", `/api/dispositivos/${encodeURIComponent(DISPOSITIVO)}/estado`, { token: tokenSoporte, body: { estado: "ACTIVO" } })
+  ok("soporte: activa el dispositivo por la ruta de la app", activar.status === 200 && activar.json && activar.json.estado === "ACTIVO", activar.json && (activar.json.message || activar.json.estado))
   const login = await llamar("POST", "/api/auth/login", { body: { usuario: "SKV18", password: "SKV1", id_servicio: DISPOSITIVO, plataforma: "prueba" } })
   const token = login.json && login.json.data && login.json.data.token
   ok("login con dispositivo activado: 200 con token", login.status === 200 && token, login.json && login.json.message)
@@ -124,9 +132,10 @@ const RUTAS = [
   const reg = await llamar("POST", "/api/auth/register", { token, body: { nombre: "a", apellido: "b", telefono: "1", pin: "1", documento: "1" } })
   ok("con sesión de vendedor: /api/auth/register responde 403", reg.status === 403 && decoded.rol !== "soporte" || (decoded.rol === "soporte" && reg.status !== 401), `rol=${decoded.rol || "vendedor"} status=${reg.status}`)
 
-  // 6) Soporte desactiva el dispositivo: la sesión cae
-  await pedidos.request().input("d", sql.NVarChar, DISPOSITIVO).query("UPDATE dbo.dispositivos SET estado = 'DESACTIVADO' WHERE id_servicio = @d")
-  // El estado del dispositivo se cachea 60 s en el backend; la ruta de soporte lo invalida, aquí se espera
+  // 6) Soporte desactiva el dispositivo por la ruta de la app: la sesión cae
+  const desactivar = await llamar("POST", `/api/dispositivos/${encodeURIComponent(DISPOSITIVO)}/estado`, { token: tokenSoporte, body: { estado: "DESACTIVADO" } })
+  ok("soporte: desactiva el dispositivo por la ruta de la app", desactivar.status === 200 && desactivar.json && desactivar.json.estado === "DESACTIVADO", desactivar.json && (desactivar.json.message || desactivar.json.estado))
+  // La ruta de soporte invalida la caché de estado (60 s); por si acaso se espera
   let caida = null
   for (let i = 0; i < 70; i++) {
     caida = await llamar("GET", "/api/clientes", { token })
@@ -135,9 +144,13 @@ const RUTAS = [
   }
   ok("dispositivo desactivado: la sesión recibe 401 en menos de 70 s", caida.status === 401 && caida.json.dispositivoDesactivado === true, caida.json && caida.json.message)
 
-  // Limpieza
+  // Limpieza: el dispositivo se elimina por la ruta de Soporte (como en la app)
+  // y, por si la ruta fallara, también en la BD
+  const eliminar = await llamar("DELETE", `/api/dispositivos/${encodeURIComponent(DISPOSITIVO)}`, { token: tokenSoporte })
+  ok("soporte: elimina el dispositivo de prueba", eliminar.status === 200, eliminar.json && eliminar.json.message)
   await pedidos.request().input("d", sql.NVarChar, DISPOSITIVO).query("DELETE FROM dbo.dispositivos WHERE id_servicio = @d")
   await pedidos.request().input("j", sql.NVarChar, decoded.jti || "").query("UPDATE dbo.sesiones SET cerrada = GETDATE(), cierre_motivo = 'prueba' WHERE jti = @j AND cerrada IS NULL")
+  await llamar("POST", "/api/auth/logout", { token: tokenSoporte })
   await pedidos.close()
 
   for (const [n, b] of out) process.stdout.write((b ? "OK    " : "FALLA ") + n + "\n")

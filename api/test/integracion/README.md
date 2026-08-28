@@ -22,7 +22,9 @@ node test/integracion/seguridad.js   # una sola suite
 ## Qué verifica cada suite
 
 - `seguridad.js`: las 32 rutas de datos responden 401 sin sesión; `/api/test` y
-  `/api/health` siguen abiertas; el login sin ID de servicio se rechaza; un
+  `/api/health` siguen abiertas; el login sin ID de servicio se rechaza; Soporte TI
+  entra sin dispositivo y, por las rutas de la app, ve el dispositivo pendiente, lo
+  activa, lo desactiva y lo elimina; un
   dispositivo nuevo queda pendiente y uno activado entra; `/api/auth/register`
   solo para Soporte; al desactivar el dispositivo la sesión cae.
 - `sesion.js`: credenciales incorrectas (401 con mensaje); token con registro

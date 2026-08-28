@@ -58,7 +58,12 @@ async function registrarYAsociar(pool, sql, idServicio, persona, plataforma) {
       OUTPUT INSERTED.estado;
     `)
 
-  return (r.recordset[0] && r.recordset[0].estado) || "PENDIENTE"
+  const estado = (r.recordset[0] && r.recordset[0].estado) || "PENDIENTE"
+  // El login acaba de leer el estado real: se refresca la caché para que las
+  // peticiones inmediatas no vean un estado viejo (p. ej. DESACTIVADO de una
+  // sesión anterior de este mismo dispositivo)
+  estadoCache.set(idServicio, { estado, vence: Date.now() + ESTADO_TTL_MS })
+  return estado
 }
 
 // Estado de cada dispositivo en caché un minuto: así desactivar desde Soporte
