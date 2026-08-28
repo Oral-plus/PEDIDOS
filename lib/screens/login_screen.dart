@@ -425,6 +425,26 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
               ),
             ],
           ),
+          if (ApiEasyService.esCompilacionDePruebas) ...[
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7ED),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFF59E0B)),
+              ),
+              child: Text(
+                'APK DE PRUEBAS · servidor ${ApiEasyService.servidorPruebas}',
+                style: const TextStyle(
+                  color: Color(0xFFB45309),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           TextField(
             controller: _usuarioController,

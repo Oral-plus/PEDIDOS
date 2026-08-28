@@ -15,16 +15,24 @@ class ApiEasyService {
   static final ApiEasyService _instance = ApiEasyService._();
   factory ApiEasyService() => _instance;
 
-  static const List<String> _baseUrls = [
-    // Subdominio público (funciona dentro y fuera de la oficina)
-    'https://gestores-api.oral-plus.com',
-    // LAN directa al servidor .249 (por si falla el internet)
-    'http://192.168.2.249:3000',
-    // PC de desarrollo
-    'http://192.168.2.73:3000',
-    'http://10.0.2.2:3000',
-    'http://localhost:3000',
-  ];
+  /// Servidor fijo para compilaciones de prueba:
+  ///   flutter build apk --dart-define=API_BASE_URL=http://192.168.2.73:3000
+  /// Vacío (compilación normal) => se usa la lista de hosts de producción.
+  static const String servidorPruebas = String.fromEnvironment('API_BASE_URL');
+  static bool get esCompilacionDePruebas => servidorPruebas.isNotEmpty;
+
+  static const List<String> _baseUrls = servidorPruebas != ''
+      ? [servidorPruebas]
+      : [
+          // Subdominio público (funciona dentro y fuera de la oficina)
+          'https://gestores-api.oral-plus.com',
+          // LAN directa al servidor .249 (por si falla el internet)
+          'http://192.168.2.249:3000',
+          // PC de desarrollo
+          'http://192.168.2.73:3000',
+          'http://10.0.2.2:3000',
+          'http://localhost:3000',
+        ];
 
   static const _tokenKey = 'auth_token';
   static const _usuarioKey = 'auth_usuario';
