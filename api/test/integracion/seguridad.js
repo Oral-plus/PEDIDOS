@@ -1,8 +1,3 @@
-// Prueba de seguridad contra el backend local (puerto 3000):
-//  - ninguna ruta de datos responde sin sesión
-//  - el login exige dispositivo activado (REQUIRE_DEVICE_ID=true)
-//  - el registro de usuarios solo lo puede usar Soporte TI
-//  - con sesión válida todo sigue funcionando
 const http = require("http")
 const path = require("path")
 require(path.join(process.cwd(), "node_modules", "dotenv")).config({ path: path.join(process.cwd(), ".env") })
@@ -10,6 +5,8 @@ const jwt = require(path.join(process.cwd(), "node_modules", "jsonwebtoken"))
 const sql = require(path.join(process.cwd(), "node_modules", "mssql"))
 
 const BASE = process.env.API_URL || "http://127.0.0.1:3000"
+const USUARIO_PRUEBA = process.env.PRUEBAS_USUARIO || "SKV18"
+const CLAVE_PRUEBA = process.env.PRUEBAS_CLAVE || "SKV1"
 const DISPOSITIVO = "SVC-PRUEBA-SEGURIDAD"
 
 function llamar(metodo, ruta, { body, token } = {}) {
@@ -41,8 +38,6 @@ async function esperar() {
   return false
 }
 
-// Rutas de datos: todas deben responder 401 sin token (se envía cuerpo válido
-// para que el rechazo sea por sesión y no por validación)
 const RUTAS = [
   ["GET", "/api/clientes"],
   ["GET", "/api/clientes/C1000100148"],
@@ -87,7 +82,6 @@ const RUTAS = [
   const ok = (n, c, extra) => out.push([n + (extra ? `  [${extra}]` : ""), !!c])
   if (!(await esperar())) { process.stdout.write("FALLA el servidor no responde en " + BASE + "\n"); process.exit(1) }
 
-  // 1) Sin token: todo 401
   let abiertas = []
   for (const [m, ruta, body] of RUTAS) {
     const r = await llamar(m, ruta, { body })
@@ -98,21 +92,17 @@ const RUTAS = [
   const health = await llamar("GET", "/api/health")
   ok("sin token: /api/test y /api/health siguen abiertos (monitoreo)", test.status === 200 && health.status === 200)
 
-  // 2) Login sin dispositivo: rechazado
-  const sinDisp = await llamar("POST", "/api/auth/login", { body: { usuario: "SKV18", password: "SKV1" } })
+  const sinDisp = await llamar("POST", "/api/auth/login", { body: { usuario: USUARIO_PRUEBA, password: CLAVE_PRUEBA } })
   ok("login sin ID de servicio: 400 (REQUIRE_DEVICE_ID)", sinDisp.status === 400, sinDisp.json && sinDisp.json.message)
 
-  // 3) Login con dispositivo nuevo: queda pendiente, sin token
   const cfgDb = (db) => ({ server: process.env.DB_SERVER, database: db, user: process.env.DB_USER, password: process.env.DB_PASSWORD, port: 1433, options: { encrypt: false, trustServerCertificate: true } })
   const pedidos = await new sql.ConnectionPool(cfgDb(process.env.PEDIDOS_DB_NAME || "Pedidos")).connect()
   await pedidos.request().input("d", sql.NVarChar, DISPOSITIVO).query("DELETE FROM dbo.dispositivos WHERE id_servicio = @d")
-  const pendiente = await llamar("POST", "/api/auth/login", { body: { usuario: "SKV18", password: "SKV1", id_servicio: DISPOSITIVO, plataforma: "prueba" } })
+  const pendiente = await llamar("POST", "/api/auth/login", { body: { usuario: USUARIO_PRUEBA, password: CLAVE_PRUEBA, id_servicio: DISPOSITIVO, plataforma: "prueba" } })
   ok("login con dispositivo nuevo: needsActivation y sin token", pendiente.status === 200 && pendiente.json.needsActivation === true && !(pendiente.json.data && pendiente.json.data.token))
 
-  // 4) Soporte TI entra (sin dispositivo) y activa el dispositivo por la ruta
-  //    real de la app; después el login del gestor funciona
   const usuarioSoporte = (process.env.SOPORTE_USUARIOS || "").split(",")[0].trim()
-  const loginSoporte = await llamar("POST", "/api/auth/login", { body: { usuario: usuarioSoporte, password: "SKV1", plataforma: "prueba" } })
+  const loginSoporte = await llamar("POST", "/api/auth/login", { body: { usuario: usuarioSoporte, password: CLAVE_PRUEBA, plataforma: "prueba" } })
   const tokenSoporte = loginSoporte.json && loginSoporte.json.data && loginSoporte.json.data.token
   const rolSoporte = tokenSoporte ? (jwt.decode(tokenSoporte) || {}).rol : null
   ok(`soporte ${usuarioSoporte}: entra sin ID de servicio y con rol soporte`, loginSoporte.status === 200 && tokenSoporte && rolSoporte === "soporte", loginSoporte.json && loginSoporte.json.message)
@@ -121,13 +111,12 @@ const RUTAS = [
   ok("soporte: ve el dispositivo PENDIENTE asociado al gestor", lista.status === 200 && fila && fila.estado === "PENDIENTE" && fila.usuario_codigo === "18", fila && `${fila.estado} ${fila.usuario_nombre}`)
   const activar = await llamar("POST", `/api/dispositivos/${encodeURIComponent(DISPOSITIVO)}/estado`, { token: tokenSoporte, body: { estado: "ACTIVO" } })
   ok("soporte: activa el dispositivo por la ruta de la app", activar.status === 200 && activar.json && activar.json.estado === "ACTIVO", activar.json && (activar.json.message || activar.json.estado))
-  const login = await llamar("POST", "/api/auth/login", { body: { usuario: "SKV18", password: "SKV1", id_servicio: DISPOSITIVO, plataforma: "prueba" } })
+  const login = await llamar("POST", "/api/auth/login", { body: { usuario: USUARIO_PRUEBA, password: CLAVE_PRUEBA, id_servicio: DISPOSITIVO, plataforma: "prueba" } })
   const token = login.json && login.json.data && login.json.data.token
   ok("login con dispositivo activado: 200 con token", login.status === 200 && token, login.json && login.json.message)
   const decoded = token ? jwt.decode(token) : {}
   ok("token: lleva id_servicio y jti", decoded.id_servicio === DISPOSITIVO && decoded.jti)
 
-  // 5) Con sesión, las rutas funcionan (lectura) y el registro sigue vedado a no-soporte
   const cartera = await llamar("GET", "/api/clientes/cartera/C1000100148", { token })
   const clientes = await llamar("GET", "/api/clientes", { token })
   const pedidosCli = await llamar("GET", "/api/orders?cliente=C1000100148", { token })
@@ -136,7 +125,6 @@ const RUTAS = [
   const reg = await llamar("POST", "/api/auth/register", { token, body: { nombre: "a", apellido: "b", telefono: "1", pin: "1", documento: "1" } })
   ok("con sesión de vendedor: /api/auth/register responde 403", reg.status === 403 && decoded.rol !== "soporte" || (decoded.rol === "soporte" && reg.status !== 401), `rol=${decoded.rol || "vendedor"} status=${reg.status}`)
 
-  // 5b) Rutas de cliente que usa la app: comentarios, texto libre SAP e histórico
   const CLIENTE = "C1000100148"
   const com0 = await llamar("GET", `/api/clientes/${CLIENTE}/comentarios`, { token })
   ok("comentarios: GET 200 con lista y freeText", com0.status === 200 && Array.isArray(com0.json.data) && typeof com0.json.freeText === "string", `${com0.status} ${com0.json && com0.json.total} comentarios`)
@@ -154,16 +142,13 @@ const RUTAS = [
   const hist = await llamar("GET", `/api/clientes/${CLIENTE}/facturas-historico?limite=20`, { token })
   const h = hist.json && hist.json.data
   ok("facturas-historico: 200 con facturas (numero, fecha, total, saldo, estado) y totales", hist.status === 200 && h && Array.isArray(h.facturas) && h.facturas.length > 0 && h.facturas.every((f) => f.numero && f.fecha && typeof f.total === "number" && typeof f.saldo === "number" && ["PAGADA", "ABIERTA", "VENCIDA"].includes(f.estado)) && typeof h.totalCompras === "number", h && `${h.total} facturas, ${h.pagadas} pagadas, ${h.abiertas} abiertas`)
-  // El texto libre se reescribe con su valor actual: prueba el Service Layer sin cambiar datos
   const ft = await llamar("PUT", `/api/clientes/${CLIENTE}/free-text`, { token, body: { texto: com0.json.freeText || "" } })
   ok("free-text: PUT (mismo valor) responde 200 con freeText", ft.status === 200 && ft.json && typeof ft.json.freeText === "string", ft.json && (ft.json.message || "ok"))
   const ftNo = await llamar("PUT", "/api/clientes/CNOEXISTE999/free-text", { token, body: { texto: "x" } })
   ok("free-text: cliente inexistente responde 404", ftNo.status === 404, ftNo.json && ftNo.json.message)
 
-  // 6) Soporte desactiva el dispositivo por la ruta de la app: la sesión cae
   const desactivar = await llamar("POST", `/api/dispositivos/${encodeURIComponent(DISPOSITIVO)}/estado`, { token: tokenSoporte, body: { estado: "DESACTIVADO" } })
   ok("soporte: desactiva el dispositivo por la ruta de la app", desactivar.status === 200 && desactivar.json && desactivar.json.estado === "DESACTIVADO", desactivar.json && (desactivar.json.message || desactivar.json.estado))
-  // La ruta de soporte invalida la caché de estado (60 s); por si acaso se espera
   let caida = null
   for (let i = 0; i < 70; i++) {
     caida = await llamar("GET", "/api/clientes", { token })
@@ -172,8 +157,6 @@ const RUTAS = [
   }
   ok("dispositivo desactivado: la sesión recibe 401 en menos de 70 s", caida.status === 401 && caida.json.dispositivoDesactivado === true, caida.json && caida.json.message)
 
-  // Limpieza: el dispositivo se elimina por la ruta de Soporte (como en la app)
-  // y, por si la ruta fallara, también en la BD
   const eliminar = await llamar("DELETE", `/api/dispositivos/${encodeURIComponent(DISPOSITIVO)}`, { token: tokenSoporte })
   ok("soporte: elimina el dispositivo de prueba", eliminar.status === 200, eliminar.json && eliminar.json.message)
   await pedidos.request().input("d", sql.NVarChar, DISPOSITIVO).query("DELETE FROM dbo.dispositivos WHERE id_servicio = @d")

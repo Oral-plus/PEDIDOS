@@ -9,11 +9,8 @@ import '../widgets/app_header.dart';
 import 'editar_cliente_screen.dart';
 import 'informacion_visita_screen.dart';
 
-/// Umbral (días) para considerar la información de un cliente desactualizada:
-/// solo cuando lleva más de un año sin actualizarse.
 const int kUmbralDiasDesactualizado = 365;
 
-/// Antigüedad legible ("hace 1 año y 3 meses") a partir de los días.
 String formatAntiguedadDias(int dias) {
   if (dias < 0) dias = 0;
   if (dias < 30) return 'hace $dias ${dias == 1 ? 'día' : 'días'}';
@@ -61,11 +58,7 @@ class _RutaDetalleScreenState extends State<RutaDetalleScreen> {
 
   bool _visitaRegistrada = false;
 
-  // Información desactualizada del cliente
-  // El umbral (solo > 1 año) está en la constante global kUmbralDiasDesactualizado.
 
-  // Se refresca localmente cuando el vendedor corrige los datos en la visita,
-  // para ocultar el aviso de inmediato sin recargar la pantalla.
   String? _fechaActualizacionOverride;
 
   DateTime? get _ultimaActualizacionInfo {
@@ -89,9 +82,8 @@ class _RutaDetalleScreenState extends State<RutaDetalleScreen> {
   static Color get _border => AppTheme.borderColor;
   static Color get _textDark => AppTheme.darkBlue;
   static Color get _textMuted => AppTheme.textSecondary;
-  // Paleta monocromática: blanco / negro / gris
-  static const Color _primary = Color(0xFF1F2937); // negro-gris (acento)
-  static const Color _grayAccent = Color(0xFF6B7280); // gris
+  static const Color _primary = Color(0xFF1F2937);
+  static const Color _grayAccent = Color(0xFF6B7280);
 
   @override
   void initState() {
@@ -99,19 +91,16 @@ class _RutaDetalleScreenState extends State<RutaDetalleScreen> {
     _detalleSAP = widget.detalleSAP;
     _cargarTareas();
     _cargarUltimaVisita();
-    // La sugerencia IA se pide cuando el vendedor la toca (tarda varios segundos)
     if (_detalleSAP == null) {
       _cargarDetalleSAP().then((_) => _cargarGeocodificacion());
     } else {
       _cargarGeocodificacion();
     }
-    // Al ingresar: avisar si la información del cliente está desactualizada.
     if (_infoDesactualizada) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _avisarInfoDesactualizada());
     }
   }
 
-  /// Aviso al ingresar cuando la información del cliente está desactualizada.
   Future<void> _avisarInfoDesactualizada() async {
     if (!mounted) return;
     final dias = _diasSinActualizar ?? 0;
@@ -161,15 +150,13 @@ class _RutaDetalleScreenState extends State<RutaDetalleScreen> {
     HapticFeedback.selectionClick();
     final codigo = widget.cliente['id']?.toString() ?? '';
 
-    // Verificar si el cliente ya fue visitado hoy (no se permite doble visita
-    // salvo excepción justificada = segunda visita).
     bool segunda = false;
     String? motivoSegunda;
     final vh = await _api.getVisitasHoy(codigo);
     if (vh != null && vh['visitadoHoy'] == true) {
       if (!mounted) return;
       final motivo = await _dialogSegundaVisita(vh);
-      if (motivo == null) return; // canceló → no abre la visita
+      if (motivo == null) return;
       segunda = true;
       motivoSegunda = motivo;
     }
@@ -191,8 +178,6 @@ class _RutaDetalleScreenState extends State<RutaDetalleScreen> {
     }
   }
 
-  /// Diálogo cuando el cliente ya fue visitado hoy. Devuelve el motivo de la
-  /// segunda visita, o null si el vendedor cancela.
   Future<String?> _dialogSegundaVisita(Map<String, dynamic> vh) {
     final ultima = vh['ultima']?.toString() ?? '';
     final horaTxt = ultima.length >= 16 ? ' (${ultima.substring(11)})' : '';
@@ -403,8 +388,6 @@ class _RutaDetalleScreenState extends State<RutaDetalleScreen> {
     );
   }
 
-  /// Banner persistente y clickeable: el cliente tiene la información
-  /// desactualizada. Al tocarlo se abre la pantalla para corregir los datos.
   Widget _buildAvisoDesactualizado() {
     final dias = _diasSinActualizar ?? 0;
     return Container(
@@ -457,8 +440,6 @@ class _RutaDetalleScreenState extends State<RutaDetalleScreen> {
     );
   }
 
-  /// Abre la pantalla de edición de datos del cliente y, si se guardó,
-  /// refresca la fecha localmente para ocultar el aviso.
   Future<void> _abrirEditarCliente() async {
     HapticFeedback.selectionClick();
     final rutaIdRaw = widget.ruta['id'];

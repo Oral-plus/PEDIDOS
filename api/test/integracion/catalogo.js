@@ -1,5 +1,3 @@
-// Prueba del catálogo contra el backend (API_URL) con SAP y BD reales:
-// Service Layer, imágenes en la base de datos y paridad migración / subida de Soporte.
 const http = require("http")
 const fs = require("fs")
 const path = require("path")
@@ -7,6 +5,8 @@ require(path.join(process.cwd(), "node_modules", "dotenv")).config({ path: path.
 const sql = require(path.join(process.cwd(), "node_modules", "mssql"))
 
 const BASE = process.env.API_URL || "http://127.0.0.1:3000"
+const USUARIO_PRUEBA = process.env.PRUEBAS_USUARIO || "SKV18"
+const CLAVE_PRUEBA = process.env.PRUEBAS_CLAVE || "SKV1"
 const RAIZ_APP = path.join(process.cwd(), "..")
 
 function llamar(metodo, ruta, { body, token, headers = {}, raw = false } = {}) {
@@ -59,18 +59,16 @@ async function esperar() {
   const cliente = c.recordset[0] ? c.recordset[0].CardCode : ""
   const listaEsperada = c.recordset[0] ? c.recordset[0].ListNum : 1
 
-  // Sesiones reales: el vendedor entra con un dispositivo activado de prueba y
-  // el usuario de Soporte (primero de SOPORTE_USUARIOS) no pasa por dispositivos
   const DISP = "SVC-PRUEBA-CATALOGO"
   const pedidosDisp = await new sql.ConnectionPool(cfgDb(process.env.PEDIDOS_DB_NAME || "Pedidos")).connect()
   await pedidosDisp.request().input("d", sql.NVarChar, DISP).query("DELETE FROM dbo.dispositivos WHERE id_servicio=@d; INSERT INTO dbo.dispositivos (id_servicio, estado, activado_por, fecha_activacion) VALUES (@d, 'ACTIVO', 'prueba-catalogo', GETDATE())")
   await pedidosDisp.close()
   const usuarioSoporte = (process.env.SOPORTE_USUARIOS || "").split(",")[0].trim()
   const entrar = async (usuario, extra) => {
-    const r = await llamar("POST", "/api/auth/login", { body: { usuario, password: "SKV1", plataforma: "prueba", ...extra } })
+    const r = await llamar("POST", "/api/auth/login", { body: { usuario, password: CLAVE_PRUEBA, plataforma: "prueba", ...extra } })
     return r.json && r.json.data && r.json.data.token
   }
-  const vendedor = await entrar("SKV18", { id_servicio: DISP })
+  const vendedor = await entrar(USUARIO_PRUEBA, { id_servicio: DISP })
   const soporte = await entrar(usuarioSoporte, {})
   ok("sesiones de prueba: vendedor y soporte entran", vendedor && soporte, `soporte ${usuarioSoporte}`)
 
@@ -81,8 +79,6 @@ async function esperar() {
     await new Promise((r) => setTimeout(r, 1500))
   }
   let cat = r1.json || {}
-  // Si el arranque cayó a SQL (Service Layer lento o cortó la conexión), Soporte
-  // fuerza un refresco, como haría desde la app, antes de dar por mala la fuente
   for (let i = 0; i < 2 && cat.fuente !== "service layer"; i++) {
     await llamar("POST", "/api/productos/refrescar", { token: soporte })
     r1 = await llamar("GET", `/api/productos?cliente=${encodeURIComponent(cliente)}`, { token: vendedor })
@@ -95,7 +91,6 @@ async function esperar() {
   ok("catálogo: lista de precios del cliente", cat.listaPrecios === listaEsperada, `cliente ${cliente} lista ${cat.listaPrecios}`)
   const cats = (cat.categorias || []).map((x) => x.nombre)
   ok("catálogo: categorías con Cepillos, Niños y Ortodoncia", ["Cepillos", "Niños", "Ortodoncia"].every((x) => cats.includes(x)), cats.join(", "))
-  // En SAP la lista 6 no tiene precio para cerca del 30 % de los artículos: esos no se entregan
   ok("catálogo: todos los productos entregados tienen precio en la lista del cliente y están disponibles", productos.length >= 100 && productos.every((p) => p.precio > 0 && p.disponible === true), productos.length + " productos con precio")
   const conImagen = productos.filter((p) => p.imagenUrl).length
   ok("catálogo: al menos 60 productos con imagen migrada (desde la BD)", conImagen >= 60, `${conImagen} con imagen`)
@@ -106,7 +101,6 @@ async function esperar() {
   const r304 = await llamar("GET", `/api/productos?cliente=${encodeURIComponent(cliente)}`, { token: vendedor, headers: { "If-None-Match": r1.headers.etag } })
   ok("catálogo: If-None-Match responde 304", r304.status === 304)
 
-  // Imágenes en la base de datos
   const pedidos = await new sql.ConnectionPool(cfgDb(process.env.PEDIDOS_DB_NAME || "Pedidos")).connect()
   const t = await pedidos.request().query("SELECT COUNT(*) AS n, MIN(ancho) AS minAncho, MAX(ancho) AS maxAncho, MAX(tamano) AS maxTam FROM dbo.productos_imagenes")
   ok("BD: tabla productos_imagenes con las 76 fotos migradas", t.recordset[0].n >= 76, `${t.recordset[0].n} filas, ancho ${t.recordset[0].minAncho}-${t.recordset[0].maxAncho} px, máx ${Math.round(t.recordset[0].maxTam / 1024)} KB`)
@@ -116,11 +110,7 @@ async function esperar() {
   const img304 = await llamar("GET", original.imagenUrl, { raw: true, headers: { "If-None-Match": img1.headers.etag } })
   ok("imagen: If-None-Match responde 304", img304.status === 304)
 
-  // Paridad: subir el PNG original de 50360251 como si fuera Soporte y comparar
-  // byte a byte con lo que dejó la migración
   const codigoPrueba = "50360269"
-  // El PNG original solo existe en el PC de desarrollo; en el servidor se
-  // genera una imagen de prueba y la comparación byte a byte se omite
   const rutaPng = path.join(RAIZ_APP, "assets_originales", "CEPILLOS", "RISTRACEPILLO.png")
   const hayOriginal = fs.existsSync(rutaPng)
   const png = hayOriginal
@@ -138,7 +128,6 @@ async function esperar() {
   const cera = (r2.json.productos || []).find((p) => p.codigo === codigoPrueba)
   ok("catálogo: refleja la foto nueva y cambió el ETag", cera && cera.imagenUrl && r2.headers.etag !== r1.headers.etag)
 
-  // Limpieza de la prueba
   const del = await llamar("DELETE", `/api/productos/${codigoPrueba}/imagen`, { token: soporte })
   const quedo = await pedidos.request().input("c", sql.NVarChar, codigoPrueba).query("SELECT COUNT(*) AS n FROM dbo.productos_imagenes WHERE item_code = @c")
   const r3 = await llamar("GET", `/api/productos?cliente=${encodeURIComponent(cliente)}`, { token: vendedor })
@@ -148,7 +137,6 @@ async function esperar() {
   const adm = await llamar("GET", "/api/productos/admin", { token: soporte })
   ok("admin: lista completa", adm.status === 200 && adm.json.productos.length >= 250, `${adm.json && adm.json.productos.length} artículos`)
 
-  // Limpieza de sesiones y dispositivo de prueba
   await llamar("POST", "/api/auth/logout", { token: vendedor })
   await llamar("POST", "/api/auth/logout", { token: soporte })
   await pedidos.request().input("d", sql.NVarChar, DISP).query("DELETE FROM dbo.dispositivos WHERE id_servicio=@d")

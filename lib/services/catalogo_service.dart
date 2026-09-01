@@ -9,12 +9,6 @@ import 'api_easy_service.dart';
 import 'cache_service.dart';
 import 'shared_http.dart';
 
-/// Catálogo de productos desde el backend (SAP + configuración de Soporte).
-///
-/// Se guarda 10 minutos en memoria y la última copia buena queda en disco:
-/// la app abre el catálogo al instante y sigue funcionando sin red. Cada
-/// descarga envía el ETag anterior; si nada cambió el servidor responde 304
-/// y no viaja nada.
 class CatalogoService {
   CatalogoService._();
   static final CatalogoService _instance = CatalogoService._();
@@ -23,8 +17,6 @@ class CatalogoService {
   static const _ttl = Duration(minutes: 10);
   final CacheService _cache = CacheService();
 
-  /// Motivo de la última descarga fallida (cliente inexistente, SAP caído,
-  /// sin red). null si la última descarga salió bien.
   String? ultimoError;
 
   Future<Catalogo?> obtener(String codigoCliente, {bool forzar = false}) {
@@ -37,7 +29,6 @@ class CatalogoService {
     );
   }
 
-  /// Olvida el catálogo en memoria (por ejemplo tras cambiar imágenes desde Soporte)
   void invalidar() => _cache.invalidarPrefijo('catalogo:');
 
   Future<Catalogo?> _descargar(String cliente) async {
@@ -78,14 +69,11 @@ class CatalogoService {
         ApiClient.onSesionInvalida?.call(ultimoError ?? 'Tu sesión expiró. Inicia sesión de nuevo.');
       }
     } catch (_) {
-      // Sin red o servidor caído: se usa la copia en disco si existe
       ultimoError = 'Sin conexión con el servidor. Revisa la red e intenta de nuevo.';
     }
     return guardado == null ? null : Catalogo.fromJson(guardado.cuerpo, baseUrl: base);
   }
 
-  /// Mensaje del backend en una respuesta de error (400 sin cliente, 404
-  /// cliente inexistente, 503 SAP caído).
   static String _mensajeDe(http.Response res) {
     try {
       final decoded = jsonDecode(utf8.decode(res.bodyBytes));

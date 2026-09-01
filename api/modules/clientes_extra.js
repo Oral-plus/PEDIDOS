@@ -1,7 +1,3 @@
-// Rutas de cliente que usa la app y no tenían implementación:
-//  - comentarios del gestor sobre el cliente (BD Pedidos, tabla comentarios_clientes)
-//  - texto libre de SAP (OCRD.Free_Text) leído por SQL y escrito por Service Layer
-//  - histórico de facturas (SAP OINV, abiertas y pagadas)
 
 let tablaLista = false
 
@@ -33,19 +29,17 @@ function filaComentario(r) {
   }
 }
 
-// Free_Text de OCRD por SQL (lectura); "" si el cliente no tiene texto
 async function leerFreeText(sap, sql, cardCode) {
   const r = await sap.request()
     .input("c", sql.VarChar, cardCode)
     .query("SELECT CAST(Free_Text AS NVARCHAR(MAX)) AS texto FROM OCRD WHERE CardCode = @c")
-  if (!r.recordset.length) return null // cliente inexistente
+  if (!r.recordset.length) return null
   return (r.recordset[0].texto || "").toString()
 }
 
 function registrarRutas(app, { requireAuth, getPedidosPool, connectSAP, sql, serviceLayer, limiteDesdeQuery, log }) {
   const logger = log || console
 
-  // GET comentarios + texto libre SAP
   app.get("/api/clientes/:codigo/comentarios", requireAuth, async (req, res) => {
     const cardCode = (req.params.codigo || "").toString().trim()
     try {
@@ -70,7 +64,6 @@ function registrarRutas(app, { requireAuth, getPedidosPool, connectSAP, sql, ser
     }
   })
 
-  // POST nuevo comentario del usuario de la sesión
   app.post("/api/clientes/:codigo/comentarios", requireAuth, async (req, res) => {
     const cardCode = (req.params.codigo || "").toString().trim()
     const texto = (req.body && req.body.comentario != null ? req.body.comentario : "").toString().trim()
@@ -101,7 +94,6 @@ function registrarRutas(app, { requireAuth, getPedidosPool, connectSAP, sql, ser
     }
   })
 
-  // PUT texto libre de SAP (OCRD.Free_Text) por Service Layer
   app.put("/api/clientes/:codigo/free-text", requireAuth, async (req, res) => {
     const cardCode = (req.params.codigo || "").toString().trim()
     const texto = (req.body && req.body.texto != null ? req.body.texto : "").toString()
@@ -127,7 +119,6 @@ function registrarRutas(app, { requireAuth, getPedidosPool, connectSAP, sql, ser
     }
   })
 
-  // GET histórico de facturas (abiertas y pagadas)
   app.get("/api/clientes/:codigo/facturas-historico", requireAuth, async (req, res) => {
     const cardCode = (req.params.codigo || "").toString().trim()
     const limite = limiteDesdeQuery(req.query.limite || req.query.limit, 100, 1000)

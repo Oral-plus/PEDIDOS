@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import '../utils/theme.dart';
 import '../widgets/app_header.dart';
 
-/// Tipos de pregunta soportados en las encuestas de visita.
 enum TipoPregunta { sino, opciones, rating, texto }
 
 class Pregunta {
@@ -38,7 +37,6 @@ class Encuesta {
   });
 }
 
-/// Las dos encuestas disponibles al finalizar la visita.
 const List<Encuesta> kEncuestasVisita = [
   Encuesta(
     id: 'gestion_comercial',
@@ -74,8 +72,6 @@ const List<Encuesta> kEncuestasVisita = [
   ),
 ];
 
-/// Pantalla de encuesta obligatoria para finalizar la visita.
-/// Devuelve `{ 'tipo': id, 'nombre': nombre, 'respuestas': {...} }` o `null` si se canceló.
 class EncuestaVisitaScreen extends StatefulWidget {
   final String nombreCliente;
   const EncuestaVisitaScreen({super.key, required this.nombreCliente});
@@ -124,7 +120,6 @@ class _EncuestaVisitaScreenState extends State<EncuestaVisitaScreen> {
   }
 
   void _finalizar() {
-    // Sincronizar campos de texto
     for (final entry in _controllers.entries) {
       _resp[entry.key] = entry.value.text.trim();
     }
@@ -161,9 +156,9 @@ class _EncuestaVisitaScreenState extends State<EncuestaVisitaScreen> {
           icon: Icon(Icons.arrow_back_rounded, color: _textDark),
           onPressed: () {
             if (_sel != null) {
-              setState(() => _sel = null); // volver a la selección
+              setState(() => _sel = null);
             } else {
-              Navigator.of(context).pop(); // cancelar (no finaliza)
+              Navigator.of(context).pop();
             }
           },
         ),

@@ -1,5 +1,4 @@
 <?php
-// api/auth.php
 require_once '../config/database.php';
 
 function hashPassword($password) {
@@ -13,7 +12,7 @@ function verifyPassword($password, $hash) {
 function generateToken($userId) {
     $payload = [
         'user_id' => $userId,
-        'exp' => time() + (24 * 60 * 60) // 24 horas
+        'exp' => time() + (24 * 60 * 60)
     ];
     return base64_encode(json_encode($payload));
 }
@@ -77,7 +76,6 @@ try {
                 
                 $conn = getDbConnection();
                 
-                // Verificar si el email ya existe
                 $sql = "SELECT id FROM usuarios WHERE email = ?";
                 $stmt = executeQuery($conn, $sql, [$email]);
                 
@@ -85,18 +83,15 @@ try {
                     throw new Exception('El email ya está registrado');
                 }
                 
-                // Crear usuario
                 $passwordHash = hashPassword($password);
                 $sql = "INSERT INTO usuarios (nombre, apellido, email, telefono, password_hash) VALUES (?, ?, ?, ?, ?)";
                 $stmt = executeQuery($conn, $sql, [$nombre, $apellido, $email, $telefono, $passwordHash]);
                 
-                // Obtener ID del usuario creado
                 $sql = "SELECT SCOPE_IDENTITY() as id";
                 $stmt = sqlsrv_query($conn, $sql);
                 $result = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
                 $userId = $result['id'];
                 
-                // Crear cuenta principal
                 $numeroCuenta = 'SKY' . str_pad($userId, 8, '0', STR_PAD_LEFT);
                 $sql = "INSERT INTO cuentas (usuario_id, numero_cuenta, saldo) VALUES (?, ?, 0.00)";
                 executeQuery($conn, $sql, [$userId, $numeroCuenta]);

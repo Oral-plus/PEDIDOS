@@ -203,7 +203,6 @@ class ProductPreviewDialog extends StatelessWidget {
     );
   }
 
-  // Al consultar un producto solo se muestra el total (precio de lista)
   Widget _buildPriceBreakdown(BuildContext context, String precioMostrar, bool disponible) {
     return Container(
       padding: EdgeInsets.all(context.responsive(16)),
@@ -393,7 +392,6 @@ class ProductPreviewDialog extends StatelessWidget {
   bool _productoDisponible(String codigoSap) {
     if (estadosSAP.containsKey(codigoSap)) {
       final estado = estadosSAP[codigoSap]!;
-      // Solo bloquea lo que no se le vende al cliente; el stock no impide pedir
       return estado['disponible'] == true;
     }
     return true;

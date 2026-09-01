@@ -4,9 +4,6 @@ import 'package:flutter/services.dart';
 import '../services/api_easy_service.dart';
 import '../utils/theme.dart';
 
-/// Hoja modal profesional para agregar una RUTA EXTRA (visita de urgencia).
-/// El vendedor debe: 1) elegir el cliente, 2) indicar el motivo (por qué
-/// visita) y 3) escribir una observación. Devuelve `true` si se creó.
 Future<bool> showRutaExtraSheet(BuildContext context) async {
   final creado = await showModalBottomSheet<bool>(
     context: context,
@@ -18,13 +15,9 @@ Future<bool> showRutaExtraSheet(BuildContext context) async {
   return creado ?? false;
 }
 
-// Rojo de urgencia (el resto de la app es monocromática; el rojo se reserva
-// exclusivamente para esta acción de excepción).
 const Color _red = Color(0xFFDC2626);
 const Color _redDark = Color(0xFFB91C1C);
 
-/// Motivos frecuentes de una visita adicional (todos >= 5 caracteres, que es
-/// lo que valida el backend).
 const List<String> _motivos = [
   'Urgencia del cliente',
   'Recaudo de cartera vencida',
@@ -66,8 +59,6 @@ class _RutaExtraSheetState extends State<_RutaExtraSheet> {
     _cargarClientes();
   }
 
-  // La lista filtrada se recalcula al escribir (con una pausa corta), no en
-  // cada rebuild ni por cada fila.
   List<Map<String, dynamic>> _clientesFiltrados = [];
   Timer? _debounce;
 

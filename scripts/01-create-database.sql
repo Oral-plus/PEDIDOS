@@ -1,4 +1,3 @@
--- Crear base de datos SkyPagos si no existe
 IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'SkyPagos')
 BEGIN
     CREATE DATABASE SkyPagos;
@@ -8,18 +7,17 @@ GO
 USE SkyPagos;
 GO
 
--- Tabla de usuarios
 CREATE TABLE usuarios (
     id INT IDENTITY(1,1) PRIMARY KEY,
     nombre NVARCHAR(100) NOT NULL,
     apellido NVARCHAR(100) NOT NULL,
     telefono NVARCHAR(20) UNIQUE NOT NULL,
     email NVARCHAR(150) UNIQUE,
-    pin NVARCHAR(255) NOT NULL, -- PIN encriptado
+    pin NVARCHAR(255) NOT NULL,
     documento NVARCHAR(20) UNIQUE NOT NULL,
     tipo_documento NVARCHAR(10) NOT NULL DEFAULT 'CI',
     fecha_nacimiento DATE,
-    estado NVARCHAR(20) DEFAULT 'ACTIVO', -- ACTIVO, INACTIVO, BLOQUEADO
+    estado NVARCHAR(20) DEFAULT 'ACTIVO',
     saldo DECIMAL(15,2) DEFAULT 0.00,
     limite_diario DECIMAL(15,2) DEFAULT 5000.00,
     limite_mensual DECIMAL(15,2) DEFAULT 50000.00,
@@ -28,7 +26,6 @@ CREATE TABLE usuarios (
     fecha_actualizacion DATETIME DEFAULT GETDATE()
 );
 
--- Tabla de tipos de transacción
 CREATE TABLE tipos_transaccion (
     id INT IDENTITY(1,1) PRIMARY KEY,
     codigo NVARCHAR(20) UNIQUE NOT NULL,
@@ -41,7 +38,6 @@ CREATE TABLE tipos_transaccion (
     estado NVARCHAR(20) DEFAULT 'ACTIVO'
 );
 
--- Tabla de transacciones
 CREATE TABLE transacciones (
     id INT IDENTITY(1,1) PRIMARY KEY,
     codigo_transaccion NVARCHAR(50) UNIQUE NOT NULL,
@@ -55,7 +51,7 @@ CREATE TABLE transacciones (
     referencia NVARCHAR(100),
     telefono_destino NVARCHAR(20),
     nombre_destino NVARCHAR(200),
-    estado NVARCHAR(20) DEFAULT 'PENDIENTE', -- PENDIENTE, COMPLETADA, FALLIDA, CANCELADA
+    estado NVARCHAR(20) DEFAULT 'PENDIENTE',
     fecha_transaccion DATETIME DEFAULT GETDATE(),
     fecha_procesamiento DATETIME,
     ip_origen NVARCHAR(45),
@@ -65,7 +61,6 @@ CREATE TABLE transacciones (
     FOREIGN KEY (tipo_transaccion_id) REFERENCES tipos_transaccion(id)
 );
 
--- Tabla de beneficiarios
 CREATE TABLE beneficiarios (
     id INT IDENTITY(1,1) PRIMARY KEY,
     usuario_id INT NOT NULL,
@@ -76,7 +71,6 @@ CREATE TABLE beneficiarios (
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
 );
 
--- Tabla de sesiones
 CREATE TABLE sesiones (
     id INT IDENTITY(1,1) PRIMARY KEY,
     usuario_id INT NOT NULL,
@@ -89,19 +83,17 @@ CREATE TABLE sesiones (
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
 );
 
--- Tabla de notificaciones
 CREATE TABLE notificaciones (
     id INT IDENTITY(1,1) PRIMARY KEY,
     usuario_id INT NOT NULL,
     titulo NVARCHAR(100) NOT NULL,
     mensaje NVARCHAR(500) NOT NULL,
-    tipo NVARCHAR(50) DEFAULT 'INFO', -- INFO, SUCCESS, WARNING, ERROR
+    tipo NVARCHAR(50) DEFAULT 'INFO',
     leida BIT DEFAULT 0,
     fecha_creacion DATETIME DEFAULT GETDATE(),
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
 );
 
--- Índices para optimización
 CREATE INDEX IX_transacciones_usuario_origen ON transacciones(usuario_origen_id);
 CREATE INDEX IX_transacciones_fecha ON transacciones(fecha_transaccion);
 CREATE INDEX IX_transacciones_estado ON transacciones(estado);

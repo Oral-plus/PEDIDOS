@@ -1,11 +1,3 @@
-// Rutas del catálogo de productos.
-//   GET  /api/productos?cliente=          catálogo para el vendedor (precio de su lista)
-//   GET  /api/productos/imagen/:codigo    imagen WebP (caché larga, URL versionada)
-//   GET  /api/productos/admin             soporte: todos los artículos con su configuración
-//   PUT  /api/productos/:codigo/imagen    soporte: sube o reemplaza la imagen (multipart "imagen")
-//   DELETE /api/productos/:codigo/imagen  soporte: quita la imagen
-//   PUT  /api/productos/:codigo/config    soporte: categoría, visible, orden, variante, textura, descripción
-//   POST /api/productos/refrescar         soporte: vuelve a leer SAP ahora
 
 const multer = require("multer")
 const { limpiar } = require("./imagenes")
@@ -38,7 +30,6 @@ function registrarRutas(app, { repositorio, imagenes, requireAuth, requireSoport
     }
   })
 
-  // Sin auth: la app la pide por URL y esa URL ya lleva la versión.
   app.get("/api/productos/imagen/:codigo", async (req, res) => {
     try {
       const codigo = limpiar(req.params.codigo)

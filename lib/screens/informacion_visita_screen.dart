@@ -14,7 +14,6 @@ import 'forma_pago_screen.dart';
 import 'gestion_pedido_screen.dart';
 import 'products.dart';
 
-/// Pantalla "Información visita" - resumen y gestión de la visita al cliente.
 class InformacionVisitaScreen extends StatefulWidget {
   final Map<String, dynamic> cliente;
   final Map<String, dynamic> ruta;
@@ -47,10 +46,7 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
   String? _motivo;
   bool _guardando = false;
 
-  // Cronómetro de la visita (persistente: no se reinicia al salir/entrar)
   DateTime _horaInicio = DateTime.now();
-  // Solo los dos textos del cronómetro escuchan este valor; así el tic de
-  // cada segundo no reconstruye la pantalla entera.
   final ValueNotifier<Duration> _transcurrido = ValueNotifier(Duration.zero);
   Timer? _timer;
 
@@ -59,21 +55,14 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     return rid.isNotEmpty ? 'visita_inicio_ruta_$rid' : 'visita_inicio_cli_$_codigo';
   }
 
-  // Pago registrado en esta visita (desde el menú Cartera o al finalizar).
-  // Se guarda en preferencias junto con la hora de inicio para no perderlo si
-  // el vendedor sale de la pantalla o se cierra la app.
   Map<String, dynamic>? _pago;
   String get _pagoKey => '${_visitaKey}_pago';
 
-  // Recaudo ya guardado en la BD en esta visita (número y monto aplicado a
-  // cartera). Se anota apenas se cruza, aunque el pago no se confirme, para
-  // que nunca se cruce dos veces.
   String? _numeroRecaudo;
   double _valorRecaudo = 0;
   String get _recaudoKey => '${_visitaKey}_recaudo';
 
   double get _totalPedidoBasePago => (_pago?['totalPedidoBase'] as num?)?.toDouble() ?? 0;
-  // Solo se compara cuando el total del pedido ya está cargado
   bool get _pagoDesactualizado =>
       _pago != null && !_recargandoPedidos && _totalPedidoBasePago != _totalPedidos;
 
@@ -103,8 +92,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     super.initState();
     _cartera = widget.cartera;
     _visitaActiva = context.read<VisitaActivaProvider>();
-    // Cronómetro: recupera la hora de inicio si la visita ya estaba en curso;
-    // si no, la registra ahora. No se reinicia al salir y volver a entrar.
     _restaurarCronometro();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -119,16 +106,13 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
       final guardada = prefs.getString(_visitaKey);
       final dt = guardada != null ? DateTime.tryParse(guardada) : null;
       if (dt != null) {
-        // Visita ya iniciada: continuar contando desde la hora original
         if (mounted) {
           setState(() => _horaInicio = dt);
           _transcurrido.value = DateTime.now().difference(dt);
         }
       } else {
-        // Primera vez: guardar la hora de inicio
         await prefs.setString(_visitaKey, _horaInicio.toIso8601String());
       }
-      // Pago y recaudo registrados antes de salir de la pantalla (si los hubo)
       final pagoGuardado = prefs.getString(_pagoKey);
       final recaudoGuardado = prefs.getString(_recaudoKey);
       if (mounted) {
@@ -147,7 +131,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
         });
       }
     } catch (_) {}
-    // Publicar la visita como activa (alimenta el cronómetro flotante global)
     _visitaActiva?.iniciar(cliente: widget.cliente, ruta: widget.ruta, inicio: _horaInicio);
     _visitaActiva?.setEnPantallaVisita(true);
   }
@@ -156,7 +139,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
   void dispose() {
     _timer?.cancel();
     _transcurrido.dispose();
-    // Al salir sin finalizar, la visita sigue activa -> mostrar el flotante.
     _visitaActiva?.setEnPantallaVisita(false);
     _obs.dispose();
     super.dispose();
@@ -214,15 +196,12 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
 
   static final RegExp _reProductosTarea = RegExp(r'(\d+)\s*PRODUCTO', caseSensitive: false);
 
-  /// Cantidad requerida de productos según el texto de la tarea (ej: "2 PRODUCTOS").
   int _requeridoTarea(String texto) {
     final m = _reProductosTarea.firstMatch(texto);
     if (m != null) return int.tryParse(m.group(1) ?? '') ?? 1;
     return 1;
   }
 
-  /// Productos distintos en el pedido de la visita (para calcular avance de
-  /// tareas). Se recalcula solo cuando cambia el pedido.
   int _productosPedido = 0;
 
   static int _contarProductosPedido(Map<String, dynamic>? pedido) {
@@ -259,15 +238,12 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const ProductsTab()),
     );
-    // Al volver del catálogo, recargar el total de pedidos de esta visita
     _recargarTotalPedidos();
   }
 
   Future<void> _recargarTotalPedidos() async {
     if (_codigo.isEmpty) return;
     setState(() => _recargandoPedidos = true);
-    // Sumar los pedidos del cliente desde el inicio del día (robusto a entrar/
-    // salir de la pantalla). Cubre los pedidos hechos durante la visita de hoy.
     final ahora = DateTime.now();
     final inicioDia = DateTime(ahora.year, ahora.month, ahora.day);
     final results = await Future.wait([
@@ -290,8 +266,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
 
     final tieneMotivo = _motivo != null && _motivo!.isNotEmpty;
 
-    // La encuesta solo es obligatoria si HUBO gestión (sin motivo de no gestión).
-    // Si se seleccionó un motivo de no gestión, se finaliza directo sin encuesta.
     Map<String, dynamic>? encuesta;
     if (!tieneMotivo) {
       encuesta = await Navigator.of(context).push<Map<String, dynamic>>(
@@ -300,7 +274,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
         ),
       );
       if (encuesta == null) {
-        // Canceló la encuesta -> no se finaliza la visita
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -316,13 +289,10 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
 
     if (!mounted) return;
 
-    // El pago sigue siendo obligatorio. Si ya se registró desde el menú
-    // "Cartera y pago" no se vuelve a pedir; si no, se pide aquí.
     var pago = _pago;
     if (pago == null) {
       pago = await _abrirFormaPago();
       if (pago == null) {
-        // Volvió atrás sin registrar el pago -> no se finaliza la visita
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -335,7 +305,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
         return;
       }
     } else if (_pagoDesactualizado) {
-      // El pedido cambió después de registrar el pago: ofrecer revisarlo
       final revisar = await _confirmarRevisarPago();
       if (!mounted) return;
       if (revisar) {
@@ -351,8 +320,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
 
     if (!mounted) return;
 
-    // Tras la forma de pago: gestión del pedido (liquidación, condiciones,
-    // evidencias, guardar). Es parte del proceso pero no bloquea la visita.
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => GestionPedidoScreen(
@@ -399,8 +366,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     setState(() => _guardando = false);
 
     if (res != null) {
-      // Visita finalizada: limpiar la hora de inicio para que la próxima
-      // visita a esta ruta arranque un cronómetro nuevo.
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove(_visitaKey);
@@ -410,7 +375,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
       _pago = null;
       _numeroRecaudo = null;
       _valorRecaudo = 0;
-      // Cerrar la visita activa -> oculta el cronómetro flotante global
       _visitaActiva?.finalizar();
       if (!mounted) return;
       HapticFeedback.heavyImpact();
@@ -437,9 +401,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     }
   }
 
-  /// Abre la forma de pago con los datos actuales de cartera y pedido. Si el
-  /// vendedor confirma, el pago queda guardado en la visita (memoria y
-  /// preferencias) y se devuelve; si vuelve atrás devuelve null.
   Future<Map<String, dynamic>?> _abrirFormaPago() async {
     if (_guardando) return null;
     final pago = await Navigator.of(context).push<Map<String, dynamic>>(
@@ -474,7 +435,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     return guardado;
   }
 
-  // Se llama desde la forma de pago apenas se guarda un recaudo en la BD
   Future<void> _guardarNumeroRecaudo(String numero, double aplicado) async {
     if (numero.isEmpty) return;
     if (mounted) {
@@ -518,7 +478,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     return r == true;
   }
 
-  /// Tarjeta con el pago registrado en la visita (o el aviso de pendiente).
   Widget _tarjetaPago() {
     final p = _pago;
     final registrado = p != null;
@@ -887,7 +846,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
   Widget _seccionObjetivos() {
     final asignado = _totalObjetivos > 0;
     const violeta = Color(0xFF8B5CF6);
-    // Avance automático: tareas alcanzadas por los productos del pedido
     final cumplidasPorPedido = asignado
         ? _tareas.where((t) => _productosPedido >= _requeridoTarea((t['tarea'] ?? '').toString())).length
         : 0;

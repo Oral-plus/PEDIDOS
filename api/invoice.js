@@ -12,13 +12,11 @@ const app = express()
 const PORT = process.env.PORT || 3000
 const JWT_SECRET = process.env.JWT_SECRET
 
-// Los secretos viven SOLO en api/.env — sin ellos el servicio no arranca
 if (!JWT_SECRET || !process.env.DB_PASSWORD) {
-  console.error("❌ Falta JWT_SECRET o DB_PASSWORD. Revisa el archivo api/.env.")
+  console.error("Falta JWT_SECRET o DB_PASSWORD. Revisa el archivo api/.env.")
   process.exit(1)
 }
 
-// 🔧 CONFIGURACIÓN DE BASES DE DATOS
 const skyPagosConfig = {
   server: process.env.DB_SERVER,
   database: process.env.DB_NAME || "SkyPagos",
@@ -59,7 +57,6 @@ const oralPlusConfig = {
   },
 }
 
-// 🛡️ MIDDLEWARE DE SEGURIDAD
 app.use(helmet())
 app.use(cors({ origin: "*", credentials: true }))
 app.use(express.json({ limit: "10mb" }))
@@ -78,53 +75,47 @@ const loginLimiter = rateLimit({
   message: { error: "Demasiados intentos de login, intenta nuevamente en 1 segundo" },
 })
 
-// 📊 POOLS DE CONEXIÓN SEPARADOS
 let skyPagosPool
 let oralPlusPool
 
 async function connectDatabases() {
   try {
-    console.log("🔄 Conectando a las bases de datos...")
+    console.log("Conectando a las bases de datos...")
 
-    // 📱 CONECTAR SKYPAGOS (PRINCIPAL)
-    console.log("📱 Conectando a SkyPagos...")
+    console.log("Conectando a SkyPagos...")
     skyPagosPool = await sql.connect(skyPagosConfig)
-    console.log("✅ SkyPagos conectado exitosamente")
+    console.log("SkyPagos conectado exitosamente")
 
-    // Verificar tablas de SkyPagos
     const skyResult = await skyPagosPool.request().query(`
       SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.TABLES 
       WHERE TABLE_NAME IN ('usuarios', 'transacciones', 'tipos_transaccion')
     `)
     
     if (skyResult.recordset[0].count < 3) {
-      console.log("⚠️ Advertencia: Algunas tablas de SkyPagos no existen")
+      console.log("Advertencia: Algunas tablas de SkyPagos no existen")
     }
 
-    // 🦷 CONECTAR ORAL-PLUS (SECUNDARIO)
-    console.log("🦷 Conectando a ORAL-PLUS (RBOSKY3)...")
+    console.log("Conectando a ORAL-PLUS (RBOSKY3)...")
     oralPlusPool = new sql.ConnectionPool(oralPlusConfig)
     await oralPlusPool.connect()
-    console.log("✅ ORAL-PLUS conectado exitosamente")
+    console.log("ORAL-PLUS conectado exitosamente")
 
-    // Verificar tabla de facturas
     const oralResult = await oralPlusPool.request().query("SELECT COUNT(*) as total FROM CONSULTA_CARTERA")
-    console.log(`📄 ORAL-PLUS - Total facturas: ${oralResult.recordset[0].total}`)
+    console.log(`ORAL-PLUS - Total facturas: ${oralResult.recordset[0].total}`)
 
-    console.log("🎉 Todas las bases de datos conectadas exitosamente!")
+    console.log("Todas las bases de datos conectadas exitosamente!")
   } catch (err) {
-    console.error("❌ Error conectando a las bases de datos:", err.message)
+    console.error("Error conectando a las bases de datos:", err.message)
     process.exit(1)
   }
 }
 
-// 🔐 MIDDLEWARE DE AUTENTICACIÓN
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"]
   const token = authHeader && authHeader.split(" ")[1]
 
   if (!token) {
-    req.user = { userId: 1 } // Usuario por defecto para desarrollo
+    req.user = { userId: 1 }
     return next()
   }
 
@@ -138,7 +129,6 @@ const authenticateToken = (req, res, next) => {
   })
 }
 
-// 🔧 FUNCIONES AUXILIARES
 function generateTransactionCode() {
   const timestamp = Date.now().toString()
   const random = crypto.randomBytes(4).toString("hex").toUpperCase()
@@ -150,11 +140,7 @@ async function hashPin(pin) {
   return await bcrypt.hash(pin, saltRounds)
 }
 
-// ==========================================
-// 📱 RUTAS DE SKYPAGOS (MANTENER INTACTAS)
-// ==========================================
 
-// Login
 app.post("/api/auth/login", loginLimiter, async (req, res) => {
   try {
     const documento = (req.body.documento || req.body.usuario || "").toString().trim()
@@ -188,7 +174,6 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
 
     const user = result.recordset[0]
 
-    // Verificar PIN
     let validPin = false
     if (pin === "1234") {
       validPin = true
@@ -254,7 +239,6 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
   }
 })
 
-// Registro
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { nombre, apellido, telefono, email, pin, documento } = req.body
@@ -308,7 +292,6 @@ app.post("/api/auth/register", async (req, res) => {
   }
 })
 
-// Obtener perfil del usuario
 app.get("/api/user/profile", authenticateToken, async (req, res) => {
   try {
     const request = skyPagosPool.request()
@@ -333,7 +316,6 @@ app.get("/api/user/profile", authenticateToken, async (req, res) => {
   }
 })
 
-// Obtener saldo
 app.get("/api/user/balance", authenticateToken, async (req, res) => {
   try {
     const request = skyPagosPool.request()
@@ -351,7 +333,6 @@ app.get("/api/user/balance", authenticateToken, async (req, res) => {
   }
 })
 
-// Enviar dinero
 app.post("/api/transactions/send", authenticateToken, async (req, res) => {
   try {
     const { telefono_destino, monto, descripcion } = req.body
@@ -457,7 +438,6 @@ app.post("/api/transactions/send", authenticateToken, async (req, res) => {
   }
 })
 
-// Obtener historial de transacciones
 app.get("/api/transactions/history", authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query
@@ -494,19 +474,15 @@ app.get("/api/transactions/history", authenticateToken, async (req, res) => {
   }
 })
 
-// ==========================================
-// 🦷 RUTAS DE ORAL-PLUS (NUEVAS)
-// ==========================================
 
-// Test de conexión de facturas
 app.get("/api/invoices/test", async (req, res) => {
   try {
-    console.log("🧪 Probando conexión de facturas...")
+    console.log("Probando conexión de facturas...")
 
     const result = await oralPlusPool.request().query("SELECT COUNT(*) as total FROM CONSULTA_CARTERA")
     const total = result.recordset[0].total
 
-    console.log(`📊 Total facturas en ORAL-PLUS: ${total}`)
+    console.log(`Total facturas en ORAL-PLUS: ${total}`)
 
     res.json({
       success: true,
@@ -517,7 +493,7 @@ app.get("/api/invoices/test", async (req, res) => {
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("❌ Error en test de facturas:", error)
+    console.error("Error en test de facturas:", error)
     res.status(500).json({
       success: false,
       error: "Error conectando a la base de datos de facturas",
@@ -526,10 +502,9 @@ app.get("/api/invoices/test", async (req, res) => {
   }
 })
 
-// Obtener todas las facturas REALES
 app.get("/api/invoices/all", authenticateToken, async (req, res) => {
   try {
-    console.log("📄 Obteniendo TODAS las facturas de ORAL-PLUS...")
+    console.log("Obteniendo TODAS las facturas de ORAL-PLUS...")
 
     const result = await oralPlusPool.request().query(`
       SELECT 
@@ -545,7 +520,7 @@ app.get("/api/invoices/all", authenticateToken, async (req, res) => {
       ORDER BY DocDueDate ASC, DocNum DESC
     `)
 
-    console.log(`📊 Total facturas encontradas: ${result.recordset.length}`)
+    console.log(`Total facturas encontradas: ${result.recordset.length}`)
 
     if (result.recordset.length === 0) {
       return res.json({
@@ -612,7 +587,7 @@ app.get("/api/invoices/all", authenticateToken, async (req, res) => {
             },
           }
         } catch (error) {
-          console.error(`❌ Error procesando factura ${index + 1}:`, error.message)
+          console.error(`Error procesando factura ${index + 1}:`, error.message)
           return null
         }
       })
@@ -627,7 +602,7 @@ app.get("/api/invoices/all", authenticateToken, async (req, res) => {
       totalAmount: processedInvoices.reduce((sum, i) => sum + i.amount, 0),
     }
 
-    console.log(`📊 ESTADÍSTICAS: Total: ${stats.total}, Vencidas: ${stats.overdue}, Urgentes: ${stats.urgent}`)
+    console.log(`ESTADÍSTICAS: Total: ${stats.total}, Vencidas: ${stats.overdue}, Urgentes: ${stats.urgent}`)
 
     res.json({
       success: true,
@@ -637,7 +612,7 @@ app.get("/api/invoices/all", authenticateToken, async (req, res) => {
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("❌ Error obteniendo facturas:", error.message)
+    console.error("Error obteniendo facturas:", error.message)
     res.status(500).json({
       success: false,
       error: "Error interno del servidor",
@@ -647,22 +622,17 @@ app.get("/api/invoices/all", authenticateToken, async (req, res) => {
   }
 })
 
-// ==========================================
-// 🧪 RUTAS DE PRUEBA GENERALES
-// ==========================================
 
-// Test general
 app.get("/api/test", (req, res) => {
   res.json({
     success: true,
-    message: "🚀 Servidor UNIFICADO funcionando correctamente",
+    message: "Servidor UNIFICADO funcionando correctamente",
     services: ["SkyPagos", "ORAL-PLUS"],
     timestamp: new Date().toISOString(),
     version: "1.0.0",
   })
 })
 
-// Estado del servidor
 app.get("/api/health", async (req, res) => {
   try {
     const skyTest = await skyPagosPool.request().query("SELECT 1 as test")
@@ -672,8 +642,8 @@ app.get("/api/health", async (req, res) => {
       success: true,
       message: "Servidor saludable",
       databases: {
-        skyPagos: skyTest.recordset.length > 0 ? "✅ Conectado" : "❌ Desconectado",
-        oralPlus: oralTest.recordset.length > 0 ? "✅ Conectado" : "❌ Desconectado",
+        skyPagos: skyTest.recordset.length > 0 ? "Conectado" : "Desconectado",
+        oralPlus: oralTest.recordset.length > 0 ? "Conectado" : "Desconectado",
       },
       timestamp: new Date().toISOString(),
     })
@@ -686,57 +656,42 @@ app.get("/api/health", async (req, res) => {
   }
 })
 
-// ==========================================
-// 🚀 INICIALIZAR SERVIDOR
-// ==========================================
 
 async function startServer() {
   try {
     await connectDatabases()
 
     app.listen(PORT, "0.0.0.0", () => {
-      console.log(`\n🎉 ========================================`)
-      console.log(`🚀 SERVIDOR UNIFICADO FUNCIONANDO`)
-      console.log(`📱 SkyPagos + 🦷 ORAL-PLUS`)
-      console.log(`🌐 Puerto: ${PORT}`)
-      console.log(`========================================`)
-      console.log(`\n📱 ENDPOINTS PRINCIPALES:`)
-      console.log(`🧪 Test: http://192.168.2.244:${PORT}/api/test`)
-      console.log(`💚 Health: http://192.168.2.244:${PORT}/api/health`)
-      console.log(`🦷 Facturas Test: http://192.168.2.244:${PORT}/api/invoices/test`)
-      console.log(`📄 Todas Facturas: http://192.168.2.244:${PORT}/api/invoices/all`)
-      console.log(`\n✅ Listo para Flutter!`)
+      console.log(`Servidor unificado SkyPagos + ORAL-PLUS escuchando en el puerto ${PORT}`)
+      console.log(`Rutas de verificacion: /api/test, /api/health, /api/invoices/test`)
     })
   } catch (error) {
-    console.error("❌ Error iniciando el servidor:", error)
+    console.error("Error iniciando el servidor:", error)
     process.exit(1)
   }
 }
 
 startServer()
 
-// ==========================================
-// 🛑 CIERRE GRACEFUL
-// ==========================================
 
 process.on("SIGINT", async () => {
-  console.log("\n🛑 Cerrando servidor...")
+  console.log("\nCerrando servidor...")
   if (skyPagosPool) {
     await skyPagosPool.close()
-    console.log("📱 SkyPagos desconectado")
+    console.log("SkyPagos desconectado")
   }
   if (oralPlusPool) {
     await oralPlusPool.close()
-    console.log("🦷 ORAL-PLUS desconectado")
+    console.log("ORAL-PLUS desconectado")
   }
   process.exit(0)
 })
 
 process.on("unhandledRejection", (err) => {
-  console.error("❌ Error no manejado:", err.message)
+  console.error("Error no manejado:", err.message)
 })
 
 process.on("uncaughtException", (err) => {
-  console.error("❌ Excepción no capturada:", err.message)
+  console.error("Excepción no capturada:", err.message)
   process.exit(1)
 })

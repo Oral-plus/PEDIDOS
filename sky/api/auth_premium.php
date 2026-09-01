@@ -1,5 +1,4 @@
 <?php
-// api/auth_premium.php
 require_once '../config/database.php';
 require_once '../utils/security.php';
 require_once '../utils/notifications.php';
@@ -69,7 +68,6 @@ try {
                 
                 $conn = getDbConnection();
                 
-                // Verificar intentos fallidos
                 $sql = "SELECT COUNT(*) as intentos FROM logs_seguridad 
                        WHERE evento = 'LOGIN_FAILED' AND ip_address = ? 
                        AND fecha_evento > DATEADD(minute, -30, GETDATE())";
@@ -93,7 +91,6 @@ try {
                     throw new Exception('Credenciales inválidas');
                 }
                 
-                // Registrar dispositivo si es nuevo
                 if (!empty($deviceId)) {
                     $sql = "SELECT id FROM dispositivos WHERE device_id = ? AND usuario_id = ?";
                     $stmt = executeQuery($conn, $sql, [$deviceId, $user['id']]);
@@ -116,7 +113,6 @@ try {
                     }
                 }
                 
-                // Actualizar última actividad
                 $sql = "UPDATE usuarios SET ultima_actividad = GETDATE() WHERE id = ?";
                 executeQuery($conn, $sql, [$user['id']]);
                 
@@ -124,7 +120,6 @@ try {
                 
                 logSecurityEvent($user['id'], 'LOGIN_SUCCESS', 'Login exitoso', 'BAJO');
                 
-                // Crear notificación de bienvenida
                 createNotification($user['id'], 'Bienvenido de vuelta', 
                                  'Has iniciado sesión exitosamente', 'LOGIN', 'success');
                 
@@ -173,7 +168,6 @@ try {
                 
                 $conn = getDbConnection();
                 
-                // Verificar si el email ya existe
                 $sql = "SELECT id FROM usuarios WHERE email = ?";
                 $stmt = executeQuery($conn, $sql, [$email]);
                 
@@ -181,7 +175,6 @@ try {
                     throw new Exception('El email ya está registrado');
                 }
                 
-                // Verificar código de referido si se proporciona
                 $referidoPorId = null;
                 if (!empty($codigoReferido)) {
                     $sql = "SELECT id FROM usuarios WHERE codigo_referido = ?";
@@ -193,7 +186,6 @@ try {
                     }
                 }
                 
-                // Crear usuario
                 $passwordHash = hashPassword($password);
                 $sql = "INSERT INTO usuarios (nombre, apellido, email, telefono, password_hash, fecha_nacimiento, 
                                             genero, documento_identidad, referido_por, ip_registro, dispositivo_registro) 
@@ -205,32 +197,26 @@ try {
                     $referidoPorId, $_SERVER['REMOTE_ADDR'], $_SERVER['HTTP_USER_AGENT']
                 ]);
                 
-                // Obtener ID del usuario creado
                 $sql = "SELECT SCOPE_IDENTITY() as id";
                 $stmt = sqlsrv_query($conn, $sql);
                 $result = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
                 $userId = $result['id'];
                 
-                // Generar código de referido
                 $codigoReferidoUsuario = generateReferralCode($userId);
                 $sql = "UPDATE usuarios SET codigo_referido = ? WHERE id = ?";
                 executeQuery($conn, $sql, [$codigoReferidoUsuario, $userId]);
                 
-                // Crear cuenta principal
                 $numeroCuenta = 'SKY' . str_pad($userId, 8, '0', STR_PAD_LEFT);
                 $sql = "INSERT INTO cuentas (usuario_id, numero_cuenta, saldo) VALUES (?, ?, 100.00)";
                 executeQuery($conn, $sql, [$userId, $numeroCuenta]);
                 
-                // Bonificación por registro
                 $sql = "INSERT INTO recompensas (usuario_id, tipo, puntos, descripcion) 
                        VALUES (?, 'REGISTRO', 500, 'Bonificación por registro')";
                 executeQuery($conn, $sql, [$userId]);
                 
-                // Actualizar puntos del usuario
                 $sql = "UPDATE usuarios SET puntos_recompensa = 500 WHERE id = ?";
                 executeQuery($conn, $sql, [$userId]);
                 
-                // Bonificación por referido
                 if ($referidoPorId) {
                     $sql = "INSERT INTO recompensas (usuario_id, tipo, puntos, cashback, descripcion) 
                            VALUES (?, 'REFERIDO', 1000, 50.00, 'Bonificación por referir usuario')";
@@ -239,12 +225,10 @@ try {
                     $sql = "UPDATE usuarios SET puntos_recompensa = puntos_recompensa + 1000 WHERE id = ?";
                     executeQuery($conn, $sql, [$referidoPorId]);
                     
-                    // Agregar saldo de bonificación
                     $sql = "UPDATE cuentas SET saldo = saldo + 50.00 WHERE usuario_id = ?";
                     executeQuery($conn, $sql, [$referidoPorId]);
                 }
                 
-                // Crear notificaciones de bienvenida
                 createNotification($userId, '¡Bienvenido a SkyPagos!', 
                                  'Tu cuenta ha sido creada exitosamente. Has recibido 500 puntos de bienvenida.', 
                                  'WELCOME', 'success');
@@ -300,22 +284,18 @@ try {
                 $user = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
                 
                 if ($user) {
-                    // Generar código de recuperación
                     $resetCode = sprintf('%06d', mt_rand(100000, 999999));
                     
-                    // Guardar código en configuración temporal (en producción usar tabla específica)
                     $sql = "INSERT INTO configuracion_avanzada (clave, valor, categoria, descripcion) 
                            VALUES (?, ?, 'TEMP', 'Código de recuperación de contraseña')";
                     executeQuery($conn, $sql, ["reset_code_{$user['id']}", $resetCode]);
                     
-                    // Crear notificación
                     createNotification($user['id'], 'Recuperación de contraseña', 
                                      "Tu código de recuperación es: {$resetCode}", 'PASSWORD_RESET', 'warning');
                     
                     logSecurityEvent($user['id'], 'PASSWORD_RESET_REQUESTED', 'Solicitud de recuperación de contraseña', 'MEDIO');
                 }
                 
-                // Siempre responder exitosamente por seguridad
                 echo json_encode([
                     'success' => true,
                     'message' => 'Si el email existe, recibirás un código de recuperación'

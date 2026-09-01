@@ -3,17 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/app_assets.dart';
 
-/// Diálogos con la identidad de Oral-Plus: logo, estilo glass (blur),
-/// paleta blanco/negro/gris y animación profesional. Úsalo en toda la app.
 
-// Paleta monocromática
-const Color _ink = Color(0xFF0F172A); // negro
-const Color _inkSoft = Color(0xFF1E293B); // negro suave
-const Color _gray = Color(0xFF64748B); // gris texto
-const Color _grayLight = Color(0xFF94A3B8); // gris claro
-const Color _line = Color(0xFFE2E8F0); // gris borde
+const Color _ink = Color(0xFF0F172A);
+const Color _inkSoft = Color(0xFF1E293B);
+const Color _gray = Color(0xFF64748B);
+const Color _grayLight = Color(0xFF94A3B8);
+const Color _line = Color(0xFFE2E8F0);
 
-/// Muestra un diálogo branded con fondo glass y animación profesional.
 Future<T?> showAppDialog<T>(
   BuildContext context, {
   required Widget child,
@@ -23,14 +19,13 @@ Future<T?> showAppDialog<T>(
     context: context,
     barrierDismissible: barrierDismissible,
     barrierLabel: 'dialog',
-    barrierColor: Colors.transparent, // el fondo glass lo dibujamos nosotros
+    barrierColor: Colors.transparent,
     transitionDuration: const Duration(milliseconds: 320),
     pageBuilder: (_, __, ___) => child,
     transitionBuilder: (ctx, anim, __, c) {
       final t = Curves.easeOutCubic.transform(anim.value);
       return Stack(
         children: [
-          // Fondo glass: blur + tinte oscuro que entran suavemente
           Positioned.fill(
             child: GestureDetector(
               onTap: barrierDismissible ? () => Navigator.of(ctx).pop() : null,
@@ -40,7 +35,6 @@ Future<T?> showAppDialog<T>(
               ),
             ),
           ),
-          // Tarjeta: fade + leve subida + escala
           Center(
             child: Opacity(
               opacity: t,
@@ -56,14 +50,12 @@ Future<T?> showAppDialog<T>(
   );
 }
 
-/// Tarjeta glass branded (logo arriba, ícono, título, contenido y acciones).
 class AppDialogShell extends StatelessWidget {
   final IconData? icon;
   final String title;
   final Widget content;
   final List<Widget> actions;
 
-  /// Se mantiene por compatibilidad, pero el estilo es monocromático.
   final Color? accent;
 
   const AppDialogShell({
@@ -99,7 +91,6 @@ class AppDialogShell extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Logo solo, grande y visible
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 24, 20, 2),
                       child: Center(child: AppAssets.logoImage(height: 46)),
@@ -153,7 +144,6 @@ class AppDialogShell extends StatelessWidget {
   }
 }
 
-/// Botón secundario (cancelar).
 Widget appDialogCancel(BuildContext context, {String text = 'Cancelar'}) {
   return Expanded(
     child: SizedBox(
@@ -172,11 +162,10 @@ Widget appDialogCancel(BuildContext context, {String text = 'Cancelar'}) {
   );
 }
 
-/// Botón principal (acción) en negro.
 Widget appDialogAction(
   BuildContext context, {
   required String text,
-  Color? color, // ignorado: paleta monocromática
+  Color? color,
   required VoidCallback? onPressed,
 }) {
   final habilitado = onPressed != null;
@@ -209,7 +198,6 @@ Widget appDialogAction(
   );
 }
 
-/// Confirmación branded (Cancelar / Aceptar). Devuelve true si confirma.
 Future<bool> showAppConfirm(
   BuildContext context, {
   required String title,
@@ -247,7 +235,6 @@ Future<bool> showAppConfirm(
   return res ?? false;
 }
 
-/// Diálogo branded con un campo de texto. Devuelve el texto o null si cancela.
 Future<String?> showAppInput(
   BuildContext context, {
   required String title,

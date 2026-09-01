@@ -7,7 +7,6 @@ import 'client_menu_screen.dart';
 import 'soporte/mantenimiento_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  /// Mensaje que se muestra al llegar (por ejemplo, sesión vencida).
   final String? aviso;
 
   const LoginScreen({super.key, this.aviso});
@@ -79,7 +78,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       if (mounted) _cardController.forward();
     });
 
-    // Aviso de llegada (sesión vencida o cerrada) como ventana emergente
     final aviso = widget.aviso;
     if (aviso != null && aviso.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -124,7 +122,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     setState(() => _isLoading = false);
 
     if (result['success'] == true && _api.hasSession) {
-      // Soporte TI -> plataforma de mantenimiento; vendedor -> menú de cliente.
       final Widget destino =
           _api.esSoporte ? const MantenimientoScreen() : const ClientMenuScreen();
       Navigator.of(context).pushReplacement(
@@ -161,8 +158,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     return m.contains('credencial') || m.contains('incorrect');
   }
 
-  /// Ventana emergente con el motivo por el que no se pudo entrar
-  /// (credenciales incorrectas, servidor sin respuesta, sesión vencida...).
   void _mostrarError(String titulo, String mensaje) {
     if (!mounted) return;
     showDialog(

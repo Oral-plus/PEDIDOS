@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 
-/// Estado global de la visita en curso. Alimenta el cronómetro flotante que
-/// se muestra por encima de toda la app mientras haya una visita abierta.
 class VisitaActivaProvider extends ChangeNotifier {
   Map<String, dynamic>? cliente;
   Map<String, dynamic>? ruta;
@@ -10,8 +8,6 @@ class VisitaActivaProvider extends ChangeNotifier {
   Timer? _timer;
   Duration transcurrido = Duration.zero;
 
-  /// True mientras el usuario está dentro de la pantalla de la visita
-  /// (ahí no se muestra el flotante porque ya ve el cronómetro grande).
   bool enPantallaVisita = false;
 
   bool get activa => _inicio != null;

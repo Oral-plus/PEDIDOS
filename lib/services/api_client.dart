@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'shared_http.dart';
 
-/// Error devuelto por el backend, con su código HTTP y el mensaje del cuerpo.
 class ApiException implements Exception {
   final int statusCode;
   final String message;
@@ -32,17 +31,12 @@ class ApiClient {
     'User-Agent': 'Flutter-App/1.0',
   };
 
-  /// Se llama cuando un host no responde (sin red o timeout), para que quien
-  /// tenga cacheada esa URL base la descarte.
   static void Function(String baseUrl)? onConnectionError;
 
-  /// Se llama cuando el backend responde 401 fuera del login: la sesión
-  /// venció o fue cerrada y hay que volver a la pantalla de inicio.
   static void Function(String mensaje)? onSesionInvalida;
 
   static http.Client get _http => SharedHttp.client;
 
-  /// Devuelve la primera URL base que responda; lanza excepción si ninguna sirve.
   static Future<String> getWorkingUrl() async {
     for (String baseUrl in _baseUrls) {
       try {
@@ -64,7 +58,6 @@ class ApiClient {
     throw Exception('No se puede conectar al servidor. Verifica que esté en línea.');
   }
 
-  /// GET con resolución de URL, timeout y manejo de errores.
   static Future<dynamic> get(String endpoint, {
     String? customBaseUrl,
     Map<String, String>? headers,
@@ -91,7 +84,6 @@ class ApiClient {
     }
   }
 
-  /// POST
   static Future<dynamic> post(String endpoint, {
     required Map<String, dynamic> body,
     String? customBaseUrl,
@@ -123,7 +115,6 @@ class ApiClient {
     }
   }
 
-  /// PUT
   static Future<dynamic> put(String endpoint, {
     required Map<String, dynamic> body,
     String? customBaseUrl,
@@ -155,7 +146,6 @@ class ApiClient {
     }
   }
 
-  /// DELETE
   static Future<dynamic> delete(String endpoint, {
     String? customBaseUrl,
     Map<String, String>? headers,
@@ -182,8 +172,6 @@ class ApiClient {
     }
   }
 
-  // Por encima de este tamaño (la lista de clientes, por ejemplo) el JSON se
-  // decodifica en otro isolate para no congelar la interfaz.
   static const int _umbralIsolate = 64 * 1024;
 
   static dynamic _decodificar(Uint8List bytes) => json.decode(utf8.decode(bytes));
@@ -211,7 +199,6 @@ class ApiClient {
     final String errorMsg = cuerpo?['message']?.toString() ??
         cuerpo?['error']?.toString() ??
         'Error del servidor: ${response.statusCode}';
-    // Sesión vencida o cerrada. En el login un 401 es clave incorrecta.
     if (response.statusCode == 401 && !endpoint.contains('/auth/login')) {
       onSesionInvalida?.call(errorMsg);
     }

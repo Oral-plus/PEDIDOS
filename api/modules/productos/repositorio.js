@@ -1,14 +1,8 @@
-// Catálogo de productos: SAP (Service Layer o SQL) + configuración de
-// presentación (BD Pedidos, tabla productos_config) + imágenes (BD Pedidos,
-// tabla productos_imagenes).
-// El catálogo vive en memoria y se refresca cada pocos minutos en segundo
-// plano; si SAP falla se sigue sirviendo el último catálogo bueno.
 
 const crypto = require("crypto")
 const { ServiceLayer } = require("./serviceLayer")
 const fuente = require("./fuenteSap")
 
-// Grupo SAP (OITB.ItmsGrpNam) -> categoría que ve el vendedor
 const CATEGORIA_POR_GRUPO = {
   "PT-CEPILLOS NACIONAL": "Cepillos",
   "PT-IMP CEPILLOS": "Cepillos",
@@ -21,7 +15,6 @@ const CATEGORIA_POR_GRUPO = {
   "PT-REFRESCANTE": "Otros",
 }
 
-// Orden de las pestañas; las categorías no listadas van después, alfabéticas
 const ORDEN_CATEGORIAS = ["Cepillos", "Cremas", "Enjuagues", "Sedas", "Niños", "Kits", "Ortodoncia", "Otros"]
 
 class RepositorioProductos {
@@ -34,27 +27,24 @@ class RepositorioProductos {
     this.bodega = env.SAP_BODEGA || "50"
     this.grupos = fuente.gruposDesdeEnv(env.SAP_GRUPOS_PT)
     this.ttlMs = (Number.parseInt(env.CATALOGO_TTL_MIN, 10) || 5) * 60 * 1000
-    this.modoFuente = (env.CATALOGO_FUENTE || "auto").toLowerCase() // auto | sl | sql
+    this.modoFuente = (env.CATALOGO_FUENTE || "auto").toLowerCase()
     this.sl = new ServiceLayer({
       url: env.SL_URL,
       companyDb: env.SL_COMPANY_DB || env.SAP_DB_NAME || "RBOSKY3",
       user: env.SL_USER,
       password: env.SL_PASSWORD,
       tlsInsecure: (env.SL_TLS_INSECURE || "true").toLowerCase() === "true",
-      // La consulta del catálogo pesa ~17 MB por página de 200 artículos (precios y
-      // bodegas de cada uno): tiempo de espera y tamaño de página van en el .env
       timeoutMs: Number.parseInt(env.SL_TIMEOUT_MS, 10) || 120000,
       pageSize: Number.parseInt(env.SL_PAGE_SIZE, 10) || 100,
     })
 
-    this.catalogo = null // { items: Map codigo -> item SAP, actualizado, fuente }
-    this.config = new Map() // item_code -> fila productos_config
+    this.catalogo = null
+    this.config = new Map()
     this.refrescando = null
     this.ultimoError = null
-    this.listasCliente = new Map() // cardCode -> { lista, vence }
+    this.listasCliente = new Map()
   }
 
-  // Tabla de presentación (categoría, visibilidad, variantes, imagen, descripción)
   async ensureTabla() {
     const pool = this.getPedidosPool()
     await pool.request().query(`
@@ -81,8 +71,6 @@ class RepositorioProductos {
     this.config = mapa
   }
 
-  // Devuelve el catálogo en memoria. Si está vencido lanza un refresco en
-  // segundo plano y responde con el anterior; la primera vez espera.
   async obtenerCatalogo({ forzar = false } = {}) {
     const vencido = !this.catalogo || Date.now() - this.catalogo.actualizado > this.ttlMs
     if (forzar || !this.catalogo) {
@@ -122,8 +110,6 @@ class RepositorioProductos {
     const opciones = { bodega: this.bodega, grupos: this.grupos }
     const usarSl = this.modoFuente !== "sql" && this.sl.configurado
     if (usarSl) {
-      // El Service Layer a veces corta la primera conexión ("socket hang up"):
-      // se reintenta una vez antes de caer a SQL
       for (let intento = 1; intento <= 2; intento++) {
         try {
           const items = await fuente.leerPorServiceLayer(this.sl, opciones)
@@ -145,8 +131,6 @@ class RepositorioProductos {
     return { items, fuenteUsada: "sql" }
   }
 
-  // Lista de precios del cliente (OCRD.ListNum), en caché 10 minutos.
-  // Devuelve null si el cliente no existe.
   async listaPreciosDe(cardCode) {
     if (!cardCode) return null
     const c = this.listasCliente.get(cardCode)
@@ -171,12 +155,10 @@ class RepositorioProductos {
     return `/api/productos/imagen/${encodeURIComponent(codigo)}?v=${this.imagenes.version(codigo)}`
   }
 
-  // Catálogo para el vendedor: productos visibles con el precio de la lista dada
   async paraVendedor(listaPrecios) {
     const catalogo = await this.obtenerCatalogo()
     const items = catalogo.items
 
-    // Variantes (media/suave) cuelgan del producto padre y no salen como tarjeta
     const variantesPor = new Map()
     for (const cfg of this.config.values()) {
       if (cfg.variante_de && items.has(cfg.item_code)) {
@@ -185,8 +167,6 @@ class RepositorioProductos {
       }
     }
 
-    // Solo se entregan los artículos con precio en la lista del cliente: lo que
-    // está en 0 para su tipo de cliente no aparece (tampoco sus variantes en 0)
     const productos = []
     for (const item of items.values()) {
       const cfg = this.config.get(item.codigo)
@@ -222,9 +202,6 @@ class RepositorioProductos {
     }
   }
 
-  // El precio es el de la lista del cliente, sin respaldo a otra lista: si su
-  // lista no tiene el artículo, a ese cliente no se le vende y el producto se
-  // muestra pero no se puede agregar. El stock solo informa, no bloquea.
   _proyectar(item, cfg, listaPrecios, variantesCfg, items) {
     const precio = item.precios[listaPrecios] ?? 0
     const habilitado = precio > 0
@@ -258,7 +235,6 @@ class RepositorioProductos {
     }
   }
 
-  // Vista completa para soporte: todos los artículos con su configuración
   async paraSoporte() {
     const catalogo = await this.obtenerCatalogo()
     const lista = []

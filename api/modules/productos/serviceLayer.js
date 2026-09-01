@@ -1,6 +1,3 @@
-// Cliente del Service Layer de SAP Business One (OData sobre HTTPS).
-// Mantiene una sesión (cookie B1SESSION) compartida entre peticiones, vuelve a
-// iniciar sesión cuando vence y recorre las páginas de una consulta.
 
 const https = require("https")
 const { URL } = require("url")
@@ -23,7 +20,6 @@ class ServiceLayer {
     return Boolean(this.base && this.companyDb && this.user && this.password)
   }
 
-  // Inicia sesión una sola vez aunque lleguen varias peticiones a la vez
   login() {
     if (this.iniciando) return this.iniciando
     this.iniciando = this._peticion("POST", "/Login", {
@@ -49,7 +45,6 @@ class ServiceLayer {
     if (!this.cookies) await this.login()
     let r = await this._peticion("GET", path, null, true)
     if (r.status === 401) {
-      // Sesión vencida: se renueva y se reintenta una vez
       this.cookies = null
       await this.login()
       r = await this._peticion("GET", path, null, true)
@@ -60,8 +55,6 @@ class ServiceLayer {
     return r.body
   }
 
-  // POST/PATCH/PUT con sesión: renueva la sesión y reintenta una vez si venció.
-  // Devuelve el cuerpo (null en 204 No Content).
   async enviar(metodo, path, cuerpo) {
     if (!this.cookies) await this.login()
     let r = await this._peticion(metodo, path, cuerpo, true)
@@ -76,7 +69,6 @@ class ServiceLayer {
     return r.body
   }
 
-  // Devuelve todos los registros de una consulta siguiendo odata.nextLink
   async getAll(path) {
     const registros = []
     let siguiente = path

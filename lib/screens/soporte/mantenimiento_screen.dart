@@ -7,13 +7,6 @@ import '../../services/catalogo_service.dart';
 import '../../services/sesion.dart';
 import '../../widgets/producto_imagen.dart';
 
-/// Plataforma de mantenimiento (Soporte TI).
-/// Dispositivos: lista los dispositivos con la persona asociada y permite
-/// activarlos, desactivarlos o eliminarlos por su ID de servicio.
-/// Usuarios: quiénes pueden entrar a la app (vendedores SAP y usuarios
-/// registrados), si son soporte y qué dispositivos tienen.
-/// Productos: el catálogo que viene de SAP; aquí se sube la foto de cada
-/// referencia y se ajusta cómo se presenta en la app.
 class MantenimientoScreen extends StatefulWidget {
   const MantenimientoScreen({super.key});
 
@@ -33,13 +26,11 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
   final ApiEasyService _api = ApiEasyService();
   late final TabController _tabs;
 
-  // Dispositivos
   final _buscarDispositivos = TextEditingController();
   bool _loadingDispositivos = true;
   String? _errorDispositivos;
   List<Map<String, dynamic>> _dispositivos = [];
 
-  // Usuarios
   final _buscarUsuarios = TextEditingController();
   bool _loadingUsuarios = false;
   bool _usuariosCargados = false;
@@ -47,7 +38,6 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
   List<Map<String, dynamic>> _usuarios = [];
   List<String> _avisosUsuarios = [];
 
-  // Productos
   final _buscarProductos = TextEditingController();
   bool _loadingProductos = false;
   bool _productosCargados = false;
@@ -63,7 +53,6 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
-    // Cada pestaña se carga la primera vez que se abre
     _tabs.addListener(() {
       if (_tabs.index == 1 && !_usuariosCargados && !_loadingUsuarios) _cargarUsuarios();
       if (_tabs.index == 2 && !_productosCargados && !_loadingProductos) _cargarProductos();
@@ -84,7 +73,6 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
   bool _sesionExpirada(Map<String, dynamic> res) =>
       (res['message']?.toString().toLowerCase() ?? '').contains('expirada');
 
-  // Dispositivos
 
   Future<void> _cargarDispositivos() async {
     setState(() {
@@ -114,8 +102,6 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
     if (res['success'] != true && _sesionExpirada(res)) return _volverAlLogin();
     final ok = res['success'] == true;
     if (ok) {
-      // Actualización optimista: refleja el estado al instante en la lista, sin
-      // depender de una recarga completa (robusto ante caídas del túnel/red).
       setState(() {
         final i = _dispositivos.indexWhere((d) => d['id_servicio']?.toString() == id);
         if (i != -1) {
@@ -126,7 +112,6 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
           }
         }
       });
-      // Los conteos de la pestaña de usuarios cambian
       _usuariosCargados = false;
     }
     _snack(
@@ -168,7 +153,6 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
     _snack(ok ? 'Dispositivo eliminado: $id' : (res['message']?.toString() ?? 'No se pudo eliminar'), ok);
   }
 
-  // Usuarios
 
   Future<void> _cargarUsuarios() async {
     setState(() {
@@ -193,14 +177,12 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
     });
   }
 
-  /// Desde un usuario: ver sus dispositivos en la otra pestaña
   void _verDispositivosDe(Map<String, dynamic> u) {
     _buscarDispositivos.text = (u['nombre'] ?? '').toString();
     _tabs.animateTo(0);
     _cargarDispositivos();
   }
 
-  // Productos
 
   Future<void> _cargarProductos() async {
     setState(() {
@@ -363,7 +345,6 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
     }
   }
 
-  // Comunes
 
   void _snack(String texto, bool ok) {
     ScaffoldMessenger.of(context)
@@ -381,7 +362,6 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
 
   Future<void> _cerrarSesion() => Sesion.cerrar();
 
-  // Sesión vencida o rechazada por el servidor
   void _volverAlLogin() => Sesion.expirar();
 
   static final DateFormat _fmtFecha = DateFormat('dd/MM/yyyy HH:mm');
@@ -524,7 +504,6 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
     );
   }
 
-  // Dispositivos: lista
 
   Widget _listaDispositivos() {
     if (_loadingDispositivos) {
@@ -658,7 +637,6 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
     );
   }
 
-  // Usuarios: lista
 
   Widget _listaUsuarios() {
     if (_loadingUsuarios || (!_usuariosCargados && _errorUsuarios == null)) {
@@ -803,7 +781,6 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
     return '$id · $estado${acceso.isNotEmpty ? ' · $acceso' : ''}';
   }
 
-  // Productos: lista
 
   Widget _filtrosProductos() {
     final sinImagen = _productos.where((p) => (p['imagenUrl'] ?? '').toString().isEmpty).length;
@@ -957,9 +934,6 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
   }
 }
 
-/// Diálogo de presentación de un producto: categoría en la app, visibilidad,
-/// variante (de qué producto cuelga y con qué textura) y descripción.
-/// Devuelve solo lo que cambió.
 class _EditarProductoDialog extends StatefulWidget {
   final Map<String, dynamic> producto;
   final List<String> categorias;

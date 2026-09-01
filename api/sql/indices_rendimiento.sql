@@ -1,9 +1,4 @@
--- Índices de rendimiento para la app de pedidos.
--- server.js los crea solo al arrancar o en la primera petición que toca cada
--- tabla; este script es la misma lista para aplicarla a mano si hace falta.
--- Todos son idempotentes: se pueden ejecutar varias veces.
 
--- BD Pedidos
 USE Pedidos;
 GO
 
@@ -21,7 +16,6 @@ IF OBJECT_ID('dbo.recaudos') IS NOT NULL
   CREATE INDEX IX_recaudos_cliente_fecha ON dbo.recaudos(cliente_id, fecha DESC);
 GO
 
--- BD Ruta
 USE Ruta;
 GO
 

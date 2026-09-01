@@ -1,5 +1,3 @@
-// Prueba de integración contra el backend (API_URL, por defecto http://127.0.0.1:3000) con BD reales.
-// Sesiones de 12 h, cierre seguro, credenciales incorrectas y catálogo por lista del cliente.
 const http = require("http")
 const path = require("path")
 require(path.join(process.cwd(), "node_modules", "dotenv")).config({ path: path.join(process.cwd(), ".env") })
@@ -7,6 +5,8 @@ const jwt = require(path.join(process.cwd(), "node_modules", "jsonwebtoken"))
 const sql = require(path.join(process.cwd(), "node_modules", "mssql"))
 
 const BASE = process.env.API_URL || "http://127.0.0.1:3000"
+const USUARIO_PRUEBA = process.env.PRUEBAS_USUARIO || "SKV18"
+const CLAVE_PRUEBA = process.env.PRUEBAS_CLAVE || "SKV1"
 
 function llamar(metodo, ruta, { body, token } = {}) {
   return new Promise((resolve, reject) => {
@@ -47,7 +47,6 @@ async function esperar() {
   const cli = async (lista) => (await sap.request().input("l", sql.Int, lista).query("SELECT TOP 1 CardCode FROM OCRD WHERE CardType='C' AND ListNum=@l AND frozenFor='N' AND validFor='Y' AND SlpCode>0 ORDER BY CardCode")).recordset[0].CardCode
   const cliente6 = await cli(6)
   const cliente43 = await cli(43)
-  // Artículo con precio en la lista 6 pero sin stock en bodega 50
   const sinStock = await sap.request().query(`
     SELECT TOP 1 T0.ItemCode FROM OITM T0
     JOIN ITM1 p ON p.ItemCode=T0.ItemCode AND p.PriceList=6 AND p.Price>0
@@ -62,13 +61,11 @@ async function esperar() {
   await pedidosDisp.request().input("d", sql.NVarChar, DISP).query("DELETE FROM dbo.dispositivos WHERE id_servicio=@d; INSERT INTO dbo.dispositivos (id_servicio, estado, activado_por, fecha_activacion) VALUES (@d, 'ACTIVO', 'prueba-sesion', GETDATE())")
   await pedidosDisp.close()
 
-  // 1) Credenciales incorrectas
-  const malo = await llamar("POST", "/api/auth/login", { body: { usuario: "SKV18", password: "clave-que-no-existe", id_servicio: DISP } })
+  const malo = await llamar("POST", "/api/auth/login", { body: { usuario: USUARIO_PRUEBA, password: "clave-que-no-existe", id_servicio: DISP } })
   ok("login incorrecto: 401 con mensaje de credenciales", malo.status === 401 && /credenciales incorrectas/i.test(malo.json && malo.json.message), malo.json && malo.json.message)
 
-  // 2) Login correcto: token con jti y vencimiento a 12 h
   const inicio = Date.now()
-  const login = await llamar("POST", "/api/auth/login", { body: { usuario: "SKV18", password: "SKV1", plataforma: "prueba", id_servicio: DISP } })
+  const login = await llamar("POST", "/api/auth/login", { body: { usuario: USUARIO_PRUEBA, password: CLAVE_PRUEBA, plataforma: "prueba", id_servicio: DISP } })
   const data = (login.json && login.json.data) || {}
   const token = data.token
   ok("login correcto: 200 con token", login.status === 200 && token, login.json && login.json.message)
@@ -83,7 +80,6 @@ async function esperar() {
   const fila = await pedidos.request().input("j", sql.NVarChar, decoded.jti || "").query("SELECT usuario_codigo, tipo, plataforma, cerrada, DATEDIFF(minute, emitida, expira) AS minutos FROM dbo.sesiones WHERE jti=@j")
   ok("BD: fila en dbo.sesiones con 720 minutos y sin cerrar", fila.recordset[0] && fila.recordset[0].minutos === 720 && fila.recordset[0].cerrada === null && fila.recordset[0].usuario_codigo === "18", JSON.stringify(fila.recordset[0]))
 
-  // 3) Catálogo: exige cliente y usa solo su lista
   const sinCliente = await llamar("GET", "/api/productos", { token })
   ok("catálogo sin cliente: 400", sinCliente.status === 400 && sinCliente.json.sinCliente === true, sinCliente.json && sinCliente.json.message)
   const noExiste = await llamar("GET", "/api/productos?cliente=CNOEXISTE999", { token })
@@ -111,7 +107,6 @@ async function esperar() {
   ok("cliente lista 43: nada en 0 ni con respaldo (productos y variantes con precio > 0)", p43.length > 0 && p43.every((p) => p.precio > 0 && p.variantes.every((v) => v.precio > 0 && v.disponible === true)))
   ok("cliente lista 43: tiene menos productos que la lista 6 (los de precio 0 se ocultan por tipo de cliente)", p43.length < p6.length, `${p43.length} vs ${p6.length}`)
 
-  // 4) Cierre de sesión seguro
   const antes = await llamar("GET", "/api/clientes", { token })
   ok("antes del logout: /api/clientes responde 200", antes.status === 200)
   const logout = await llamar("POST", "/api/auth/logout", { token })
@@ -126,7 +121,6 @@ async function esperar() {
   ok("logout repetido: 401 (ya no hay sesión)", logout2.status === 401)
   await pedidos.close()
 
-  // 5) Tokens que no deben servir
   const viejo = jwt.sign({ userId: 18, nombre: "VIEJO", tipo: "vendedor" }, process.env.JWT_SECRET, { expiresIn: "1h" })
   const rViejo = await llamar("GET", "/api/clientes", { token: viejo })
   ok("token sin jti (servidor anterior): 401", rViejo.status === 401)
@@ -137,8 +131,7 @@ async function esperar() {
   const rInventado = await llamar("GET", "/api/clientes", { token: inventado })
   ok("token con jti no registrado: 401", rInventado.status === 401)
 
-  // 6) Un segundo login sigue funcionando (la sesión cerrada no afecta al usuario)
-  const login2 = await llamar("POST", "/api/auth/login", { body: { usuario: "SKV18", password: "SKV1", id_servicio: DISP } })
+  const login2 = await llamar("POST", "/api/auth/login", { body: { usuario: USUARIO_PRUEBA, password: CLAVE_PRUEBA, id_servicio: DISP } })
   const token2 = login2.json && login2.json.data && login2.json.data.token
   const r2 = await llamar("GET", "/api/clientes", { token: token2 })
   ok("nuevo login tras logout: sesión nueva válida", login2.status === 200 && r2.status === 200)

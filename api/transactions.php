@@ -1,5 +1,4 @@
 <?php
-// api/transactions.php
 require_once '../config/database.php';
 
 try {
@@ -91,7 +90,6 @@ try {
                 
                 $conn = getDbConnection();
                 
-                // Verificar saldo
                 $sql = "SELECT id, saldo FROM cuentas WHERE usuario_id = ? AND activa = 1";
                 $stmt = executeQuery($conn, $sql, [$userId]);
                 $account = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
@@ -100,7 +98,6 @@ try {
                     throw new Exception('Saldo insuficiente');
                 }
                 
-                // Obtener comisión del servicio
                 $sql = "SELECT comision FROM servicios WHERE id = ?";
                 $stmt = executeQuery($conn, $sql, [$servicioId]);
                 $service = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
@@ -112,15 +109,12 @@ try {
                     throw new Exception('Saldo insuficiente (incluye comisión)');
                 }
                 
-                // Generar referencia única
                 $referencia = 'TXN' . time() . rand(1000, 9999);
                 
-                // Registrar transacción
                 $sql = "INSERT INTO transacciones (usuario_id, cuenta_id, servicio_id, tipo_transaccion, monto, comision, referencia, descripcion, numero_destino, estado) 
                        VALUES (?, ?, ?, 'PAGO', ?, ?, ?, ?, ?, 'COMPLETADO')";
                 executeQuery($conn, $sql, [$userId, $account['id'], $servicioId, $monto, $comision, $referencia, $descripcion, $numeroDestino]);
                 
-                // Actualizar saldo
                 $nuevoSaldo = $account['saldo'] - $montoTotal;
                 $sql = "UPDATE cuentas SET saldo = ? WHERE id = ?";
                 executeQuery($conn, $sql, [$nuevoSaldo, $account['id']]);

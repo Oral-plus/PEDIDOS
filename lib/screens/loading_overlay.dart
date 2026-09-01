@@ -1,7 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
-/// Overlay de carga premium: blur, gradiente, accesibilidad y feedback háptico.
 class LoadingOverlay extends StatefulWidget {
   final bool isLoading;
   final Widget child;
@@ -60,7 +59,7 @@ class _LoadingOverlayState extends State<LoadingOverlay>
             label: widget.message ?? 'Cargando',
             value: widget.subtitle,
             child: GestureDetector(
-              onTap: () {}, // Bloquear toques
+              onTap: () {},
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 200),
                 opacity: 1,
@@ -160,7 +159,6 @@ class _LoadingOverlayState extends State<LoadingOverlay>
   }
 }
 
-// Widget de overlay de carga simple
 class SimpleLoadingOverlay extends StatelessWidget {
   final bool isLoading;
   final Widget child;
@@ -181,7 +179,6 @@ class SimpleLoadingOverlay extends StatelessWidget {
   }
 }
 
-// Widget de overlay para procesamiento de compras
 class PurchaseLoadingOverlay extends StatelessWidget {
   final bool isLoading;
   final Widget child;

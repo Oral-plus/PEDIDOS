@@ -1,15 +1,11 @@
 import '../utils/price_utils.dart';
 
-/// Variante de un producto (por ejemplo la textura suave de un cepillo).
-/// Es otro artículo de SAP que no se muestra como tarjeta propia.
 class VarianteProducto {
   final String codigo;
   final String textura;
   final double precio;
   final int stock;
 
-  /// Se le vende al cliente (tiene precio en su lista). Es lo único que
-  /// impide agregarla al pedido; el stock solo informa.
   final bool habilitado;
 
   const VarianteProducto({
@@ -46,8 +42,6 @@ class CategoriaProducto {
       );
 }
 
-/// Producto del catálogo tal como lo entrega el backend (SAP + configuración
-/// de Soporte). El precio ya viene en la lista del cliente.
 class Producto {
   final String codigo;
   final String nombre;
@@ -56,13 +50,11 @@ class Producto {
   final double precio;
   final int stock;
 
-  /// Se le vende al cliente seleccionado (tiene precio en su lista). Es lo
-  /// único que impide agregarlo al pedido; el stock solo informa.
   final bool habilitado;
   final String mensajeEstado;
   final String descripcion;
   final String? textura;
-  final String? imagenUrl; // absoluta; null si no hay foto
+  final String? imagenUrl;
   final List<VarianteProducto> variantes;
 
   const Producto({
@@ -80,7 +72,6 @@ class Producto {
     required this.variantes,
   });
 
-  /// [baseUrl] convierte la ruta relativa de la imagen en una URL completa.
   factory Producto.fromJson(Map<String, dynamic> j, {required String baseUrl}) {
     final relativa = j['imagenUrl']?.toString();
     return Producto(
@@ -105,9 +96,6 @@ class Producto {
   bool get disponible => habilitado;
   bool get sinStock => stock <= 0;
 
-  /// Mapa con las claves que ya usan las tarjetas, la vista previa, el diálogo
-  /// de texturas y el carrito. Mantiene la presentación actual sin tocar esos
-  /// widgets.
   Map<String, dynamic> toMapUi() {
     final m = <String, dynamic>{
       'title': nombre,
@@ -126,7 +114,6 @@ class Producto {
 
     if (tieneVariantes) {
       if (categoria == 'Cepillos') {
-        // El diálogo de texturas de cepillos muestra Media / Suave
         final suave = variantes.firstWhere(
           (v) => v.textura.toLowerCase() == 'suave',
           orElse: () => variantes.first,
@@ -169,16 +156,12 @@ class Catalogo {
             .map((c) => CategoriaProducto.fromJson(Map<String, dynamic>.from(c as Map)))
             .toList()
           ..sort((a, b) => a.orden.compareTo(b.orden)),
-        // Solo productos con precio en la lista del cliente (el backend ya los
-        // filtra; aquí por si llega un catálogo de una versión anterior)
         productos: ((j['productos'] as List<dynamic>?) ?? [])
             .map((p) => Producto.fromJson(Map<String, dynamic>.from(p as Map), baseUrl: baseUrl))
             .where((p) => p.habilitado && p.precio > 0)
             .toList(),
       );
 
-  /// Precio y estado por código (producto y variantes), en el formato que
-  /// esperan las tarjetas y los diálogos.
   Map<String, Map<String, dynamic>> get preciosPorCodigo {
     final m = <String, Map<String, dynamic>>{};
     for (final p in productos) {
@@ -191,7 +174,6 @@ class Catalogo {
   }
 
   Map<String, Map<String, dynamic>> get estadosPorCodigo {
-    // 'disponible' significa que se le vende al cliente; el stock va aparte
     Map<String, dynamic> estado(bool habilitado, int stock, String mensaje) => {
           'estado': habilitado ? 'DISPONIBLE' : 'NO_DISPONIBLE',
           'disponible': habilitado,

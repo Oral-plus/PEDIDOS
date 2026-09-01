@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import '../utils/app_assets.dart';
 import '../utils/theme.dart';
 
-/// Título de AppBar con el logo de Oral-Plus al lado del enunciado.
-/// Úsalo como `title:` en el AppBar de todas las pantallas para mantener
-/// la identidad de la empresa siempre visible.
 class AppBarTitle extends StatelessWidget {
   final String title;
   final String? subtitle;

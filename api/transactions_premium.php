@@ -1,5 +1,4 @@
 <?php
-// api/transactions_premium.php
 require_once '../config/database.php';
 require_once '../utils/notifications.php';
 require_once '../utils/analytics.php';
@@ -8,14 +7,12 @@ function calculateCashback($userId, $serviceId, $amount) {
     try {
         $conn = getDbConnection();
         
-        // Obtener cashback del servicio
         $sql = "SELECT cashback_porcentaje FROM servicios WHERE id = ?";
         $stmt = executeQuery($conn, $sql, [$serviceId]);
         $service = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
         
         $baseCashback = ($amount * $service['cashback_porcentaje']) / 100;
         
-        // Verificar promociones activas
         $sql = "SELECT cashback_extra FROM promociones 
                WHERE activa = 1 AND fecha_inicio <= GETDATE() AND fecha_fin >= GETDATE()
                AND (servicios_aplicables IS NULL OR servicios_aplicables LIKE '%{$serviceId}%')";
@@ -35,7 +32,7 @@ function calculateCashback($userId, $serviceId, $amount) {
 }
 
 function calculatePoints($amount) {
-    return floor($amount); // 1 punto por boliviano
+    return floor($amount);
 }
 
 function generateReference() {
@@ -46,7 +43,6 @@ function updateSpendingLimits($userId, $amount) {
     try {
         $conn = getDbConnection();
         
-        // Verificar si necesitamos resetear límites diarios/mensuales
         $sql = "SELECT id, gasto_diario, gasto_mensual, fecha_ultimo_reset_diario, fecha_ultimo_reset_mensual,
                        limite_diario, limite_mensual
                 FROM cuentas WHERE usuario_id = ? AND activa = 1";
@@ -61,12 +57,10 @@ function updateSpendingLimits($userId, $amount) {
         $newDailySpent = $account['gasto_diario'];
         $newMonthlySpent = $account['gasto_mensual'];
         
-        // Reset diario si es necesario
         if ($account['fecha_ultimo_reset_diario']->format('Y-m-d') != $today) {
             $newDailySpent = 0;
         }
         
-        // Reset mensual si es necesario
         if ($account['fecha_ultimo_reset_mensual']->format('Y-m-01') != $thisMonth) {
             $newMonthlySpent = 0;
         }
@@ -74,7 +68,6 @@ function updateSpendingLimits($userId, $amount) {
         $newDailySpent += $amount;
         $newMonthlySpent += $amount;
         
-        // Verificar límites
         if ($newDailySpent > $account['limite_diario']) {
             throw new Exception('Límite diario excedido');
         }
@@ -83,7 +76,6 @@ function updateSpendingLimits($userId, $amount) {
             throw new Exception('Límite mensual excedido');
         }
         
-        // Actualizar gastos
         $sql = "UPDATE cuentas SET 
                 gasto_diario = ?, 
                 gasto_mensual = ?,
@@ -266,7 +258,7 @@ try {
                     throw new Exception('ID de usuario requerido');
                 }
                 
-                $period = $_GET['period'] ?? 'month'; // month, week, year
+                $period = $_GET['period'] ?? 'month';
                 
                 $analytics = generateSpendingAnalytics($userId, $period);
                 
@@ -325,10 +317,8 @@ try {
                 
                 $conn = getDbConnection();
                 
-                // Verificar límites de gasto
                 updateSpendingLimits($userId, $monto);
                 
-                // Verificar saldo
                 $sql = "SELECT id, saldo FROM cuentas WHERE usuario_id = ? AND activa = 1";
                 $stmt = executeQuery($conn, $sql, [$userId]);
                 $account = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
@@ -337,7 +327,6 @@ try {
                     throw new Exception('Cuenta no encontrada');
                 }
                 
-                // Obtener información del servicio
                 $sql = "SELECT * FROM servicios WHERE id = ? AND activo = 1";
                 $stmt = executeQuery($conn, $sql, [$servicioId]);
                 $service = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
@@ -346,21 +335,17 @@ try {
                     throw new Exception('Servicio no disponible');
                 }
                 
-                // Verificar montos mínimos y máximos
                 if ($monto < $service['monto_minimo'] || $monto > $service['monto_maximo']) {
                     throw new Exception("Monto debe estar entre {$service['monto_minimo']} y {$service['monto_maximo']}");
                 }
                 
-                // Calcular comisión
                 $comision = ($monto * $service['comision']) / 100;
                 if ($service['comision_fija'] > 0) {
                     $comision += $service['comision_fija'];
                 }
                 
-                // Calcular cashback
                 $cashback = calculateCashback($userId, $servicioId, $monto);
                 
-                // Calcular puntos
                 $puntos = calculatePoints($monto);
                 
                 $montoTotal = $monto + $comision;
@@ -369,14 +354,11 @@ try {
                     throw new Exception('Saldo insuficiente (incluye comisión)');
                 }
                 
-                // Generar referencia única
                 $referencia = generateReference();
                 
-                // Iniciar transacción
                 sqlsrv_begin_transaction($conn);
                 
                 try {
-                    // Registrar transacción
                     $sql = "INSERT INTO transacciones (usuario_id, cuenta_id, servicio_id, tipo_transaccion, 
                                                      monto, comision, cashback, referencia, descripcion, 
                                                      numero_destino, estado, ip_origen, dispositivo_origen,
@@ -391,16 +373,13 @@ try {
                         $metodoAuth, $puntos, $service['categoria']
                     ]);
                     
-                    // Actualizar saldo
                     $nuevoSaldo = $account['saldo'] - $montoTotal + $cashback;
                     $sql = "UPDATE cuentas SET saldo = ? WHERE id = ?";
                     executeQuery($conn, $sql, [$nuevoSaldo, $account['id']]);
                     
-                    // Actualizar puntos del usuario
                     $sql = "UPDATE usuarios SET puntos_recompensa = puntos_recompensa + ? WHERE id = ?";
                     executeQuery($conn, $sql, [$puntos, $userId]);
                     
-                    // Registrar recompensa
                     if ($cashback > 0 || $puntos > 0) {
                         $sql = "INSERT INTO recompensas (usuario_id, tipo, puntos, cashback, descripcion) 
                                VALUES (?, 'TRANSACCION', ?, ?, ?)";

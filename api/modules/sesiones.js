@@ -1,14 +1,9 @@
-// Sesiones emitidas por el login. Cada token lleva un identificador (jti)
-// registrado en dbo.sesiones (BD Pedidos); cerrar sesión marca la fila y el
-// token deja de servir aunque no haya vencido. La duración máxima es de 12
-// horas. Las dependencias (sql, jwt, pool) las inyecta server.js.
 
 const crypto = require("crypto")
 
 const HORAS_MAX = 12
 const SEGUNDOS_MAX = HORAS_MAX * 3600
 
-// "30m", "12h", "2d" o un número de segundos; null si no se entiende
 function aSegundos(valor) {
   if (valor == null) return null
   const m = String(valor).trim().toLowerCase().match(/^(\d+)\s*(s|m|h|d)?$/)
@@ -17,7 +12,6 @@ function aSegundos(valor) {
   return Number(m[1]) * factor
 }
 
-// Duración de la sesión en segundos: SESSION_TIMEOUT del .env sin pasar de 12 h
 function duracionSesion(env) {
   const pedida = aSegundos(env.SESSION_TIMEOUT)
   if (!pedida || pedida <= 0) return SEGUNDOS_MAX
@@ -42,11 +36,9 @@ async function ensureTabla(pool) {
       cierre_motivo  NVARCHAR(40)  NULL
     );
   `)
-  // Limpieza: sesiones vencidas hace más de 7 días
   await pool.request().query("DELETE FROM dbo.sesiones WHERE expira < DATEADD(day, -7, GETDATE())")
 }
 
-// Registra la sesión y devuelve el jti que debe viajar en el token
 async function registrar(pool, sql, datos) {
   const jti = crypto.randomUUID()
   await pool
@@ -66,8 +58,6 @@ async function registrar(pool, sql, datos) {
   return jti
 }
 
-// Estado en caché un minuto: cerrar sesión corta el acceso casi de inmediato
-// sin consultar la BD en cada petición
 const ESTADO_TTL_MS = 60 * 1000
 const CACHE_MAX = 5000
 const cache = new Map()
@@ -95,8 +85,6 @@ async function cerrar(pool, sql, jti, motivo) {
   return r.rowsAffected[0] > 0
 }
 
-// Rechaza tokens de sesiones cerradas y tokens sin registro (emitidos por una
-// versión anterior del servidor). Sin token pasa de largo: cada ruta decide.
 function middleware(jwt, JWT_SECRET, getPool, sql, log) {
   return async (req, res, next) => {
     const h = req.headers.authorization
@@ -115,7 +103,6 @@ function middleware(jwt, JWT_SECRET, getPool, sql, log) {
         return res.status(401).json({ success: false, sesionCerrada: true, message: "Sesión cerrada: inicia sesión de nuevo" })
       }
     } catch (e) {
-      // Sin BD no se bloquea: el token sigue firmado y con vencimiento
       if (log) log.error("No se pudo verificar la sesión:", e.message)
     }
     next()

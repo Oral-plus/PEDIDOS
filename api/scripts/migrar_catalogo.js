@@ -1,10 +1,3 @@
-// Migración única del catálogo fijo de la app al catálogo dinámico:
-//  - guarda las imágenes en la BD Pedidos (productos_imagenes) pasando por el
-//    mismo recorte que usa Soporte TI al subirlas desde la app
-//  - siembra productos_config con la categoría de la app y las variantes
-//    (media/suave, niño/niña) tal como estaban en product_data_service.dart
-// Uso: node scripts/migrar_catalogo.js [ruta a product_data_service.dart]
-// Es idempotente: se puede ejecutar varias veces.
 
 require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") })
 const fs = require("fs")
@@ -16,7 +9,6 @@ const { RepositorioProductos } = require("../modules/productos/repositorio")
 const raizApp = path.join(__dirname, "..", "..")
 const archivoDart = process.argv[2] || path.join(raizApp, "lib", "services", "product_data_service.dart")
 
-// Nombres de categoría y textura tal como se ven en la app
 const CATEGORIAS = { "Universo Nios": "Niños", "Universo Niños": "Niños" }
 const TEXTURAS = { Nio: "Niño", Nia: "Niña" }
 
@@ -44,10 +36,6 @@ function leerProductosDart(texto) {
   return productos
 }
 
-// La imagen original (PNG de 1000x1000) está en assets_originales/; si no,
-// se usa el WebP que quedó en assets/
-// Rutas que estaban mal escritas en el archivo fijo (carpeta NIÑOS sin la eñe
-// y un kit ubicado en otra carpeta)
 const RUTAS_CORREGIDAS = [
   [/^assets\/NIOS\/GOLNIO\.png$/, "assets/NIÑOS/GOLNIÑO.png"],
   [/^assets\/NIOS\/KITNIOS\.png$/, "assets/NIÑOS/KITNIÑOS.png"],
@@ -123,7 +111,6 @@ async function main() {
     )
     filas++
 
-    // Variantes: cuelgan del principal y no salen como tarjeta propia
     const variantes = []
     if (p.codigoSuave) variantes.push({ codigo: p.codigoSuave, textura: "Suave" })
     if (p.codigoAlternativo) variantes.push({ codigo: p.codigoAlternativo, textura: TEXTURAS[p.texturaAlternativa] || p.texturaAlternativa || "Alternativa" })

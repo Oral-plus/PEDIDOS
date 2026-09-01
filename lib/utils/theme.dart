@@ -1,52 +1,44 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Colores principales
-  static const Color primaryColor = Color(0xFF000000); // Negro Principal
-  static const Color secondaryColor = Color(0xFF333333); // Gris Oscuro
-  static const Color accentColor = Color(0xFFFF9500); // Naranja acento
+  static const Color primaryColor = Color(0xFF000000);
+  static const Color secondaryColor = Color(0xFF333333);
+  static const Color accentColor = Color(0xFFFF9500);
   static const Color errorColor = Color(0xFFFF3B30);
-  static const Color successColor = Color(0xFF34C759); // Verde de xito
+  static const Color successColor = Color(0xFF34C759);
   
-  // Colores adicionales elegantes
-  static const Color primaryBlue = Color(0xFF1A56DB);   // Profesional Blue
-  static const Color secondaryBlue = Color(0xFF3B82F6);  // Light Blue/Accent
-  static const Color darkBlue = Color(0xFF111827);       // Text Dark
-  static const Color lightBlue = Color(0xFFEFF6FF);      // Blue Background light
-  static const Color elegantGray = Color(0xFFF9FAFB);    // Subtle Background
+  static const Color primaryBlue = Color(0xFF1A56DB);
+  static const Color secondaryBlue = Color(0xFF3B82F6);
+  static const Color darkBlue = Color(0xFF111827);
+  static const Color lightBlue = Color(0xFFEFF6FF);
+  static const Color elegantGray = Color(0xFFF9FAFB);
   
   static const Color textPrimary = Color(0xFF1A1A2E);
   static const Color textSecondary = Color(0xFF6B7280);
   
-  // Colores de fondo con sistema de capas iOS
-  static const Color backgroundColor = Color(0xFFF2F2F7); // iOS System Background
-  static const Color secondaryBackgroundColor = Color(0xFFFFFFFF); // iOS Secondary System Background
-  static const Color groupedBackgroundColor = Color(0xFFF2F2F7); // iOS System Grouped Background
+  static const Color backgroundColor = Color(0xFFF2F2F7);
+  static const Color secondaryBackgroundColor = Color(0xFFFFFFFF);
+  static const Color groupedBackgroundColor = Color(0xFFF2F2F7);
   
-  // Colores de superficie con elevación sutil
   static const Color surfaceColor = Color(0xFFFFFFFF);
   static const Color cardColor = Color(0xFFFFFFFF);
   
-  // Tipografía con jerarquía iOS
   static const Color textPrimaryColor = Color(0xFF000000);
   static const Color textSecondaryColor = Color(0xFF3C3C43);
   static const Color textTertiaryColor = Color(0xFF8E8E93);
   static const Color labelColor = Color(0xFF8E8E93);
   
-  // Separadores y bordes
-  static const Color separatorColor = Color(0x3C3C4329); // iOS Separator
+  static const Color separatorColor = Color(0x3C3C4329);
   static const Color borderColor = Color(0xFFE5E5EA);
 
   static ThemeData get lightTheme {
     return ThemeData(
-      // Configuración base
       useMaterial3: true,
       primarySwatch: Colors.blue,
       primaryColor: primaryColor,
       scaffoldBackgroundColor: backgroundColor,
-      fontFamily: 'SF Pro Display', // Fuente nativa de iOS
+      fontFamily: 'SF Pro Display',
       
-      // Esquema de colores
       colorScheme: const ColorScheme.light(
         primary: primaryColor,
         secondary: secondaryColor,
@@ -59,7 +51,6 @@ class AppTheme {
       ),
       
       
-      // Botones con estilo iOS elegante
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primaryColor,
@@ -69,7 +60,7 @@ class AppTheme {
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
           minimumSize: const Size(0, 50),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(25), // Bordes más redondeados
+            borderRadius: BorderRadius.circular(25),
           ),
           textStyle: const TextStyle(
             fontSize: 17,
@@ -79,7 +70,6 @@ class AppTheme {
         ),
       ),
       
-      // Botones de texto con estilo iOS
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: primaryColor,
@@ -92,7 +82,6 @@ class AppTheme {
         ),
       ),
       
-      // Campos de entrada con diseño iOS
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: surfaceColor,
@@ -143,17 +132,14 @@ class AppTheme {
         ),
       ),
       
-      // Cards con sombras sutiles iOS
 
       
-      // Divisores con estilo iOS
       dividerTheme: const DividerThemeData(
         color: separatorColor,
         thickness: 0.5,
         space: 1,
       ),
       
-      // Lista con estilo iOS
       listTileTheme: const ListTileThemeData(
         contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         minLeadingWidth: 32,
@@ -173,9 +159,7 @@ class AppTheme {
         ),
       ),
       
-      // Tipografía con escala de iOS
       textTheme: const TextTheme(
-        // Large Title - iOS
         headlineLarge: TextStyle(
           fontSize: 34,
           fontWeight: FontWeight.bold,
@@ -183,7 +167,6 @@ class AppTheme {
           letterSpacing: 0.37,
           height: 1.12,
         ),
-        // Title 1 - iOS
         headlineMedium: TextStyle(
           fontSize: 28,
           fontWeight: FontWeight.w400,
@@ -191,7 +174,6 @@ class AppTheme {
           letterSpacing: 0.36,
           height: 1.14,
         ),
-        // Title 2 - iOS
         headlineSmall: TextStyle(
           fontSize: 22,
           fontWeight: FontWeight.bold,
@@ -199,7 +181,6 @@ class AppTheme {
           letterSpacing: 0.35,
           height: 1.16,
         ),
-        // Title 3 - iOS
         titleLarge: TextStyle(
           fontSize: 20,
           fontWeight: FontWeight.w600,
@@ -207,7 +188,6 @@ class AppTheme {
           letterSpacing: 0.38,
           height: 1.20,
         ),
-        // Headline - iOS
         titleMedium: TextStyle(
           fontSize: 17,
           fontWeight: FontWeight.w600,
@@ -215,7 +195,6 @@ class AppTheme {
           letterSpacing: -0.41,
           height: 1.29,
         ),
-        // Body - iOS
         titleSmall: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w400,
@@ -223,7 +202,6 @@ class AppTheme {
           letterSpacing: -0.32,
           height: 1.31,
         ),
-        // Body - iOS
         bodyLarge: TextStyle(
           fontSize: 17,
           fontWeight: FontWeight.w400,
@@ -231,7 +209,6 @@ class AppTheme {
           letterSpacing: -0.41,
           height: 1.29,
         ),
-        // Callout - iOS
         bodyMedium: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w400,
@@ -239,7 +216,6 @@ class AppTheme {
           letterSpacing: -0.32,
           height: 1.31,
         ),
-        // Subhead - iOS
         bodySmall: TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w400,
@@ -247,7 +223,6 @@ class AppTheme {
           letterSpacing: -0.24,
           height: 1.33,
         ),
-        // Footnote - iOS
         labelLarge: TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w400,
@@ -255,7 +230,6 @@ class AppTheme {
           letterSpacing: -0.08,
           height: 1.38,
         ),
-        // Caption 1 - iOS
         labelMedium: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w400,
@@ -263,7 +237,6 @@ class AppTheme {
           letterSpacing: 0,
           height: 1.33,
         ),
-        // Caption 2 - iOS
         labelSmall: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w400,
@@ -273,13 +246,11 @@ class AppTheme {
         ),
       ),
       
-      // Configuración de iconos
       iconTheme: const IconThemeData(
         color: textSecondaryColor,
         size: 24,
       ),
       
-      // Configuración de switches y controles
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
@@ -295,7 +266,6 @@ class AppTheme {
         }),
       ),
       
-      // Configuración de sliders
       sliderTheme: const SliderThemeData(
         activeTrackColor: primaryColor,
         inactiveTrackColor: Color(0xFFE9E9EA),
@@ -306,11 +276,10 @@ class AppTheme {
     );
   }
   
-  // Tema oscuro para completar la experiencia iOS
   static ThemeData get darkTheme {
     const Color darkBackgroundColor = Color(0xFF000000);
     const Color darkSurfaceColor = Color(0xFF1C1C1E);
-    const Color darkPrimaryColor = Color(0xFFFFFFFF); // Blanco como color primario en modo oscuro
+    const Color darkPrimaryColor = Color(0xFFFFFFFF);
     const Color darkTextPrimary = Color(0xFFFFFFFF);
     const Color darkTextSecondary = Color(0xFFEBEBF5);
     const Color darkTextTertiary = Color(0x99EBEBF5);
@@ -320,8 +289,8 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      primaryColor: darkPrimaryColor, // iOS Blue Dark
-      scaffoldBackgroundColor: darkBackgroundColor, // iOS System Background Dark
+      primaryColor: darkPrimaryColor,
+      scaffoldBackgroundColor: darkBackgroundColor,
       fontFamily: 'SF Pro Display',
       
       colorScheme: const ColorScheme.dark(

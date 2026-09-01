@@ -1,9 +1,3 @@
-// Ejecuta las pruebas de integración en orden contra un backend en marcha.
-// Uso (desde api/):  npm run test:integracion
-//                    API_URL=https://mi-tunel.trycloudflare.com npm run test:integracion
-// Requiere el .env real (las pruebas consultan y escriben en las BD Pedidos y
-// leen SAP). Cada script deja limpio lo que crea (dispositivos y sesiones de
-// prueba, foto de prueba).
 const { spawnSync } = require("child_process")
 const path = require("path")
 

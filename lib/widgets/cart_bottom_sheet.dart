@@ -22,10 +22,8 @@ class _CartBottomSheetState extends State<CartBottomSheet>
   late AnimationController _slideController;
   late Animation<Offset> _slideAnimation;
 
-  // Ítems que ya animaron su entrada (para no repetir la animación al scroll).
   final Set<String> _seenItems = {};
 
-  /// Animación de entrada (fade + subida) la primera vez que aparece un ítem.
   Widget _entrance(String id, Widget child) {
     final primeraVez = _seenItems.add(id);
     if (!primeraVez) return child;

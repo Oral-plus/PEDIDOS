@@ -762,7 +762,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -801,7 +800,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 30),
             
-            // Balance Card
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(24),
@@ -878,7 +876,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 30),
             
-            // Quick Services
             const Text(
               'Servicios rápidos',
               style: TextStyle(
@@ -931,7 +928,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 30),
             
-            // Recent Transactions
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1521,7 +1517,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
-              // Service Card
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
@@ -1572,7 +1567,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ),
               const SizedBox(height: 30),
               
-              // Payment Form
               Form(
                 key: _formKey,
                 child: Column(

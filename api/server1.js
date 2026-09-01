@@ -7,11 +7,9 @@ require("dotenv").config()
 const app = express()
 const port = 3006
 
-// Middleware
 app.use(cors())
 app.use(express.json())
 
-// 🔧 CONFIGURACIÓN DE LA BASE DE DATOS - credenciales desde api/.env
 const dbConfig = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
@@ -32,33 +30,30 @@ const dbConfig = {
   },
 }
 
-// Variable global para el pool de conexiones
 let globalPool = null
 
-// 🔗 Función para conectar a la base de datos
 async function connectToDatabase() {
   if (globalPool && globalPool.connected) {
     return globalPool
   }
 
   try {
-    console.log("🔄 Conectando a SAP Business One...")
-    console.log(`📍 Servidor: ${dbConfig.server}:${dbConfig.port}`)
-    console.log(`🗄️ Base de datos: ${dbConfig.database}`)
-    console.log(`👤 Usuario: ${dbConfig.user}`)
+    console.log("Conectando a SAP Business One...")
+    console.log(`Servidor: ${dbConfig.server}:${dbConfig.port}`)
+    console.log(`Base de datos: ${dbConfig.database}`)
+    console.log(`Usuario: ${dbConfig.user}`)
 
     globalPool = new sql.ConnectionPool(dbConfig)
     await globalPool.connect()
 
-    console.log("✅ Conectado a SAP Business One exitosamente")
+    console.log("Conectado a SAP Business One exitosamente")
     return globalPool
   } catch (err) {
-    console.error("❌ Error conectando a SAP Business One:", err.message)
+    console.error("Error conectando a SAP Business One:", err.message)
     throw err
   }
 }
 
-// 🌐 Función para obtener IPs de la máquina
 function getNetworkIPs() {
   const interfaces = os.networkInterfaces()
   const ips = []
@@ -77,16 +72,14 @@ function getNetworkIPs() {
   return ips
 }
 
-// 👤 ENDPOINT PRINCIPAL: Obtener datos del cliente por CardCode (TU CÓDIGO MEJORADO)
 app.get("/api/client/data/:cardCode", async (req, res) => {
   const startTime = Date.now()
   const cardCode = req.params.cardCode
 
-  console.log(`👤 [${new Date().toISOString()}] Consulta de cliente SAP - CardCode: ${cardCode}`)
+  console.log(`[${new Date().toISOString()}] Consulta de cliente SAP - CardCode: ${cardCode}`)
 
-  // Validar que se proporcionó el CardCode
   if (!cardCode || cardCode.trim() === "") {
-    console.log("❌ CardCode vacío o no proporcionado")
+    console.log("CardCode vacío o no proporcionado")
     return res.status(400).json({
       success: false,
       error: "CardCode no puede estar vacío",
@@ -94,10 +87,8 @@ app.get("/api/client/data/:cardCode", async (req, res) => {
   }
 
   try {
-    // Usar el pool global de conexión
     const pool = await connectToDatabase()
 
-    // Query SQL: Socio de Negocio por CardCode - TODOS los clientes (sin filtrar por grupo/canal TAT)
     const query = `
             SELECT 
                 T0.[CardName],
@@ -109,34 +100,32 @@ app.get("/api/client/data/:cardCode", async (req, res) => {
             WHERE T0.CardCode = @cardCode
         `
 
-    console.log("🔍 Ejecutando consulta SQL en SAP...")
-    console.log("📋 CardCode:", cardCode)
-    console.log("📝 Query:", query.replace("@cardCode", cardCode))
+    console.log("Ejecutando consulta SQL en SAP...")
+    console.log("CardCode:", cardCode)
+    console.log("Query:", query.replace("@cardCode", cardCode))
 
     const result = await pool.request().input("cardCode", sql.VarChar, cardCode).query(query)
 
     const queryTime = Date.now() - startTime
-    console.log(`⏱️ Consulta SAP ejecutada en ${queryTime}ms`)
-    console.log(`📊 Registros encontrados: ${result.recordset.length}`)
+    console.log(`⏱ Consulta SAP ejecutada en ${queryTime}ms`)
+    console.log(`Registros encontrados: ${result.recordset.length}`)
 
     if (result.recordset.length === 0) {
-      console.log("📭 No se encontraron datos en SAP para el CardCode proporcionado")
-      console.log("💡 Posible causa: CardCode no existe en Socios de Negocio (OCRD)")
+      console.log("No se encontraron datos en SAP para el CardCode proporcionado")
+      console.log("Posible causa: CardCode no existe en Socios de Negocio (OCRD)")
 
-      // EXACTO como tu PHP: retornar array cuando no encuentra
       res.setHeader("Content-Type", "application/json")
       return res.json(["No se encontraron datos para la cédula proporcionada"])
     }
 
     const clientData = result.recordset[0]
 
-    console.log("✅ Datos del cliente encontrados en SAP:")
-    console.log(`   👤 Nombre: ${clientData.CardName}`)
-    console.log(`   📍 Dirección: ${clientData.Address || "N/A"}`)
-    console.log(`   📞 Teléfono: ${clientData.Phone1 || "N/A"}`)
-    console.log(`   📧 Email: ${clientData.E_Mail || "N/A"}`)
+    console.log("Datos del cliente encontrados en SAP:")
+    console.log(`   Nombre: ${clientData.CardName}`)
+    console.log(`   Dirección: ${clientData.Address || "N/A"}`)
+    console.log(`   Teléfono: ${clientData.Phone1 || "N/A"}`)
+    console.log(`   Email: ${clientData.E_Mail || "N/A"}`)
 
-    // EXACTO como tu PHP: retornar objeto cuando encuentra
     res.setHeader("Content-Type", "application/json")
     res.json({
       CardName: clientData.CardName || "",
@@ -146,8 +135,8 @@ app.get("/api/client/data/:cardCode", async (req, res) => {
     })
   } catch (error) {
     const queryTime = Date.now() - startTime
-    console.error("❌ Error en consulta de cliente SAP:", error.message)
-    console.error("🔧 Detalles del error:", error)
+    console.error("Error en consulta de cliente SAP:", error.message)
+    console.error("Detalles del error:", error)
 
     res.status(500).json({
       success: false,
@@ -160,18 +149,16 @@ app.get("/api/client/data/:cardCode", async (req, res) => {
   }
 })
 
-// 🔍 ENDPOINT DEBUG: Verificar por qué un CardCode no pasa los filtros
 app.get("/api/client/debug/:cardCode", async (req, res) => {
   const startTime = Date.now()
   const cardCode = req.params.cardCode
 
-  console.log(`🔍 [${new Date().toISOString()}] DEBUG SAP - CardCode: ${cardCode}`)
+  console.log(`[${new Date().toISOString()}] DEBUG SAP - CardCode: ${cardCode}`)
 
   try {
     const pool = await connectToDatabase()
 
-    // 1. Verificar si el cliente existe sin filtros
-    console.log("🔍 Paso 1: Verificando si el cliente existe en SAP...")
+    console.log("Paso 1: Verificando si el cliente existe en SAP...")
     const basicQuery = `
             SELECT 
                 CardCode, 
@@ -185,7 +172,7 @@ app.get("/api/client/debug/:cardCode", async (req, res) => {
     const basicResult = await pool.request().input("cardCode", sql.VarChar, cardCode).query(basicQuery)
 
     if (basicResult.recordset.length === 0) {
-      console.log("❌ Cliente no existe en SAP")
+      console.log("Cliente no existe en SAP")
       return res.json({
         exists: false,
         message: "Cliente no existe en tabla OCRD de SAP",
@@ -194,12 +181,11 @@ app.get("/api/client/debug/:cardCode", async (req, res) => {
     }
 
     const client = basicResult.recordset[0]
-    console.log(`✅ Cliente encontrado en SAP: ${client.CardName}`)
-    console.log(`📋 GroupCode: ${client.GroupCode}`)
-    console.log(`📋 Canal: ${client.U_CANAL_DISTRIBUCION}`)
+    console.log(`Cliente encontrado en SAP: ${client.CardName}`)
+    console.log(`GroupCode: ${client.GroupCode}`)
+    console.log(`Canal: ${client.U_CANAL_DISTRIBUCION}`)
 
-    // 2. Verificar información del grupo
-    console.log("🔍 Paso 2: Verificando grupo del cliente...")
+    console.log("Paso 2: Verificando grupo del cliente...")
     const groupQuery = `
             SELECT GroupCode, GroupName 
             FROM OCRG 
@@ -208,8 +194,7 @@ app.get("/api/client/debug/:cardCode", async (req, res) => {
 
     const groupResult = await pool.request().input("groupCode", sql.Int, client.GroupCode).query(groupQuery)
 
-    // 3. Verificar información del canal
-    console.log("🔍 Paso 3: Verificando canal de distribución...")
+    console.log("Paso 3: Verificando canal de distribución...")
     const canalQuery = `
             SELECT Code, Name 
             FROM [@DISTRIBUCION] 
@@ -224,20 +209,19 @@ app.get("/api/client/debug/:cardCode", async (req, res) => {
     const group = groupResult.recordset[0] || null
     const canal = canalResult.recordset[0] || null
 
-    // 4. Evaluar filtros
     const passesGroupFilter =
       group && group.GroupName !== "Droguerias Cadenas" && group.GroupName !== "Canal Grandes Superf"
 
     const passesCanalFilter =
       canal && canal.Name !== "HARD DISCOUNT NACIONALES" && canal.Name !== "HARD DISCOUNT INDEPENDIENTES"
 
-    console.log("📊 Resultados del análisis:")
-    console.log(`   👤 Cliente: ${client.CardName}`)
-    console.log(`   📊 Grupo: ${group?.GroupName || "No encontrado"}`)
-    console.log(`   🏪 Canal: ${canal?.Name || "No encontrado"}`)
-    console.log(`   ✅ Pasa filtro grupo: ${passesGroupFilter}`)
-    console.log(`   ✅ Pasa filtro canal: ${passesCanalFilter}`)
-    console.log(`   🎯 Pasa todos los filtros: ${passesGroupFilter && passesCanalFilter}`)
+    console.log("Resultados del análisis:")
+    console.log(`   Cliente: ${client.CardName}`)
+    console.log(`   Grupo: ${group?.GroupName || "No encontrado"}`)
+    console.log(`   Canal: ${canal?.Name || "No encontrado"}`)
+    console.log(`   Pasa filtro grupo: ${passesGroupFilter}`)
+    console.log(`   Pasa filtro canal: ${passesCanalFilter}`)
+    console.log(`   Pasa todos los filtros: ${passesGroupFilter && passesCanalFilter}`)
 
     const queryTime = Date.now() - startTime
 
@@ -263,7 +247,7 @@ app.get("/api/client/debug/:cardCode", async (req, res) => {
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("❌ Error en debug SAP:", error.message)
+    console.error("Error en debug SAP:", error.message)
     res.status(500).json({
       error: error.message,
       cardCode: cardCode,
@@ -272,26 +256,23 @@ app.get("/api/client/debug/:cardCode", async (req, res) => {
   }
 })
 
-// 🧪 ENDPOINT DE PRUEBA ESPECÍFICO para C39536225
 app.get("/api/test/client/C39536225", async (req, res) => {
-  console.log("🧪 Test específico para CardCode C39536225 en SAP")
+  console.log("Test específico para CardCode C39536225 en SAP")
 
   try {
     const cardCode = "C39536225"
 
-    // Llamar al endpoint principal
-    console.log("📞 Llamando al endpoint principal...")
+    console.log("Llamando al endpoint principal...")
     const clientResponse = await fetch(`http://localhost:${port}/api/client/data/${cardCode}`)
     const clientData = await clientResponse.json()
 
-    // Llamar al endpoint de debug
-    console.log("🔍 Llamando al endpoint de debug...")
+    console.log("Llamando al endpoint de debug...")
     const debugResponse = await fetch(`http://localhost:${port}/api/client/debug/${cardCode}`)
     const debugData = await debugResponse.json()
 
-    console.log("📋 Resultado del test completo:")
-    console.log("   📄 Datos cliente:", JSON.stringify(clientData, null, 2))
-    console.log("   🔍 Debug info:", JSON.stringify(debugData, null, 2))
+    console.log("Resultado del test completo:")
+    console.log("   Datos cliente:", JSON.stringify(clientData, null, 2))
+    console.log("   Debug info:", JSON.stringify(debugData, null, 2))
 
     res.json({
       testCardCode: cardCode,
@@ -307,7 +288,7 @@ app.get("/api/test/client/C39536225", async (req, res) => {
       },
     })
   } catch (error) {
-    console.error("❌ Error en test específico:", error)
+    console.error("Error en test específico:", error)
     res.status(500).json({
       error: "Error en test específico",
       details: error.message,
@@ -317,18 +298,17 @@ app.get("/api/test/client/C39536225", async (req, res) => {
   }
 })
 
-// 🧪 Endpoint de prueba de conexión
 app.get("/api/test", async (req, res) => {
   const startTime = Date.now()
   try {
-    console.log("🧪 Ejecutando test de conexión a SAP...")
+    console.log("Ejecutando test de conexión a SAP...")
     const pool = await connectToDatabase()
     const result = await pool.request().query("SELECT 1 as test, GETDATE() as server_time")
 
     const queryTime = Date.now() - startTime
     const networkIPs = getNetworkIPs()
 
-    console.log("✅ Test de conexión SAP exitoso")
+    console.log("Test de conexión SAP exitoso")
 
     res.json({
       success: true,
@@ -357,7 +337,7 @@ app.get("/api/test", async (req, res) => {
     })
   } catch (error) {
     const queryTime = Date.now() - startTime
-    console.error("❌ Error en test de conexión SAP:", error.message)
+    console.error("Error en test de conexión SAP:", error.message)
     res.status(500).json({
       success: false,
       status: "Error en la API SAP",
@@ -368,7 +348,6 @@ app.get("/api/test", async (req, res) => {
   }
 })
 
-// 🚫 Manejo de rutas no encontradas
 app.use("*", (req, res) => {
   res.status(404).json({
     success: false,
@@ -384,83 +363,75 @@ app.use("*", (req, res) => {
   })
 })
 
-// 🚀 Función para iniciar el servidor
 async function startServer() {
-  console.log("🚀 Iniciando servidor SAP Business One...")
+  console.log("Iniciando servidor SAP Business One...")
   console.log("=".repeat(60))
 
-  // Mostrar información del sistema
-  console.log(`🖥️ Sistema: ${os.platform()} ${os.arch()}`)
-  console.log(`📍 Host: ${os.hostname()}`)
-  console.log(`🔧 Node.js: ${process.version}`)
+  console.log(`Sistema: ${os.platform()} ${os.arch()}`)
+  console.log(`Host: ${os.hostname()}`)
+  console.log(`Node.js: ${process.version}`)
 
-  // Mostrar configuración de base de datos
-  console.log("\n🗄️ Configuración SAP Business One:")
+  console.log("\nConfiguración SAP Business One:")
   console.log(`   Servidor: ${dbConfig.server}:${dbConfig.port}`)
   console.log(`   Base de datos: ${dbConfig.database}`)
   console.log(`   Usuario: ${dbConfig.user}`)
 
-  // Intentar conectar a SAP
   try {
     await connectToDatabase()
   } catch (error) {
-    console.log("\n❌ No se pudo conectar a SAP Business One")
-    console.log("⚠️ El servidor iniciará pero las consultas fallarán")
+    console.log("\nNo se pudo conectar a SAP Business One")
+    console.log("El servidor iniciará pero las consultas fallarán")
   }
 
-  // Iniciar servidor HTTP
   const server = app.listen(port, "0.0.0.0", () => {
-    console.log("\n🎉 ¡Servidor SAP iniciado exitosamente!")
+    console.log("\n¡Servidor SAP iniciado exitosamente!")
     console.log("=".repeat(60))
-    console.log(`🌐 Puerto: ${port}`)
-    console.log(`🔗 URL local: http://localhost:${port}/api`)
+    console.log(`Puerto: ${port}`)
+    console.log(`URL local: http://localhost:${port}/api`)
 
-    // Mostrar todas las IPs disponibles
     const networkIPs = getNetworkIPs()
     if (networkIPs.length > 0) {
-      console.log("\n📡 URLs de red disponibles:")
+      console.log("\nURLs de red disponibles:")
       networkIPs.forEach(({ interface: iface, ip, url }) => {
         console.log(`   ${iface}: ${url}`)
       })
     }
 
-    console.log("\n🧪 Endpoints SAP disponibles:")
+    console.log("\nEndpoints SAP disponibles:")
     console.log(`   Test conexión: http://localhost:${port}/api/test`)
     console.log(`   Cliente SAP: http://localhost:${port}/api/client/data/{cardcode}`)
     console.log(`   Debug SAP: http://localhost:${port}/api/client/debug/{cardcode}`)
     console.log(`   Test C39536225: http://localhost:${port}/api/test/client/C39536225`)
 
-    console.log("\n💡 Para probar:")
+    console.log("\nPara probar:")
     console.log(`   curl http://localhost:${port}/api/client/data/C39536225`)
     console.log(`   curl http://localhost:${port}/api/client/debug/C39536225`)
     console.log(`   curl http://localhost:${port}/api/test/client/C39536225`)
 
-    console.log("\n✅ Servidor SAP listo - Conectado a Business One")
-    console.log("🛑 Presiona Ctrl+C para detener")
+    console.log("\nServidor SAP listo - Conectado a Business One")
+    console.log("Presiona Ctrl+C para detener")
   })
 
   return server
 }
 
-// 🛑 Manejo de cierre graceful
 process.on("SIGINT", async () => {
-  console.log("\n🛑 Cerrando servidor SAP...")
+  console.log("\nCerrando servidor SAP...")
   if (globalPool) {
     try {
       await globalPool.close()
-      console.log("🔌 Desconectado de SAP Business One")
+      console.log("Desconectado de SAP Business One")
     } catch (error) {
-      console.error("❌ Error cerrando conexión SAP:", error.message)
+      console.error("Error cerrando conexión SAP:", error.message)
     }
   }
-  console.log("👋 ¡Hasta luego!")
+  console.log("¡Hasta luego!")
   process.exit(0)
 })
 
-// 🚀 Iniciar el servidor
 if (require.main === module) {
   startServer().catch((error) => {
-    console.error("❌ Error fatal al iniciar servidor SAP:", error.message)
+    console.error("Error fatal al iniciar servidor SAP:", error.message)
     process.exit(1)
   })
 }

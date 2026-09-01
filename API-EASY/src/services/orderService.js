@@ -152,7 +152,6 @@ async function crearPedido({ cedula, nombre, correo, telefono, direccion, subtot
         `);
     }
 
-    // Registrar en historial
     const insertHist = new sql.Request(transaction);
     await insertHist
       .input('pedido_id', sql.Int, pedidoId)
@@ -164,7 +163,6 @@ async function crearPedido({ cedula, nombre, correo, telefono, direccion, subtot
         VALUES (@pedido_id, @estado_nuevo, @comentario, @usuario)
       `);
 
-    // Registrar dirección de entrega
     if (direccion && direccion.trim()) {
       const insertDir = new sql.Request(transaction);
       await insertDir
@@ -184,7 +182,7 @@ async function crearPedido({ cedula, nombre, correo, telefono, direccion, subtot
 
     await transaction.commit();
 
-    console.log(`✅ [BD Pedidos] ${numeroPedido} - ID: ${pedidoId} - $${total}`);
+    console.log(`[BD Pedidos] ${numeroPedido} - ID: ${pedidoId} - $${total}`);
 
     return {
       success: true,
@@ -287,7 +285,7 @@ async function obtenerPedidosPorVendedor(vendedorNombre, estado) {
     totalProductos: p.total_productos || 0,
     totalUnidades: p.total_unidades || 0,
   }));
-  console.log(`📋 Pedidos vendedor "${vendedorNombre}": ${pedidos.length}`);
+  console.log(`Pedidos vendedor "${vendedorNombre}": ${pedidos.length}`);
   return { success: true, data: pedidos, total: pedidos.length };
 }
 

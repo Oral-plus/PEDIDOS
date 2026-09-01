@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import '../services/api_easy_service.dart';
 import '../utils/theme.dart';
 
-// Paleta monocromática (blanco / negro / gris) compartida por los sheets.
-const Color _mInk = Color(0xFF1F2937); // negro-gris principal
-const Color _mGray = Color(0xFF6B7280); // gris medio
+const Color _mInk = Color(0xFF1F2937);
+const Color _mGray = Color(0xFF6B7280);
 
-/// Contenedor reutilizable de los bottom sheets del cliente.
 class SheetWrapper extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -72,7 +70,6 @@ class SheetWrapper extends StatelessWidget {
   }
 }
 
-/// Bottom sheet de cartera (facturas abiertas y saldo).
 class CarteraSheet extends StatefulWidget {
   final String codigo;
   final ApiEasyService api;
@@ -274,7 +271,6 @@ class _CarteraSheetState extends State<CarteraSheet> {
   }
 }
 
-/// Bottom sheet de comentarios y texto libre de SAP.
 class ComentariosSheet extends StatefulWidget {
   final String codigo;
   final String nombreCliente;

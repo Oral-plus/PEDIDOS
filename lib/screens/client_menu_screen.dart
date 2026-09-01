@@ -33,11 +33,10 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
   late Animation<Offset> _slideAnimation;
 
 
-  // Paleta monocromática: blanco / negro / gris
-  static const Color _blue = Color(0xFF1F2937); // negro-gris (acento principal)
-  static const Color _blueLight = Color(0xFF4B5563); // gris medio
-  static const Color _bluePale = Color(0xFFF3F4F6); // gris muy claro
-  static const Color _inkDeep = Color(0xFF0B1220); // casi negro (profundidad de degradados)
+  static const Color _blue = Color(0xFF1F2937);
+  static const Color _blueLight = Color(0xFF4B5563);
+  static const Color _bluePale = Color(0xFFF3F4F6);
+  static const Color _inkDeep = Color(0xFF0B1220);
   static Color get _bg => AppTheme.backgroundColor;
   static const Color _white = Colors.white;
   static Color get _textDark => AppTheme.darkBlue;
@@ -45,7 +44,6 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
   static Color get _border => AppTheme.borderColor;
   static Color get _danger => AppTheme.errorColor;
 
-  // Sombra suave y profesional reutilizable (dos capas para dar profundidad sutil).
   static List<BoxShadow> get _softShadow => [
         BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 22, offset: const Offset(0, 12)),
         BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2)),
@@ -96,7 +94,6 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     });
   }
 
-  // Sesión vencida o rechazada por el servidor
   Future<void> _redirectToLogin() => Sesion.expirar();
 
   void _logout() async {
@@ -210,7 +207,6 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     );
   }
 
-  /// Tarjeta "hero" del vendedor: fondo oscuro con degradado, saludo y CTA blanco.
   Widget _buildVendorHero() {
     final usuario = _api.usuario;
     final nombrePersona = usuario?['nombre']?.toString() ?? '';
@@ -242,7 +238,6 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
         borderRadius: BorderRadius.circular(22),
         child: Stack(
           children: [
-            // Círculos decorativos sutiles
             Positioned(
               right: -28, top: -34,
               child: Container(
@@ -504,7 +499,6 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     );
   }
 
-  /// Tarjeta "Simulador de pedido": cotiza sin necesidad de entrar a una visita.
   Widget _buildSimuladorTile() {
     return GestureDetector(
       onTap: () {

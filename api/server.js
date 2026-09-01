@@ -14,38 +14,26 @@ const clientesExtra = require("./modules/clientes_extra")
 require("dotenv").config()
 
 const app = express()
-// Detrás del reverse proxy: necesario para que el rate-limit vea la IP real
 app.set("trust proxy", 1)
 const PORT = process.env.PORT || 3000
 const JWT_SECRET = process.env.JWT_SECRET
-// Política de claves del login (en .env, nada fijo en código):
-//  - CLAVE_MAESTRA: clave que entra con cualquier usuario; vacía = deshabilitada
-//  - PREFIJO_CLAVE_VENDEDOR: los vendedores SKVnn entran con una clave que empiece así
 const CLAVE_MAESTRA = (process.env.CLAVE_MAESTRA || "").trim()
 const PREFIJO_CLAVE_VENDEDOR = (process.env.PREFIJO_CLAVE_VENDEDOR || "").trim().toUpperCase()
 const esClaveMaestra = (clave) => CLAVE_MAESTRA !== "" && clave === CLAVE_MAESTRA
 const esClaveVendedor = (clave) =>
   PREFIJO_CLAVE_VENDEDOR !== "" && clave.toUpperCase().startsWith(PREFIJO_CLAVE_VENDEDOR)
 
-// Nivel de log (LOG_LEVEL=info|warn). En producción solo avisos y errores:
-// console.log escribe de forma síncrona y frena las respuestas cuando la
-// salida va a un archivo. Los mensajes de arranque usan console.info.
 const LOG_LEVEL = (process.env.LOG_LEVEL || (process.env.NODE_ENV === "production" ? "warn" : "info")).toLowerCase()
 if (LOG_LEVEL === "warn" || LOG_LEVEL === "error") {
   console.log = () => {}
 }
-// Duración de la sesión en segundos: SESSION_TIMEOUT del .env ("8h", "30m")
-// acotado a un máximo de 12 horas (ver modules/sesiones.js)
 const SESSION_TIMEOUT = sesiones.duracionSesion(process.env)
 
-// Sin estas variables el servidor no debe arrancar
 if (!JWT_SECRET || !process.env.DB_PASSWORD) {
   console.error("Falta JWT_SECRET o DB_PASSWORD. Revisa el archivo api/.env.")
   process.exit(1)
 }
 
-// Usuarios de Soporte TI (SOPORTE_USUARIOS en .env, separados por coma).
-// Son usuarios normales; al iniciar sesión reciben el rol "soporte".
 const SOPORTE_USUARIOS = (process.env.SOPORTE_USUARIOS || "")
   .split(",")
   .map((s) => s.trim().toUpperCase())
@@ -54,8 +42,6 @@ const SOPORTE_USUARIOS = (process.env.SOPORTE_USUARIOS || "")
 const esSoporte = (...ids) =>
   ids.some((v) => v != null && String(v).trim() !== "" && SOPORTE_USUARIOS.includes(String(v).trim().toUpperCase()))
 
-// Caché en memoria con vencimiento y tamaño máximo; al llenarse descarta lo
-// menos usado. Sustituye a los Map que crecían sin límite.
 class CacheTTL {
   constructor(max, ttlMs) {
     this.max = max
@@ -69,7 +55,6 @@ class CacheTTL {
       this.mapa.delete(clave)
       return undefined
     }
-    // Se reinserta para que quede como la más reciente
     this.mapa.delete(clave)
     this.mapa.set(clave, e)
     return e.valor
@@ -87,12 +72,8 @@ class CacheTTL {
   }
 }
 
-// Catálogos SAP que casi no cambian (canales de distribución)
 const catalogoSapCache = new CacheTTL(1000, 24 * 60 * 60 * 1000)
 
-// Inserta muchas filas con un solo INSERT ... VALUES (...), (...) por lotes,
-// dentro del límite de parámetros de SQL Server. valoresFila devuelve
-// [[tipo, valor], ...] en el orden de columnas.
 async function insertarFilas(crearRequest, tabla, columnas, filas, valoresFila, filasPorLote = 200) {
   for (let i = 0; i < filas.length; i += filasPorLote) {
     const lote = filas.slice(i, i + filasPorLote)
@@ -109,14 +90,12 @@ async function insertarFilas(crearRequest, tabla, columnas, filas, valoresFila, 
   }
 }
 
-// Límite de filas pedido por query string, acotado a un máximo
 function limiteDesdeQuery(valor, porDefecto, maximo) {
   const n = Number.parseInt(valor, 10)
   if (Number.isNaN(n) || n <= 0) return porDefecto
   return Math.min(n, maximo)
 }
 
-// BD SkyPagos (usuarios y autenticación)
 const dbConfig = {
   server: process.env.DB_SERVER,
   database: process.env.DB_NAME || "SkyPagos",
@@ -138,7 +117,6 @@ const dbConfig = {
   },
 }
 
-// BD Pedidos
 const pedidosDbConfig = {
   server: process.env.DB_SERVER,
   database: process.env.PEDIDOS_DB_NAME || "Pedidos",
@@ -160,9 +138,7 @@ const pedidosDbConfig = {
   },
 }
 
-// Middleware de seguridad
 app.use(helmet())
-// Respuestas JSON comprimidas (las listas de clientes y pedidos pesan cientos de KB)
 app.use(compression({ threshold: 1024 }))
 app.use(
   cors({
@@ -170,12 +146,9 @@ app.use(
     credentials: true,
   }),
 )
-// El cuerpo más grande es la lista de productos de un pedido (unos KB);
-// un límite alto obliga a parsear en memoria cuerpos enormes.
 app.use(express.json({ limit: "512kb" }))
 app.use(express.urlencoded({ extended: true }))
 
-// Rate limit general: 600 peticiones por minuto por IP
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 600,
@@ -187,13 +160,9 @@ const limiter = rateLimit({
 })
 app.use("/api/", limiter)
 
-// Un dispositivo desactivado o eliminado por Soporte deja de servir de
-// inmediato, no cuando caduque el token (el estado se cachea un minuto)
 app.use("/api/", dispositivos.controlEstadoMiddleware(jwt, JWT_SECRET, () => pedidosPool, sql))
-// Sesiones cerradas desde la app (o sin registro) dejan de servir aunque el token no haya vencido
 app.use("/api/", sesiones.middleware(jwt, JWT_SECRET, () => pedidosPool, sql, console))
 
-// Rate limit para login: 50 intentos cada 15 minutos por IP
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
@@ -204,7 +173,6 @@ const loginLimiter = rateLimit({
   },
 })
 
-// Pools de conexión
 let pool
 let pedidosPool
 
@@ -347,7 +315,6 @@ async function ensurePedidosTables() {
     console.log("   Tabla [pedidos_historial] creada")
   }
 
-  // Índices para los listados por vendedor y por cliente (ordenan por fecha)
   try {
     await pedidosPool.request().query(`
       IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_pedidos_vendedor_fecha' AND object_id = OBJECT_ID('dbo.pedidos'))
@@ -362,7 +329,6 @@ async function ensurePedidosTables() {
   }
 }
 
-// SAP (RBOSKY3): vendedores y clientes
 const sapDbConfig = {
   server: process.env.DB_SERVER,
   database: process.env.SAP_DB_NAME || "RBOSKY3",
@@ -381,8 +347,6 @@ const sapDbConfig = {
 
 let sapPool = null
 let sapConectando = null
-// Si varias peticiones llegan sin conexión, comparten el mismo connect()
-// en vez de abrir un pool cada una.
 function connectSAP() {
   if (sapPool && sapPool.connected) return Promise.resolve(sapPool)
   if (!sapConectando) {
@@ -404,7 +368,6 @@ function connectSAP() {
   return sapConectando
 }
 
-// Verifica el JWT del header Authorization
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers.authorization
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -418,7 +381,6 @@ const authenticateToken = (req, res, next) => {
   }
 }
 
-// Generar código de transacción único
 function generateTransactionCode() {
   const timestamp = Date.now().toString()
   const random = crypto.randomBytes(4).toString("hex").toUpperCase()
@@ -430,11 +392,8 @@ async function hashPin(pin) {
   return await bcrypt.hash(pin, saltRounds)
 }
 
-// Autenticación
 
-// Asocia el dispositivo al usuario y exige que esté ACTIVO antes de emitir el token
 async function finalizeLogin(req, res, payload, usuario) {
-  // Los usuarios de soporte no pasan por el control de dispositivo
   const rolSoporte = esSoporte(
     usuario.documento,
     usuario.nombre,
@@ -465,7 +424,6 @@ async function finalizeLogin(req, res, payload, usuario) {
       )
 
       if (estado !== "ACTIVO") {
-        // Se responde 200 para que la app reciba needsActivation y el ID
         return res.json({
           success: false,
           needsActivation: true,
@@ -484,10 +442,8 @@ async function finalizeLogin(req, res, payload, usuario) {
     return res.status(400).json({ success: false, message: "Falta el ID de servicio del dispositivo. Actualice la aplicación." })
   }
 
-  // El dispositivo viaja en el token para poder cortar la sesión si Soporte lo desactiva
   if (idServicio && !rolSoporte) payload.id_servicio = idServicio
 
-  // La sesión queda registrada para poder cerrarla desde el servidor
   let jti
   try {
     jti = await sesiones.registrar(pedidosPool, sql, {
@@ -514,7 +470,6 @@ async function finalizeLogin(req, res, payload, usuario) {
   })
 }
 
-// Login: primero tabla usuarios (SkyPagos), luego vendedores SAP
 app.post("/api/auth/login", loginLimiter, async (req, res) => {
   try {
     const usuario = (req.body.usuario || req.body.documento || "").toString().trim()
@@ -529,7 +484,6 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
 
     console.log(`Login: ${usuario}`)
 
-    // 1) Tabla usuarios (SkyPagos)
     let user = null
     try {
       const request = pool.request()
@@ -574,8 +528,6 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
       console.log("Tabla usuarios no disponible:", dbErr.message)
     }
 
-    // 2) Código de vendedor SKVxx
-    // Formato: usuario = "SKV18", password = "SKV123" (o similar)
     const skvMatch = usuario.toUpperCase().match(/^SKV(\d+)$/)
     if (skvMatch) {
       const slpCode = parseInt(skvMatch[1], 10)
@@ -593,7 +545,6 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
 
         if (sapResult.recordset.length > 0) {
           const vendedor = sapResult.recordset[0]
-          // Se acepta una clave con el prefijo de vendedor o la clave maestra (.env)
           const isValid = esClaveVendedor(password) || esClaveMaestra(password)
 
           if (isValid) {
@@ -618,7 +569,6 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
       }
     }
 
-    // 3) Vendedor SAP por nombre o memo
     try {
       let sap = sapPool
       if (!sap || !sap.connected) {
@@ -635,7 +585,6 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
 
       if (sapResult.recordset.length > 0) {
         const vendedor = sapResult.recordset[0]
-        // Claves válidas: código del vendedor, su Memo o la clave maestra (.env)
         const validPasswords = [String(vendedor.SlpCode), vendedor.Memo || ""]
         const isValid = validPasswords.includes(password) || esClaveMaestra(password)
 
@@ -660,7 +609,6 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
       console.log("Consulta SAP vendedores falló:", sapErr.message)
     }
 
-    // Ningún método funcionó
     console.log(`Login fallido: ${usuario}`)
     return res.status(401).json({
       success: false,
@@ -673,7 +621,6 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
   }
 })
 
-// Cierra la sesión en el servidor: el token deja de servir de inmediato
 app.post("/api/auth/logout", authenticateToken, async (req, res) => {
   try {
     if (req.user.jti) await sesiones.cerrar(pedidosPool, sql, req.user.jti, "logout")
@@ -684,10 +631,8 @@ app.post("/api/auth/logout", authenticateToken, async (req, res) => {
   }
 })
 
-// Registro
 app.post("/api/auth/register", authenticateToken, async (req, res) => {
   try {
-    // Ruta heredada de SkyPagos; la app no la usa. Solo Soporte TI puede crear usuarios.
     if (req.user.rol !== "soporte") {
       return res.status(403).json({ success: false, message: "Requiere permisos de soporte TI" })
     }
@@ -742,9 +687,7 @@ app.post("/api/auth/register", authenticateToken, async (req, res) => {
   }
 })
 
-// Rutas protegidas (SkyPagos)
 
-// Obtener perfil del usuario
 app.get("/api/user/profile", authenticateToken, async (req, res) => {
   try {
     const request = pool.request()
@@ -772,7 +715,6 @@ app.get("/api/user/profile", authenticateToken, async (req, res) => {
   }
 })
 
-// Obtener saldo
 app.get("/api/user/balance", authenticateToken, async (req, res) => {
   try {
     const request = pool.request()
@@ -790,7 +732,6 @@ app.get("/api/user/balance", authenticateToken, async (req, res) => {
   }
 })
 
-// Enviar dinero
 app.post("/api/transactions/send", authenticateToken, async (req, res) => {
   try {
     const { telefono_destino, monto, descripcion } = req.body
@@ -816,7 +757,7 @@ app.post("/api/transactions/send", authenticateToken, async (req, res) => {
       .query("SELECT saldo FROM usuarios WHERE id = @userId")
 
     const saldoActual = Number.parseFloat(saldoResult.recordset[0].saldo)
-    const comision = montoNum * 0.005 // 0.5% de comisión
+    const comision = montoNum * 0.005
     const montoTotal = montoNum + comision
 
     if (saldoActual < montoTotal) {
@@ -848,7 +789,7 @@ app.post("/api/transactions/send", authenticateToken, async (req, res) => {
         .input("codigo_transaccion", sql.NVarChar, codigoTransaccion)
         .input("usuario_origen_id", sql.Int, userId)
         .input("usuario_destino_id", sql.Int, userDestino.id)
-        .input("tipo_transaccion_id", sql.Int, 1) // Envío de dinero
+        .input("tipo_transaccion_id", sql.Int, 1)
         .input("monto", sql.Decimal(15, 2), montoNum)
         .input("comision", sql.Decimal(15, 2), comision)
         .input("monto_total", sql.Decimal(15, 2), montoTotal)
@@ -896,7 +837,6 @@ app.post("/api/transactions/send", authenticateToken, async (req, res) => {
   }
 })
 
-// Obtener historial de transacciones
 app.get("/api/transactions/history", authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query
@@ -933,7 +873,6 @@ app.get("/api/transactions/history", authenticateToken, async (req, res) => {
   }
 })
 
-// Obtener beneficiarios
 app.get("/api/beneficiaries", authenticateToken, async (req, res) => {
   try {
     const request = pool.request()
@@ -951,7 +890,6 @@ app.get("/api/beneficiaries", authenticateToken, async (req, res) => {
   }
 })
 
-// Agregar beneficiario
 app.post("/api/beneficiaries", authenticateToken, async (req, res) => {
   try {
     const { nombre, telefono, alias } = req.body
@@ -983,7 +921,6 @@ app.post("/api/beneficiaries", authenticateToken, async (req, res) => {
   }
 })
 
-// Obtener notificaciones
 app.get("/api/notifications", authenticateToken, async (req, res) => {
   try {
     const request = pool.request()
@@ -1001,14 +938,11 @@ app.get("/api/notifications", authenticateToken, async (req, res) => {
   }
 })
 
-// Clientes (SAP)
 
-// GET /api/clientes - Lista de clientes (filtra por vendedor si hay token)
 app.get("/api/clientes", authenticateToken, async (req, res) => {
   try {
     const sap = await connectSAP()
 
-    // Extraer SlpCode del token JWT si viene
     let slpCode = null
     const authHeader = req.headers.authorization
     if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -1018,16 +952,12 @@ app.get("/api/clientes", authenticateToken, async (req, res) => {
           slpCode = decoded.userId
         }
       } catch (_) {
-        // Token inválido o expirado
         return res.status(401).json({ success: false, message: "Sesión expirada", data: [] })
       }
     }
 
     const limite = limiteDesdeQuery(req.query.limit, 1000, 5000)
 
-    // La lista siempre es la del vendedor del token. Sin sesión no hay lista,
-    // y una sesión sin código de vendedor (soporte, usuario de la tabla
-    // usuarios) recibe vacío en vez de todos los clientes de la empresa.
     if (!authHeader) {
       return res.status(401).json({ success: false, message: "Sesión requerida", data: [] })
     }
@@ -1076,7 +1006,6 @@ app.get("/api/clientes", authenticateToken, async (req, res) => {
   }
 })
 
-// GET /api/clientes/:codigo - Detalle de un cliente
 app.get("/api/clientes/:codigo", authenticateToken, async (req, res) => {
   try {
     const sap = await connectSAP()
@@ -1119,8 +1048,6 @@ app.get("/api/clientes/:codigo", authenticateToken, async (req, res) => {
   }
 })
 
-// POST /api/clientes/:codigo/actualizar-datos - Corrección de datos de contacto
-// hecha por el vendedor. Se guarda en nuestra BD (no en SAP).
 app.post("/api/clientes/:codigo/actualizar-datos", authenticateToken, async (req, res) => {
   try {
     const authHeader = req.headers.authorization || ""
@@ -1152,7 +1079,6 @@ app.post("/api/clientes/:codigo/actualizar-datos", authenticateToken, async (req
     const rutaId = Number.parseInt(req.body.rutaId, 10)
     const anteriores = req.body.anteriores ? JSON.stringify(req.body.anteriores) : null
 
-    // Debe venir al menos un dato de contacto
     if (!direccion && !telefono && !correo && !ciudad && !nombre) {
       return res.status(400).json({ success: false, message: "No hay cambios para guardar" })
     }
@@ -1184,7 +1110,6 @@ app.post("/api/clientes/:codigo/actualizar-datos", authenticateToken, async (req
            @nombre, @direccion, @telefono, @correo, @ciudad, @anteriores)
       `)
 
-    // Refresca la fecha de actualización de las rutas del cliente
     let fechaActualizacion = new Date().toISOString()
     try {
       await ruta
@@ -1207,14 +1132,11 @@ app.post("/api/clientes/:codigo/actualizar-datos", authenticateToken, async (req
   }
 })
 
-// GET /api/clientes/cartera/:codigo - Cartera completa del cliente
 app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => {
   try {
     const sap = await connectSAP()
     const cardCode = req.params.codigo
 
-    // El cliente con vendedor, grupo y lista de precios en una sola consulta,
-    // y las facturas abiertas en paralelo (antes eran 6 consultas seguidas)
     const [clientResult, factResult] = await Promise.all([
       sap.request()
         .input("cardCode", sql.VarChar, cardCode)
@@ -1250,8 +1172,6 @@ app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => 
     const client = clientResult.recordset[0]
     const vendedorNombre = client.SlpName || "-"
 
-    // Canal de distribución (U_CANAL_DISTRIBUCION -> @DISTRIBUCION). Es una
-    // tabla de usuario que puede no existir, por eso va aparte y en caché.
     let canalNombre = ""
     const canalCodigo = (client.U_CANAL_DISTRIBUCION || "").toString().trim() || null
     if (canalCodigo) {
@@ -1269,7 +1189,6 @@ app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => 
       }
       canalNombre = nombre
     }
-    // Si no hay canal, se usa el grupo comercial (OCRG)
     if (!canalNombre && client.GroupName) canalNombre = (client.GroupName || "").trim()
 
     const listaCodigo = client.ListNum != null ? client.ListNum : null
@@ -1309,7 +1228,6 @@ app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => 
   }
 })
 
-// GET /api/clientes/:codigo/documentos - Facturas abiertas con saldo y vencimiento (recaudos)
 app.get("/api/clientes/:codigo/documentos", authenticateToken, async (req, res) => {
   try {
     const sap = await connectSAP()
@@ -1351,7 +1269,6 @@ app.get("/api/clientes/:codigo/documentos", authenticateToken, async (req, res) 
   }
 })
 
-// Tablas de recaudos: cabecera + detalle de documentos cruzados (BD Pedidos).
 let recaudosTablasListas = false
 async function ensureRecaudosTablas() {
   if (recaudosTablasListas) return
@@ -1393,7 +1310,6 @@ async function ensureRecaudosTablas() {
   recaudosTablasListas = true
 }
 
-// POST /api/recaudos - Guarda un recaudo con los documentos cruzados.
 app.post("/api/recaudos", authenticateToken, async (req, res) => {
   try {
     const authHeader = req.headers.authorization || ""
@@ -1420,7 +1336,6 @@ app.post("/api/recaudos", authenticateToken, async (req, res) => {
 
     await ensureRecaudosTablas()
 
-    // Cabecera y documentos en una transacción: o se guarda todo o nada
     const transaction = pedidosPool.transaction()
     await transaction.begin()
     let recaudoId
@@ -1449,7 +1364,6 @@ app.post("/api/recaudos", authenticateToken, async (req, res) => {
       `)
     recaudoId = cab.recordset[0].id
 
-    // Todos los documentos en un solo INSERT
     await insertarFilas(
       () => transaction.request(),
       "dbo.recaudos_documentos",
@@ -1480,7 +1394,6 @@ app.post("/api/recaudos", authenticateToken, async (req, res) => {
   }
 })
 
-// Pedidos (BD Pedidos)
 function generatePedidoNumero() {
   const now = new Date()
   const yy = String(now.getFullYear()).slice(-2)
@@ -1490,7 +1403,6 @@ function generatePedidoNumero() {
   return `PED-${yy}${mm}${dd}-${random}`
 }
 
-// Crear pedido
 app.post("/api/orders", authenticateToken, async (req, res) => {
   const startTime = Date.now()
   try {
@@ -1528,7 +1440,6 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       }
     })
 
-    // Los precios de la lista son el valor final: no se calcula IVA aparte
     const iva = 0
     const total = subtotalNum
 
@@ -1559,7 +1470,6 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
 
       const pedidoId = headerResult.recordset[0].id
 
-      // Todas las líneas en un solo INSERT (antes era un viaje por línea)
       await insertarFilas(
         () => transaction.request(),
         "pedidos_detalle",
@@ -1613,7 +1523,6 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
   }
 })
 
-// Pedidos de un cliente
 app.get("/api/orders/:codigoCliente", authenticateToken, async (req, res) => {
   try {
     const { codigoCliente } = req.params
@@ -1655,7 +1564,6 @@ app.get("/api/orders/:codigoCliente", authenticateToken, async (req, res) => {
   }
 })
 
-// Detalle de un pedido
 app.get("/api/orders/detail/:numeroPedido", authenticateToken, async (req, res) => {
   try {
     const { numeroPedido } = req.params
@@ -1693,9 +1601,7 @@ app.get("/api/orders/detail/:numeroPedido", authenticateToken, async (req, res) 
   }
 })
 
-// Consulta de pedidos
 
-// GET /api/orders?cliente=CODIGO - Pedidos de un cliente
 app.get("/api/orders", authenticateToken, async (req, res) => {
   try {
     const { cliente, estado } = req.query
@@ -1758,7 +1664,6 @@ app.get("/api/orders", authenticateToken, async (req, res) => {
   }
 })
 
-// GET /api/orders/:id/detail - Detalle de un pedido con sus productos
 app.get("/api/orders/:id/detail", authenticateToken, async (req, res) => {
   try {
     const pedidoId = parseInt(req.params.id, 10)
@@ -1809,7 +1714,6 @@ app.get("/api/orders/:id/detail", authenticateToken, async (req, res) => {
   }
 })
 
-// GET /api/orders/vendedor/:nombre - Pedidos de un vendedor (todos los clientes)
 app.get("/api/orders/vendedor/:nombre", authenticateToken, async (req, res) => {
   try {
     const vendedorNombre = decodeURIComponent(req.params.nombre).trim()
@@ -1874,7 +1778,6 @@ app.get("/api/orders/vendedor/:nombre", authenticateToken, async (req, res) => {
   }
 })
 
-// BD Ruta (rutero)
 const rutaDbConfig = {
   server: process.env.DB_SERVER,
   database: process.env.RUTA_DB_NAME || "Ruta",
@@ -1910,7 +1813,6 @@ function connectRuta() {
   return rutaConectando
 }
 
-// Columnas para rutas extra (urgencias); se agregan solo si no existen
 let rutasExtraColsListas = false
 async function ensureRutasExtraCols(pool) {
   if (rutasExtraColsListas) return
@@ -1924,7 +1826,6 @@ async function ensureRutasExtraCols(pool) {
   `)
   rutasExtraColsListas = true
 
-  // Las rutas se consultan por vendedor o por cliente, ordenadas por fecha
   try {
     await pool.request().query(`
       IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_rutas_vendedor_fecha' AND object_id = OBJECT_ID('dbo.rutas'))
@@ -1937,7 +1838,6 @@ async function ensureRutasExtraCols(pool) {
   }
 }
 
-// Correcciones de datos de clientes hechas por el vendedor (no se escriben en SAP)
 let actualizacionesTablaLista = false
 async function ensureActualizacionesTabla(pool) {
   if (actualizacionesTablaLista) return
@@ -1962,7 +1862,6 @@ async function ensureActualizacionesTabla(pool) {
   actualizacionesTablaLista = true
 }
 
-// Encuestas de visita: cabecera + una fila por respuesta
 let encuestasTablasListas = false
 async function ensureEncuestasTablas(pool) {
   if (encuestasTablasListas) return
@@ -1995,7 +1894,6 @@ async function ensureEncuestasTablas(pool) {
   encuestasTablasListas = true
 }
 
-// SlpCode del vendedor desde el token
 function getSlpCodeFromToken(req) {
   const authHeader = req.headers.authorization
   if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -2036,7 +1934,6 @@ function esCancelada(estado) {
   return (estado || "").toUpperCase().includes("CANCEL")
 }
 
-// GET /api/rutas/mias?periodo=hoy|semana|mes|todas - Rutas del vendedor logueado
 app.get("/api/rutas/mias", authenticateToken, async (req, res) => {
   try {
     const slpCode = getSlpCodeFromToken(req)
@@ -2046,7 +1943,6 @@ app.get("/api/rutas/mias", authenticateToken, async (req, res) => {
 
     const periodo = (req.query.periodo || "todas").toString().toLowerCase()
 
-    // Calcular rango de fechas del periodo
     const hoy = new Date()
     hoy.setHours(0, 0, 0, 0)
     let inicio = null
@@ -2056,7 +1952,7 @@ app.get("/api/rutas/mias", authenticateToken, async (req, res) => {
       fin = new Date(hoy)
       fin.setDate(fin.getDate() + 1)
     } else if (periodo === "semana") {
-      const diaSemana = (hoy.getDay() + 6) % 7 // lunes = 0
+      const diaSemana = (hoy.getDay() + 6) % 7
       inicio = new Date(hoy)
       inicio.setDate(inicio.getDate() - diaSemana)
       fin = new Date(inicio)
@@ -2072,8 +1968,6 @@ app.get("/api/rutas/mias", authenticateToken, async (req, res) => {
     const request = ruta.request().input("slpCode", sql.Int, slpCode)
     let filtroFecha = ""
     if (inicio && fin) {
-      // Fechas como texto local (sin zona horaria): el driver las convertía a UTC
-      // y dejaba fuera las rutas programadas a medianoche
       const toLocalIso = (d) =>
         `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T00:00:00`
       request.input("inicio", sql.VarChar, toLocalIso(inicio))
@@ -2118,8 +2012,6 @@ app.get("/api/rutas/mias", authenticateToken, async (req, res) => {
   }
 })
 
-// POST /api/rutas/extra - Crear una ruta adicional de urgencia.
-// Requiere cliente, motivo y observación. Queda marcada con es_extra=1
 app.post("/api/rutas/extra", authenticateToken, async (req, res) => {
   try {
     const authHeader = req.headers.authorization || ""
@@ -2190,15 +2082,12 @@ app.post("/api/rutas/extra", authenticateToken, async (req, res) => {
   }
 })
 
-// GET /api/clientes/:codigo/tareas - Tareas asignadas al cliente (RUTERO)
 let tareasTablaExiste = false
 app.get("/api/clientes/:codigo/tareas", authenticateToken, async (req, res) => {
   try {
     const codigo = req.params.codigo
     const ruta = await connectRuta()
 
-    // La tabla tareas_asignadas_clientes puede no existir aún en algunos
-    // entornos; se comprueba una sola vez por proceso.
     if (!tareasTablaExiste) {
       const existe = await ruta.request().query(`
         SELECT COUNT(*) AS n FROM sys.tables WHERE name = 'tareas_asignadas_clientes'
@@ -2265,7 +2154,6 @@ app.get("/api/clientes/:codigo/tareas", authenticateToken, async (req, res) => {
   }
 })
 
-// Crea/actualiza la tabla de visitas (migración idempotente)
 let visitasTablaLista = false
 async function ensureVisitasTabla(pool) {
   if (visitasTablaLista) return
@@ -2312,7 +2200,6 @@ async function ensureVisitasTabla(pool) {
   `)
   visitasTablaLista = true
 
-  // Las consultas de visitas filtran por cliente o vendedor y ordenan por fecha
   try {
     await pool.request().query(`
       IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_visitas_cliente_fecha' AND object_id = OBJECT_ID('dbo.visitas_clientes'))
@@ -2325,7 +2212,6 @@ async function ensureVisitasTabla(pool) {
   }
 }
 
-// GET /api/clientes/:codigo/visitas-hoy - ¿Cuántas visitas se registraron hoy?
 app.get("/api/clientes/:codigo/visitas-hoy", authenticateToken, async (req, res) => {
   try {
     const ruta = await connectRuta()
@@ -2349,7 +2235,6 @@ app.get("/api/clientes/:codigo/visitas-hoy", authenticateToken, async (req, res)
   }
 })
 
-// GET /api/clientes/:codigo/ultimo-pedido?desde=ISO - Último pedido del cliente con sus ítems
 app.get("/api/clientes/:codigo/ultimo-pedido", authenticateToken, async (req, res) => {
   try {
     const codigo = req.params.codigo
@@ -2401,7 +2286,6 @@ app.get("/api/clientes/:codigo/ultimo-pedido", authenticateToken, async (req, re
 
 const ESTADOS_VISITA = ["nuevo", "activo", "sesenta", "perdido"]
 
-// POST /api/clientes/:codigo/visita - Registra / finaliza una visita
 app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => {
   try {
     const codigo = req.params.codigo
@@ -2429,7 +2313,6 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
     const segundaVisita = b.segundaVisita === true || b.segundaVisita === 1
     const motivoSegunda = (b.motivoSegundaVisita || "").toString().trim()
 
-    // El estado es opcional; si viene, debe ser válido
     if (estado && !ESTADOS_VISITA.includes(estado)) {
       return res.status(400).json({ success: false, message: "Estado del cliente inválido" })
     }
@@ -2482,7 +2365,6 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
     const row = insert.recordset[0]
     console.log(`Visita registrada cliente ${codigo}: estado=${estado || "-"} motivo=${motivo || "-"} recaudo=${Number.isNaN(totalRecaudos) ? 0 : totalRecaudos} pago=${metodoPago || "-"}${bancoPago ? "/" + bancoPago : ""}${referenciaPago ? " ref:" + referenciaPago : ""} dur=${duracionSeg || 0}s vend=${slpCode}`)
 
-    // La encuesta se guarda aparte; si falla, la visita igual queda registrada
     if (encuestaRespuestas) {
       try {
         await ensureEncuestasTablas(ruta)
@@ -2511,7 +2393,6 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
           `)
         const encuestaId = encIns.recordset[0].id
 
-        // Todas las respuestas en un solo INSERT
         await insertarFilas(
           () => ruta.request(),
           "dbo.encuestas_respuestas",
@@ -2539,7 +2420,6 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
   }
 })
 
-// Gestión del pedido de la visita (liquidación, condiciones, evidencias, forma de pago)
 let pedidosGestionTablaLista = false
 async function ensurePedidosGestionTabla() {
   if (pedidosGestionTablaLista) return
@@ -2571,7 +2451,6 @@ async function ensurePedidosGestionTabla() {
   pedidosGestionTablaLista = true
 }
 
-// POST /api/pedidos/gestion - Guarda la gestión del pedido hecha en la visita
 app.post("/api/pedidos/gestion", authenticateToken, async (req, res) => {
   try {
     const authHeader = req.headers.authorization || ""
@@ -2641,7 +2520,6 @@ app.post("/api/pedidos/gestion", authenticateToken, async (req, res) => {
   }
 })
 
-// GET /api/encuestas?limit=N&cliente=CODE - Encuestas registradas (cabecera + respuestas)
 app.get("/api/encuestas", authenticateToken, async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 50, 1), 500)
@@ -2690,12 +2568,9 @@ app.get("/api/encuestas", authenticateToken, async (req, res) => {
   }
 })
 
-// GET /api/clientes/:codigo/pedidos-total?desde=ISO - Total de pedidos del cliente desde una fecha
 app.get("/api/clientes/:codigo/pedidos-total", authenticateToken, async (req, res) => {
   try {
     const codigo = req.params.codigo
-    // La fecha llega en hora local, igual que fecha_creacion (GETDATE());
-    // se compara con CONVERT para no introducir desfase UTC/local
     const desde = (req.query.desde || "").toString().trim().replace("Z", "").slice(0, 23)
     const r = pedidosPool.request().input("codigo", sql.NVarChar, codigo)
     let filtroFecha = ""
@@ -2720,7 +2595,6 @@ app.get("/api/clientes/:codigo/pedidos-total", authenticateToken, async (req, re
   }
 })
 
-// GET /api/clientes/:codigo/visita/ultima - Última visita registrada
 app.get("/api/clientes/:codigo/visita/ultima", authenticateToken, async (req, res) => {
   try {
     const ruta = await connectRuta()
@@ -2750,7 +2624,6 @@ app.get("/api/clientes/:codigo/visita/ultima", authenticateToken, async (req, re
   }
 })
 
-// GET /api/clientes/:codigo/rutas?limite=N - Rutas registradas para un cliente
 app.get("/api/clientes/:codigo/rutas", authenticateToken, async (req, res) => {
   try {
     const limite = Math.min(Number.parseInt(req.query.limite, 10) || 100, 500)
@@ -2798,10 +2671,8 @@ app.get("/api/clientes/:codigo/rutas", authenticateToken, async (req, res) => {
   }
 })
 
-// Geocodificación (una dirección no cambia: se guarda 30 días)
 const geocodeCache = new CacheTTL(2000, 30 * 24 * 60 * 60 * 1000)
 
-// Normaliza abreviaturas de direcciones colombianas para Nominatim
 function normalizarDireccion(dir) {
   return (dir || "")
     .replace(/\bKRA?\.?\s/gi, "Carrera ")
@@ -2827,7 +2698,6 @@ async function nominatimSearch(q) {
   return Array.isArray(arr) && arr.length > 0 ? arr[0] : null
 }
 
-// Google Geocoding. Si la key falla se desactiva y se usa solo Nominatim
 let googleGeocodeDisabled = false
 async function googleGeocode(q) {
   const key = process.env.GOOGLE_MAPS_API_KEY
@@ -2840,8 +2710,6 @@ async function googleGeocode(q) {
 
     if (j.status === "OK" && j.results && j.results[0]) {
       const r = j.results[0]
-      // location_type: ROOFTOP/RANGE_INTERPOLATED = dirección exacta;
-      // GEOMETRIC_CENTER/APPROXIMATE = vía o zona.
       const lt = r.geometry.location_type
       const precision = lt === "ROOFTOP" || lt === "RANGE_INTERPOLATED" ? "exacta" : "via"
       return {
@@ -2855,7 +2723,6 @@ async function googleGeocode(q) {
 
     if (j.status === "ZERO_RESULTS") return null
 
-    // REQUEST_DENIED, OVER_QUERY_LIMIT, etc.
     console.log(`Google Geocoding no disponible (${j.status}: ${j.error_message || "sin detalle"}); se usa OpenStreetMap`)
     googleGeocodeDisabled = true
     return null
@@ -2866,12 +2733,10 @@ async function googleGeocode(q) {
   }
 }
 
-// GET /api/clientes/:codigo/geocode?address=... - Coordenadas de la dirección del cliente
 app.get("/api/clientes/:codigo/geocode", authenticateToken, async (req, res) => {
   try {
     let direccion = (req.query.address || "").toString().trim()
 
-    // Sin address en el query: usar la dirección del cliente en SAP
     if (!direccion) {
       const sap = await connectSAP()
       const r = await sap.request()
@@ -2892,14 +2757,12 @@ app.get("/api/clientes/:codigo/geocode", authenticateToken, async (req, res) => 
       return res.json({ success: true, data: geocodeCache.get(cacheKey) })
     }
 
-    // Separar calle / ciudad / país y armar intentos de más a menos específico
     const partes = direccion.split(",").map((p) => normalizarDireccion(p)).filter(Boolean)
     const calle = partes[0] || ""
-    const resto = partes.slice(1).join(", ") // ciudad, país...
+    const resto = partes.slice(1).join(", ")
     const viaMatch = calle.match(/^([A-Za-zÁÉÍÓÚÑáéíóúñ\s]+\d+\s?[A-Za-z]?)/)
     const soloVia = viaMatch ? viaMatch[1].trim() : ""
 
-    // 1) Google con la dirección completa
     const google = await googleGeocode(partes.join(", "))
     if (google) {
       geocodeCache.set(cacheKey, google)
@@ -2907,7 +2770,6 @@ app.get("/api/clientes/:codigo/geocode", authenticateToken, async (req, res) => 
       return res.json({ success: true, data: google })
     }
 
-    // 2) Nominatim, de más a menos específico
     const intentos = [
       { q: partes.join(", "), precision: "exacta" },
       soloVia && resto ? { q: `${soloVia}, ${resto}`, precision: "via" } : null,
@@ -2938,7 +2800,6 @@ app.get("/api/clientes/:codigo/geocode", authenticateToken, async (req, res) => 
   }
 })
 
-// Asistente IA (sugerencias y chat de visita)
 let anthropicClient = null
 function getAnthropic() {
   if (!process.env.ANTHROPIC_API_KEY) return null
@@ -2955,11 +2816,9 @@ Responde SIEMPRE en español, breve y accionable: máximo 5-6 viñetas cortas co
 Prioriza: 1) recaudo de cartera vencida, 2) reposición de los productos que el cliente más compra, 3) reactivación si lleva tiempo sin comprar, 4) oportunidades de venta cruzada.
 Usa cifras concretas de los datos (montos en pesos colombianos, días de mora, cantidades). No inventes datos que no estén en el contexto.`
 
-// Reunir contexto real del cliente desde SAP y BD Ruta
 async function contextoClienteIA(codigo) {
   const ctx = { cliente: null, facturasAbiertas: [], topProductos: [], ultimaCompra: null, proximasRutas: [] }
 
-  // Las consultas no dependen entre sí: se lanzan todas a la vez
   const consultaSap = async (texto) => {
     const sap = await connectSAP()
     return sap.request().input("c", sql.VarChar, codigo).query(texto)
@@ -3064,7 +2923,6 @@ function contextoATexto(codigo, ctx, extra) {
   return lineas.join("\n")
 }
 
-// Sugerencias automáticas con reglas sobre los datos (respaldo sin IA)
 function sugerenciasFallback(ctx) {
   const s = []
 
@@ -3106,7 +2964,6 @@ async function preguntarClaude(contexto, instruccion) {
   if (!anthropic) return null
 
   try {
-    // La respuesta son 5-6 viñetas: con 1024 tokens sobra y tarda mucho menos
     const msg = await anthropic.messages.create(
       {
         model: "claude-opus-4-8",
@@ -3128,11 +2985,8 @@ async function preguntarClaude(contexto, instruccion) {
   }
 }
 
-// Caché de sugerencias por cliente (10 min) para no repetir llamadas
 const sugerenciasCache = new CacheTTL(500, 10 * 60 * 1000)
 
-// POST /api/clientes/:codigo/ia/sugerencias - Recomendaciones para la visita
-// Con { forzar: true } en el body se ignora la caché (botón "Regenerar").
 app.post("/api/clientes/:codigo/ia/sugerencias", authenticateToken, async (req, res) => {
   try {
     const codigo = req.params.codigo
@@ -3164,7 +3018,6 @@ app.post("/api/clientes/:codigo/ia/sugerencias", authenticateToken, async (req, 
   }
 })
 
-// POST /api/clientes/:codigo/ia/chat - Pregunta libre al asistente
 app.post("/api/clientes/:codigo/ia/chat", authenticateToken, async (req, res) => {
   try {
     const codigo = req.params.codigo
@@ -3189,7 +3042,6 @@ app.post("/api/clientes/:codigo/ia/chat", authenticateToken, async (req, res) =>
   }
 })
 
-// Ruta de prueba
 app.get("/api/test", (req, res) => {
   res.json({
     success: true,
@@ -3200,12 +3052,9 @@ app.get("/api/test", (req, res) => {
   })
 })
 
-// Estado de las bases de datos
 app.get("/api/health", async (req, res) => {
   const status = { success: true, timestamp: new Date().toISOString(), databases: {} }
 
-  // Solo se comprueba que cada BD responda; contar tablas enteras aquí
-  // salía caro si un monitor llama a este endpoint con frecuencia.
   try {
     await pool.request().query("SELECT 1 AS ok")
     status.databases.SkyPagos = { status: "Conectada" }
@@ -3225,12 +3074,9 @@ app.get("/api/health", async (req, res) => {
   res.status(status.success ? 200 : 500).json(status)
 })
 
-// Rutas de dispositivos / soporte TI (deben ir antes del 404)
 const requireSoporte = dispositivos.soporteMiddleware(jwt, JWT_SECRET)
 dispositivos.registrarRutas(app, () => pedidosPool, sql, requireSoporte)
 
-// Catálogo de productos desde SAP (Service Layer o SQL) con imágenes que
-// administra Soporte TI
 const catalogo = productos.crear({
   sql,
   getSapPool: connectSAP,
@@ -3240,8 +3086,6 @@ const catalogo = productos.crear({
 })
 catalogo.registrarRutas(app, { requireAuth: authenticateToken, requireSoporte })
 
-// Comentarios del cliente, texto libre SAP e histórico de facturas (rutas que
-// usa la app y no existían en el backend)
 clientesExtra.registrarRutas(app, {
   requireAuth: authenticateToken,
   getPedidosPool: () => pedidosPool,
@@ -3252,8 +3096,6 @@ clientesExtra.registrarRutas(app, {
   log: console,
 })
 
-// GET /api/usuarios - Soporte: quiénes pueden entrar a la app (vendedores de
-// SAP y usuarios de la tabla usuarios), si son soporte y qué dispositivos tienen
 app.get("/api/usuarios", requireSoporte, async (req, res) => {
   try {
     const buscar = (req.query.buscar || "").toString().trim().toUpperCase()
@@ -3300,8 +3142,6 @@ app.get("/api/usuarios", requireSoporte, async (req, res) => {
       avisos.push("No se pudo leer la tabla de usuarios")
     }
 
-    // Dispositivos agrupados por persona (los vendedores se registran con su
-    // SlpCode como código y documento; los usuarios, con su documento)
     const dispositivosPor = new Map()
     try {
       const r = await pedidosPool.request().query(`
@@ -3352,9 +3192,7 @@ app.get("/api/usuarios", requireSoporte, async (req, res) => {
   }
 })
 
-// Errores no controlados
 app.use((err, req, res, next) => {
-  // Errores del parser de JSON (cuerpo inválido o muy grande) traen su código
   const status = err.status || err.statusCode || 500
   if (status >= 500) console.error("Error no manejado:", err)
   res.status(status).json({
@@ -3363,7 +3201,6 @@ app.use((err, req, res, next) => {
   })
 })
 
-// 404
 app.use("*", (req, res) => {
   res.status(404).json({
     error: "Ruta no encontrada",
@@ -3376,7 +3213,6 @@ async function startServer() {
     await connectDB()
     await connectPedidosDB()
 
-    // Tablas de dispositivos y sesiones (BD Pedidos)
     try {
       await dispositivos.ensureTablas(pedidosPool)
       await sesiones.ensureTabla(pedidosPool)
@@ -3384,14 +3220,12 @@ async function startServer() {
       console.error("No se pudo inicializar dispositivos o sesiones:", e.message)
     }
 
-    // Tabla de configuración del catálogo y primera lectura de SAP (en segundo plano)
     try {
       await catalogo.iniciar()
     } catch (e) {
       console.error("No se pudo inicializar el catálogo de productos:", e.message)
     }
 
-    // SAP y Ruta se conectan desde ya; así la primera petición no paga el handshake
     connectSAP().catch(() => {})
     connectRuta().catch((e) => console.error("BD Ruta no disponible al arrancar:", e.message))
 
@@ -3399,8 +3233,6 @@ async function startServer() {
       console.info(`API de pedidos escuchando en el puerto ${PORT}`)
       console.info(`Prueba: http://localhost:${PORT}/api/test`)
     })
-    // Detrás del reverse proxy: mantener las conexiones abiertas más que el
-    // proxy evita reconexiones y errores 502 esporádicos
     server.keepAliveTimeout = 65000
     server.headersTimeout = 66000
   } catch (error) {
@@ -3411,7 +3243,6 @@ async function startServer() {
 
 startServer()
 
-// Cierre ordenado
 process.on("SIGINT", async () => {
   console.log("Cerrando servidor...")
   if (pool) {

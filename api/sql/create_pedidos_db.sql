@@ -1,10 +1,4 @@
--- ============================================================
--- SCRIPT SQL - BASE DE DATOS INDEPENDIENTE: Pedidos
--- Base de datos completamente separada de SkyPagos
--- Para almacenar todos los pedidos de ORAL-PLUS
--- ============================================================
 
--- Crear la base de datos Pedidos si no existe
 IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'Pedidos')
 BEGIN
     CREATE DATABASE Pedidos;
@@ -17,9 +11,6 @@ GO
 USE Pedidos;
 GO
 
--- ============================================================
--- TABLA: pedidos (Encabezado del pedido)
--- ============================================================
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'pedidos')
 BEGIN
     CREATE TABLE pedidos (
@@ -57,9 +48,6 @@ ELSE
     PRINT 'Tabla [pedidos] ya existe.';
 GO
 
--- ============================================================
--- TABLA: pedidos_detalle (Productos de cada pedido)
--- ============================================================
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'pedidos_detalle')
 BEGIN
     CREATE TABLE pedidos_detalle (
@@ -84,9 +72,6 @@ ELSE
     PRINT 'Tabla [pedidos_detalle] ya existe.';
 GO
 
--- ============================================================
--- TABLA: pedidos_historial (Log de cambios de estado)
--- ============================================================
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'pedidos_historial')
 BEGIN
     CREATE TABLE pedidos_historial (
@@ -110,9 +95,6 @@ ELSE
     PRINT 'Tabla [pedidos_historial] ya existe.';
 GO
 
--- ============================================================
--- TABLA: direcciones_entrega (Direcciones registradas por pedido)
--- ============================================================
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'direcciones_entrega')
 BEGIN
     CREATE TABLE direcciones_entrega (
@@ -140,9 +122,6 @@ ELSE
     PRINT 'Tabla [direcciones_entrega] ya existe.';
 GO
 
--- ============================================================
--- VISTA: Resumen de pedidos
--- ============================================================
 IF EXISTS (SELECT * FROM sys.views WHERE name = 'v_pedidos_resumen')
     DROP VIEW v_pedidos_resumen;
 GO
@@ -168,9 +147,6 @@ SELECT
 FROM pedidos p;
 GO
 
--- ============================================================
--- VISTA: Detalle completo de pedidos
--- ============================================================
 IF EXISTS (SELECT * FROM sys.views WHERE name = 'v_pedidos_detalle_completo')
     DROP VIEW v_pedidos_detalle_completo;
 GO
@@ -193,7 +169,5 @@ FROM pedidos p
 INNER JOIN pedidos_detalle d ON d.pedido_id = p.id;
 GO
 
-PRINT '====================================================';
 PRINT 'Base de datos [Pedidos] configurada correctamente.';
-PRINT '====================================================';
 GO

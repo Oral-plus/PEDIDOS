@@ -8,11 +8,6 @@ import '../widgets/producto_imagen.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_dialog.dart';
 
-/// Simulador de pedido - cotiza un pedido SIN necesidad de entrar a una
-/// visita ni seleccionar cliente. No genera pedido real ni toca el carrito:
-/// es una calculadora comercial con los precios del catálogo.
-///
-/// Muestra el precio de lista de cada producto y el total simulado.
 class SimuladorPedidoScreen extends StatefulWidget {
   const SimuladorPedidoScreen({super.key});
 
@@ -21,7 +16,6 @@ class SimuladorPedidoScreen extends StatefulWidget {
 }
 
 class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
-  // Paleta monocromática
   static const Color _ink = Color(0xFF111827);
   static const Color _inkDeep = Color(0xFF0B1220);
   static const Color _gray = Color(0xFF6B7280);
@@ -29,11 +23,9 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
   static const Color _surface = Color(0xFFF3F4F6);
 
   final TextEditingController _search = TextEditingController();
-  // Catálogo con precios de la lista base (el simulador no tiene cliente)
   List<Map<String, dynamic>> _productos = [];
   bool _cargando = true;
 
-  /// Cantidades simuladas por producto (clave: codigoSap o título).
   final Map<String, int> _cantidades = {};
 
   @override
@@ -52,7 +44,6 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
     });
   }
 
-  // Se filtra cuando el vendedor deja de escribir, no en cada tecla
   Timer? _debounce;
   void _programarFiltro() {
     _debounce?.cancel();
@@ -85,7 +76,6 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
     }).toList();
   }
 
-  // Totales de la simulación (precio de lista = valor final)
   int get _totalUnidades => _cantidades.values.fold(0, (a, b) => a + b);
   int get _totalProductos => _cantidades.entries.where((e) => e.value > 0).length;
 
@@ -280,7 +270,6 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
         ],
       ),
       child: Row(children: [
-        // Imagen
         ClipRRect(
           borderRadius: BorderRadius.circular(11),
           child: Container(
@@ -296,7 +285,6 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
           ),
         ),
         const SizedBox(width: 12),
-        // Título + precio de lista
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(p['title']?.toString() ?? 'Producto',
@@ -310,7 +298,6 @@ class _SimuladorPedidoScreenState extends State<SimuladorPedidoScreen> {
           ]),
         ),
         const SizedBox(width: 8),
-        // Stepper − n +
         Container(
           decoration: BoxDecoration(
             color: activo ? _ink : _surface,

@@ -15,20 +15,18 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-  // Paleta monocromática (blanco / negro / gris)
   static const Color _ink = Color(0xFF1F2937);
   static const Color _inkDeep = Color(0xFF0B1220);
   static const Color _gray = Color(0xFF6B7280);
   static const Color _track = Color(0xFFECECEE);
 
-  late final AnimationController _intro; // entrada del logo (fade + scale)
-  late final AnimationController _pulse; // halo que "respira" detrás del logo
-  late final AnimationController _progress; // progreso determinado 0 → 1
+  late final AnimationController _intro;
+  late final AnimationController _pulse;
+  late final AnimationController _progress;
 
   late final Animation<double> _fade;
   late final Animation<double> _scale;
 
-  // Módulos que se "preparan" mientras carga (experiencia profesional de arranque).
   static const List<String> _modulos = [
     'Iniciando aplicación',
     'Conectando con el servidor',
@@ -76,17 +74,14 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _initApp() async {
     final api = ApiEasyService();
-    // La barra avanza mientras se hace el trabajo real; no hay espera fija.
     _progress.animateTo(0.9, duration: const Duration(milliseconds: 2600));
     await api.restoreSession();
-    // Se resuelve el host aquí para que la primera pantalla no tenga que esperar.
     try {
       await api.baseUrl().timeout(const Duration(seconds: 8));
     } catch (_) {}
     if (!mounted) return;
     await _progress.animateTo(1.0, duration: const Duration(milliseconds: 250));
     if (!mounted) return;
-    // Misma regla que el login: soporte va a mantenimiento, vendedor al menú
     final Widget destino = !api.hasSession
         ? const LoginScreen()
         : (api.esSoporte ? const MantenimientoScreen() : const ClientMenuScreen());
@@ -123,7 +118,6 @@ class _SplashScreenState extends State<SplashScreen>
           child: Column(
             children: [
               const Spacer(flex: 5),
-              // Logo con halo que respira
               FadeTransition(
                 opacity: _fade,
                 child: ScaleTransition(
@@ -182,7 +176,6 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
               ),
               const Spacer(flex: 4),
-              // Progreso + módulo actual
               FadeTransition(
                 opacity: _fade,
                 child: AnimatedBuilder(
@@ -195,7 +188,6 @@ class _SplashScreenState extends State<SplashScreen>
                     final pct = (v * 100).round();
                     return Column(
                       children: [
-                        // Módulo actual (con check si ya se completó todo)
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -224,7 +216,6 @@ class _SplashScreenState extends State<SplashScreen>
                           ],
                         ),
                         const SizedBox(height: 14),
-                        // Barra de progreso determinada
                         ClipRRect(
                           borderRadius: BorderRadius.circular(6),
                           child: Container(
@@ -261,7 +252,6 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
               ),
               const Spacer(flex: 2),
-              // Pie de marca
               FadeTransition(
                 opacity: _fade,
                 child: Text(

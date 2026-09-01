@@ -4,7 +4,6 @@ import 'api_easy_service.dart';
 import 'cache_service.dart';
 import 'shared_http.dart';
 
-/// Servicio para guardar pedidos en base de datos (en lugar de SAP)
 class OrderDbService {
   OrderDbService._();
   static final OrderDbService _instance = OrderDbService._();
@@ -15,10 +14,8 @@ class OrderDbService {
     'Accept': 'application/json',
   };
 
-  // Mismo backend que ApiEasyService; se reutiliza el host que ya resolvió.
   static Future<String> _baseUrl() => ApiEasyService().baseUrl();
 
-  /// Guardar pedido en base de datos Pedidos (BD independiente)
   static Future<Map<String, dynamic>> saveOrder({
     required List<CartItem> cartItems,
     required String cedula,
@@ -78,7 +75,6 @@ class OrderDbService {
       final data = jsonDecode(res.body) as Map<String, dynamic>? ?? {};
 
       if (res.statusCode == 200 && data['success'] == true) {
-        // Hay un pedido nuevo: los totales del día cacheados ya no valen
         CacheService().invalidarPrefijo('pedidos:');
         return {
           'success': true,
@@ -101,7 +97,6 @@ class OrderDbService {
     }
   }
 
-  /// Obtener pedidos de un cliente desde BD Pedidos
   static Future<Map<String, dynamic>> getOrdersByClient(String codigoCliente, {String? estado, int page = 1}) async {
     try {
       final workingUrl = await _baseUrl();
@@ -120,7 +115,6 @@ class OrderDbService {
     }
   }
 
-  /// Obtener detalle de un pedido específico desde BD Pedidos
   static Future<Map<String, dynamic>> getOrderDetail(String numeroPedido) async {
     try {
       final workingUrl = await _baseUrl();

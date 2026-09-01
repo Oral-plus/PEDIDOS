@@ -10,7 +10,6 @@ import 'providers/cart_provider.dart';
 import 'providers/visita_activa_provider.dart';
 import 'services/sesion.dart';
 import 'utils/navegacion.dart';
-// © 2025 Autor: SKY - Todos los derechos reservados.
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,7 +38,6 @@ class _SkyPagosAppState extends State<SkyPagosApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    // Un 401 del backend o las 12 horas cumplidas devuelven al login
     Sesion.instalar();
     WidgetsBinding.instance.addObserver(this);
   }
@@ -75,8 +73,6 @@ class _SkyPagosAppState extends State<SkyPagosApp> with WidgetsBindingObserver {
       navigatorKey: navigatorKey,
       home: const SplashScreen(),
       builder: (context, child) {
-        // Superpone el cronómetro flotante de la visita en curso sobre
-        // cualquier pantalla, para recordar que hay una visita abierta.
         return Stack(
           textDirection: TextDirection.ltr,
           children: [
@@ -89,15 +85,12 @@ class _SkyPagosAppState extends State<SkyPagosApp> with WidgetsBindingObserver {
   }
 }
 
-/// Píldora flotante con el cronómetro de la visita en curso.
 class _CronometroFlotante extends StatelessWidget {
   const _CronometroFlotante();
 
   @override
   Widget build(BuildContext context) {
     final v = context.watch<VisitaActivaProvider>();
-    // Se oculta cuando no hay visita o cuando el usuario ya está en la pantalla
-    // de la visita (allí se ve el cronómetro grande).
     if (!v.activa || v.enPantallaVisita) return const SizedBox.shrink();
 
     final topInset = MediaQuery.of(context).padding.top;

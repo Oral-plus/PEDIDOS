@@ -25,14 +25,12 @@ class ProductsTab extends StatefulWidget {
 }
 
 class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin {
-  // Paleta monocromática elegante (blanco / negro / gris)
-  static const Color _ink = Color(0xFF111827); // negro suave
-  static const Color _inkSoft = Color(0xFF1F2937); // gris oscuro
-  static const Color _gray = Color(0xFF6B7280); // gris medio
-  static const Color _surface = Color(0xFFF3F4F6); // gris muy claro
-  static const Color _line = Color(0xFFECECEE); // línea sutil
+  static const Color _ink = Color(0xFF111827);
+  static const Color _inkSoft = Color(0xFF1F2937);
+  static const Color _gray = Color(0xFF6B7280);
+  static const Color _surface = Color(0xFFF3F4F6);
+  static const Color _line = Color(0xFFECECEE);
 
-  // Se crea cuando llega el catálogo: una pestaña por categoría del servidor
   TabController? _tabController;
   List<String> _categorias = [];
   late AnimationController _fadeController;
@@ -50,12 +48,9 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
   bool _isSearching = false;
   List<Map<String, dynamic>> _allProducts = [];
   List<Map<String, dynamic>> _filteredProducts = [];
-  // Productos agrupados por categoría una sola vez. Son los mismos mapas, así
-  // que los precios SAP actualizados se ven en todas las pestañas.
   final Map<String, List<Map<String, dynamic>>> _porCategoria = {};
   Timer? _debounce;
 
-  // Catálogo (SAP + configuración de soporte) con los precios del cliente actual
   String _codigoClienteActual = '';
   Map<String, Map<String, dynamic>> _preciosSAP = {};
   Map<String, Map<String, dynamic>> _estadosSAP = {};
@@ -79,7 +74,6 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
       if (!mounted) return;
       _codigoClienteActual = context.read<SessionProvider>().codigoCliente;
       if (_codigoClienteActual.isEmpty) {
-        // Sin cliente no hay lista de precios: se pide seleccionarlo primero
         setState(() => _cargando = false);
       } else {
         _cargarCatalogo();
@@ -107,7 +101,6 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
     }
   }
 
-  /// Descarga (o toma de caché) el catálogo con los precios del cliente actual.
   Future<void> _cargarCatalogo({bool forzar = false}) async {
     setState(() {
       _cargando = true;
@@ -121,8 +114,6 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
     final catalogo = await servicio.obtener(_codigoClienteActual, forzar: forzar);
     if (!mounted) return;
     if (catalogo == null) {
-      // No hay nada válido para este cliente: se retira lo que hubiera en
-      // pantalla (podía ser de otro cliente con otra lista de precios)
       setState(() {
         _cargando = false;
         _tabController?.dispose();
@@ -142,7 +133,6 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
     final productos = catalogo.productos.map((p) => p.toMapUi()).toList();
     final porCategoria = <String, List<Map<String, dynamic>>>{};
     for (final p in productos) {
-      // Texto de búsqueda en minúsculas, calculado una vez
       p['_busqueda'] = '${p['title'] ?? ''} ${p['codigoSap'] ?? ''} ${p['category'] ?? ''}'.toLowerCase();
       porCategoria.putIfAbsent(p['category']?.toString() ?? '', () => []).add(p);
     }
@@ -348,13 +338,11 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
           _searchQuery = val;
           final buscando = val.isNotEmpty;
           if (buscando != _isSearching) {
-            // Al empezar o terminar la búsqueda se refresca de inmediato
             setState(() {
               _isSearching = buscando;
               _filteredProducts = _calcularFiltrados();
             });
           }
-          // El resto se filtra cuando el vendedor deja de escribir
           _debounce?.cancel();
           _debounce = Timer(const Duration(milliseconds: 250), _filterAllProducts);
         },
@@ -423,8 +411,6 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
     );
   }
 
-  /// Mientras no hay catálogo: cargando, o error con opción de reintentar
-  /// Sin cliente no hay lista de precios: el catálogo se carga al elegirlo.
   Widget _buildSeleccionarCliente() {
     return Center(
       child: Padding(
@@ -649,7 +635,6 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
   }
 }
 
-/// Pestaña con forma de píldora (padding interno para el indicador redondeado).
 class _PillTab extends StatelessWidget {
   final String text;
   const _PillTab({required this.text});

@@ -23,7 +23,6 @@ class CartItem {
     this.quantity = 1,
   });
 
-  /// Helper para normalizar strings de precios a double
   static double parsePrice(dynamic val) {
     if (val is num) return val.toDouble();
     if (val == null) return 0.0;
@@ -45,62 +44,49 @@ class CartItem {
     return double.tryParse(s) ?? 0.0;
   }
 
-  // Precio total del item (el precio de la lista es el valor final)
   double get totalPrice => price * quantity;
 
-  // Precio total original del item
   double get totalOriginalPrice => originalPrice * quantity;
 
-  // Descuento por item
   double get discount {
     if (originalPrice <= 0) return 0.0;
     return originalPrice - price;
   }
 
-  // Porcentaje de descuento
   double get discountPercentage {
     if (originalPrice <= 0) return 0.0;
     return (discount / originalPrice) * 100;
   }
 
-  // Descuento total del item (descuento por unidad * cantidad)
   double get totalDiscount => discount * quantity;
 
-  // Verificar si el item tiene descuento
   bool get hasDiscount => discount > 0;
 
-  // Un solo formateador para todos los ítems (crearlo por getter era costoso)
   static final NumberFormat _fmt = NumberFormat('#,##0.00', 'es_CO');
 
-  // Precio formateado para mostrar (con decimales correctos)
   String get formattedPrice {
     return '\$${_fmt.format(price)}';
   }
 
-  // Precio original formateado
   String get formattedOriginalPrice {
     if (originalPrice <= 0) return '';
     return '\$${_fmt.format(originalPrice)}';
   }
 
-  // Precio total formateado
   String get formattedTotalPrice {
     return '\$${_fmt.format(totalPrice)}';
   }
 
-  // Descuento formateado
   String get formattedDiscount {
     if (!hasDiscount) return '';
     return '\$${discount.toStringAsFixed(2)}';
   }
 
-  // Porcentaje de descuento formateado
   String get formattedDiscountPercentage {
     if (!hasDiscount) return '';
     return '${discountPercentage.toStringAsFixed(0)}% OFF';
   }
 
-  // Convertir a JSON para envío a API
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -118,7 +104,6 @@ class CartItem {
     };
   }
 
-  // Crear desde JSON
   factory CartItem.fromJson(Map<String, dynamic> json) {
     return CartItem(
       id: json['id']?.toString() ?? '',
@@ -133,7 +118,6 @@ class CartItem {
     );
   }
 
-  // Crear copia con modificaciones
   CartItem copyWith({
     String? id,
     String? title,
@@ -158,24 +142,20 @@ class CartItem {
     );
   }
 
-  // Incrementar cantidad
   CartItem incrementQuantity() {
     return copyWith(quantity: quantity + 1);
   }
 
-  // Decrementar cantidad
   CartItem decrementQuantity() {
     if (quantity <= 1) return this;
     return copyWith(quantity: quantity - 1);
   }
 
-  // Establecer cantidad específica
   CartItem setQuantity(int newQuantity) {
     if (newQuantity < 1) return this;
     return copyWith(quantity: newQuantity);
   }
 
-  // Validar si el item es válido
   bool get isValid {
     return id.isNotEmpty && 
            title.isNotEmpty && 
@@ -184,7 +164,6 @@ class CartItem {
            quantity > 0;
   }
 
-  // Obtener información resumida del item
   String get summary {
     final discountInfo = hasDiscount ? ' ($formattedDiscountPercentage)' : '';
     return '$title - $formattedPrice x$quantity$discountInfo';
@@ -213,7 +192,6 @@ class CartItem {
   @override
   int get hashCode => Object.hash(id, codigoSap);
 
-  // Método para debugging
   String toDebugString() {
     return '''
 CartItem Debug Info:

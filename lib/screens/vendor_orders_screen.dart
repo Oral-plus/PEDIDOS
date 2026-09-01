@@ -37,8 +37,6 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
     _cargarPedidos();
   }
 
-  // La lista filtrada se calcula al cambiar el texto (con una pausa corta) o
-  // el filtro de estado, no en cada rebuild.
   List<Map<String, dynamic>> _pedidosFiltrados = [];
   Timer? _debounce;
 
@@ -77,7 +75,6 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (res.statusCode != 200 || data['success'] != true) return null;
 
-      // Formatos aceptados: { pedido, detalle } o { data: { pedido, productos } }
       dynamic pedidoRaw = data['pedido'];
       List<dynamic> detalleRaw = data['detalle'] as List<dynamic>? ?? [];
       if (pedidoRaw == null && data['data'] != null) {

@@ -47,7 +47,6 @@ class _ProductCardState extends State<ProductCard> {
     final bool disponible = (estadoString != null)
         ? (estadoString.toUpperCase() == 'DISPONIBLE')
         : (product['disponible'] ?? true);
-    // Sin stock en bodega: se informa, pero el producto se puede pedir igual
     final stockSap = estadoSAP is Map ? estadoSAP['stock'] : null;
     final bool sinStock = disponible &&
         (stockSap is num ? stockSap <= 0 : product['sinStock'] == true);
@@ -164,7 +163,6 @@ class _ProductCardState extends State<ProductCard> {
       padding: const EdgeInsets.all(10.0),
       child: ProductoImagen(
         url: product['image']?.toString(),
-        // La tarjeta mide ~170 px: con 500 px de decodificación sobra
         cacheWidth: 500,
         icon: Icons.image_not_supported_outlined,
         iconColor: AppTheme.textSecondary,
@@ -172,7 +170,6 @@ class _ProductCardState extends State<ProductCard> {
       ),
     );
 
-    // Producto agotado -> imagen en escala de grises y atenuada.
     if (!disponible) {
       img = Opacity(
         opacity: 0.55,
@@ -206,7 +203,6 @@ class _ProductCardState extends State<ProductCard> {
               child: img,
             ),
           ),
-          // Rating (arriba derecha)
           if (product['rating'] != null)
             Positioned(
               top: context.responsive(8),
@@ -234,8 +230,6 @@ class _ProductCardState extends State<ProductCard> {
                 ),
               ),
             ),
-          // Distintivo arriba a la izquierda: no se le vende a este cliente,
-          // o se vende pero no hay stock en bodega
           if (!disponible || sinStock)
             Positioned(
               top: context.responsive(8),

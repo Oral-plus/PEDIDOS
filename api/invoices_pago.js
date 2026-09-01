@@ -8,11 +8,9 @@ require("dotenv").config()
 const app = express()
 const port = 3006
 
-// Middleware
 app.use(cors())
 app.use(express.json())
 
-// 🔧 CONFIGURACIÓN DE LA BASE DE DATOS - credenciales desde api/.env
 const dbConfig = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
@@ -33,27 +31,24 @@ const dbConfig = {
   },
 }
 
-// Variable global para el pool de conexiones
 let globalPool = null
 
-// 🔗 Función para conectar a la base de datos con reintentos
 async function connectToDatabase() {
   if (globalPool && globalPool.connected) {
     return globalPool
   }
 
   try {
-    console.log("🔄 Conectando a la base de datos...")
-    console.log(`📍 Servidor: ${dbConfig.server}:${dbConfig.port}`)
-    console.log(`🗄️ Base de datos: ${dbConfig.database}`)
-    console.log(`👤 Usuario: ${dbConfig.user}`)
+    console.log("Conectando a la base de datos...")
+    console.log(`Servidor: ${dbConfig.server}:${dbConfig.port}`)
+    console.log(`Base de datos: ${dbConfig.database}`)
+    console.log(`Usuario: ${dbConfig.user}`)
 
     globalPool = new sql.ConnectionPool(dbConfig)
     await globalPool.connect()
 
-    console.log("✅ Conectado a SQL Server exitosamente")
+    console.log("Conectado a SQL Server exitosamente")
 
-    // Verificar que las tablas principales existen
     const testTables = ["OCRD", "JDT1", "OACT", "OJDT"]
     for (const table of testTables) {
       const testResult = await globalPool.request().query(`
@@ -63,16 +58,16 @@ async function connectToDatabase() {
       `)
 
       if (testResult.recordset[0].total === 0) {
-        console.log(`⚠️ ADVERTENCIA: Tabla ${table} no encontrada`)
+        console.log(`ADVERTENCIA: Tabla ${table} no encontrada`)
       } else {
-        console.log(`✅ Tabla ${table} encontrada`)
+        console.log(`Tabla ${table} encontrada`)
       }
     }
 
     return globalPool
   } catch (err) {
-    console.error("❌ Error conectando a la base de datos:", err.message)
-    console.log("💡 Verifica:")
+    console.error("Error conectando a la base de datos:", err.message)
+    console.log("Verifica:")
     console.log("   - Que SQL Server esté ejecutándose")
     console.log("   - Las credenciales sean correctas")
     console.log("   - El servidor sea accesible desde esta máquina")
@@ -81,14 +76,12 @@ async function connectToDatabase() {
   }
 }
 
-// 📅 Función para formatear fecha
 function formatDate(date) {
   if (!date) return ""
   const d = new Date(date)
   return d.toLocaleDateString("es-CO")
 }
 
-// 💰 Función para formatear moneda
 function formatCurrency(amount) {
   if (!amount) return "$0"
   return new Intl.NumberFormat("es-CO", {
@@ -99,10 +92,8 @@ function formatCurrency(amount) {
   }).format(amount)
 }
 
-// 💰 Función para parsear moneda formateada de SQL Server
 function parseCurrencyFromSQL(formattedCurrency) {
   if (!formattedCurrency) return 0
-  // Remover símbolos de moneda y convertir a número
   const cleanValue = formattedCurrency
     .toString()
     .replace(/[$,\s]/g, "")
@@ -110,7 +101,6 @@ function parseCurrencyFromSQL(formattedCurrency) {
   return Number.parseFloat(cleanValue) || 0
 }
 
-// ⏰ Función para calcular días hasta vencimiento
 function calculateDaysUntilDue(dueDate) {
   if (!dueDate) return 0
   const today = new Date()
@@ -120,9 +110,7 @@ function calculateDaysUntilDue(dueDate) {
   return diffDays
 }
 
-// 📊 Función para determinar el estado de la factura
 function getInvoiceStatus(daysUntilDue, origen) {
-  // Si es PR (Pago Recibido), está pagada
   if (origen === "PR") return "Pagada"
 
   if (daysUntilDue < 0) return "Vencida"
@@ -131,7 +119,6 @@ function getInvoiceStatus(daysUntilDue, origen) {
   return "Vigente"
 }
 
-// 🎯 Función para obtener el icono del estado
 function getStatusIcon(status) {
   switch (status) {
     case "Pagada":
@@ -147,11 +134,10 @@ function getStatusIcon(status) {
   }
 }
 
-// 🔢 Función para obtener la prioridad (para ordenamiento)
 function getPriority(status) {
   switch (status) {
     case "Pagada":
-      return 0 // Las pagadas van primero en historial
+      return 0
     case "Vencida":
       return 1
     case "Urgente":
@@ -163,7 +149,6 @@ function getPriority(status) {
   }
 }
 
-// 🌐 Función para obtener IPs de la máquina
 function getNetworkIPs() {
   const interfaces = os.networkInterfaces()
   const ips = []
@@ -183,7 +168,6 @@ function getNetworkIPs() {
   return ips
 }
 
-// 📝 Query principal para obtener cartera de un cliente
 const CARTERA_QUERY = `
 SELECT 
     T0.CardCode, 
@@ -282,14 +266,13 @@ ORDER BY T1.DueDate DESC
 `;
 
 
-// 🚀 ENDPOINT PRINCIPAL: Obtener facturas por CardCode (TODAS)
 app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
   const startTime = Date.now()
 
   try {
     const cardCode = req.params.cardcode.trim()
 
-    console.log(`🔍 [${new Date().toISOString()}] Consultando TODAS las facturas para CardCode: ${cardCode}`)
+    console.log(`[${new Date().toISOString()}] Consultando TODAS las facturas para CardCode: ${cardCode}`)
 
     if (!cardCode) {
       return res.status(400).json({
@@ -302,15 +285,13 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
 
     const pool = await connectToDatabase()
 
-    // Ejecutar query principal
     const result = await pool.request().input("cardCode", sql.VarChar, cardCode).query(CARTERA_QUERY)
 
     const queryTime = Date.now() - startTime
-    console.log(`📄 Registros encontrados: ${result.recordset.length} (${queryTime}ms)`)
+    console.log(`Registros encontrados: ${result.recordset.length} (${queryTime}ms)`)
 
-    // Si no hay resultados
     if (result.recordset.length === 0) {
-      console.log(`🎉 Usuario a paz y salvo: ${cardCode}`)
+      console.log(`Usuario a paz y salvo: ${cardCode}`)
       return res.json({
         success: true,
         message: "Te encuentras a paz y salvo",
@@ -322,27 +303,25 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
       })
     }
 
-    // Procesar las facturas encontradas
     const invoices = result.recordset.map((row) => {
       const daysUntilDue = calculateDaysUntilDue(row.DueDate)
       const status = getInvoiceStatus(daysUntilDue, row.Origen)
       const amount = row.importe_total_raw || 0
       const saldo = row.saldo_raw || 0
 
-      // Generar datos para Wompi
       const amountInCents = Math.round(Math.abs(saldo) * 100)
       const reference = `ORAL-${row.BaseRef || row.TransId}-${Date.now()}`
 
       return {
         cardCode: row.CardCode,
         cardName: row.CardName,
-        cardFName: row.CardName, // Usar CardName como fallback
+        cardFName: row.CardName,
         docNum: row.BaseRef || row.Doc_Interno || row.TransId.toString(),
         docDueDate: row.DueDate,
         formattedDueDate: formatDate(row.DueDate),
         refDate: row.RefDate,
         formattedRefDate: formatDate(row.RefDate),
-        amount: Math.abs(saldo), // Usar saldo para el monto a pagar
+        amount: Math.abs(saldo),
         formattedAmount: formatCurrency(Math.abs(saldo)),
         originalAmount: amount,
         formattedOriginalAmount: row.importe_total,
@@ -379,7 +358,6 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
       }
     })
 
-    // Calcular estadísticas
     const paid = invoices.filter((i) => i.isPaid).length
     const overdue = invoices.filter((i) => i.isOverdue).length
     const urgent = invoices.filter((i) => i.isUrgent).length
@@ -389,7 +367,7 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
     const overdueAmount = invoices.filter((i) => i.isOverdue).reduce((sum, invoice) => sum + invoice.amount, 0)
     const paidAmount = invoices.filter((i) => i.isPaid).reduce((sum, invoice) => sum + invoice.amount, 0)
 
-    console.log(`📊 Estadísticas para ${cardCode}:`)
+    console.log(`Estadísticas para ${cardCode}:`)
     console.log(`   - Total: ${invoices.length}`)
     console.log(`   - Pagadas: ${paid}`)
     console.log(`   - Vencidas: ${overdue}`)
@@ -399,7 +377,6 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
     console.log(`   - Monto pendiente: $${totalAmount.toLocaleString()}`)
     console.log(`   - Monto pagado: $${paidAmount.toLocaleString()}`)
 
-    // Ordenar por prioridad
     invoices.sort((a, b) => a.priority - b.priority)
 
     res.json({
@@ -431,8 +408,8 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
     })
   } catch (error) {
     const queryTime = Date.now() - startTime
-    console.error("❌ Error en consulta por CardCode:", error.message)
-    console.error("📍 Stack trace:", error.stack)
+    console.error("Error en consulta por CardCode:", error.message)
+    console.error("Stack trace:", error.stack)
 
     res.status(500).json({
       success: false,
@@ -445,14 +422,13 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
   }
 })
 
-// 💰 NUEVO ENDPOINT: Obtener SOLO facturas PAGADAS (PR) por CardCode
 app.get("/api/invoices/paid/:cardcode", async (req, res) => {
   const startTime = Date.now()
 
   try {
     const cardCode = req.params.cardcode.trim()
 
-    console.log(`💰 [${new Date().toISOString()}] Consultando facturas PAGADAS (PR) para CardCode: ${cardCode}`)
+    console.log(`[${new Date().toISOString()}] Consultando facturas PAGADAS (PR) para CardCode: ${cardCode}`)
 
     if (!cardCode) {
       return res.status(400).json({
@@ -465,7 +441,6 @@ app.get("/api/invoices/paid/:cardcode", async (req, res) => {
 
     const pool = await connectToDatabase()
 
-    // Query modificado para obtener SOLO las facturas pagadas (PR)
     const paidQuery = CARTERA_QUERY.replace(
       "WHERE T0.CardType = 'C' AND T0.CardCode = @cardCode",
       "WHERE T0.CardType = 'C' AND T0.CardCode = @cardCode AND T1.[TransType] = 24",
@@ -474,11 +449,10 @@ app.get("/api/invoices/paid/:cardcode", async (req, res) => {
     const result = await pool.request().input("cardCode", sql.VarChar, cardCode).query(paidQuery)
 
     const queryTime = Date.now() - startTime
-    console.log(`💰 Facturas pagadas encontradas: ${result.recordset.length} (${queryTime}ms)`)
+    console.log(`Facturas pagadas encontradas: ${result.recordset.length} (${queryTime}ms)`)
 
-    // Si no hay facturas pagadas
     if (result.recordset.length === 0) {
-      console.log(`📭 No hay facturas pagadas para: ${cardCode}`)
+      console.log(`No hay facturas pagadas para: ${cardCode}`)
       return res.json({
         success: true,
         message: "No tienes facturas pagadas registradas",
@@ -490,7 +464,6 @@ app.get("/api/invoices/paid/:cardcode", async (req, res) => {
       })
     }
 
-    // Procesar las facturas pagadas
     const paidInvoices = result.recordset.map((row) => {
       const amount = Math.abs(row.importe_total_raw || 0)
 
@@ -499,9 +472,9 @@ app.get("/api/invoices/paid/:cardcode", async (req, res) => {
         cardName: row.CardName,
         cardFName: row.CardName,
         docNum: row.BaseRef || row.Doc_Interno || row.TransId.toString(),
-        docDueDate: row.DueDate, // Fecha original de vencimiento
+        docDueDate: row.DueDate,
         formattedDueDate: formatDate(row.DueDate),
-        paymentDate: row.RefDate, // Fecha real de pago
+        paymentDate: row.RefDate,
         formattedPaymentDate: formatDate(row.RefDate),
         amount: amount,
         formattedAmount: formatCurrency(amount),
@@ -527,7 +500,6 @@ app.get("/api/invoices/paid/:cardcode", async (req, res) => {
       }
     })
 
-    // Calcular estadísticas de pagos
     const totalPaidAmount = paidInvoices.reduce((sum, invoice) => sum + invoice.amount, 0)
     const currentMonth = new Date().getMonth()
     const currentYear = new Date().getFullYear()
@@ -539,13 +511,12 @@ app.get("/api/invoices/paid/:cardcode", async (req, res) => {
 
     const thisMonthAmount = thisMonthPaid.reduce((sum, invoice) => sum + invoice.amount, 0)
 
-    console.log(`💰 Estadísticas de pagos para ${cardCode}:`)
+    console.log(`Estadísticas de pagos para ${cardCode}:`)
     console.log(`   - Total facturas pagadas: ${paidInvoices.length}`)
     console.log(`   - Monto total pagado: $${totalPaidAmount.toLocaleString()}`)
     console.log(`   - Pagos este mes: ${thisMonthPaid.length}`)
     console.log(`   - Monto este mes: $${thisMonthAmount.toLocaleString()}`)
 
-    // Ordenar por fecha de pago más reciente primero
     paidInvoices.sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate))
 
     res.json({
@@ -566,8 +537,8 @@ app.get("/api/invoices/paid/:cardcode", async (req, res) => {
     })
   } catch (error) {
     const queryTime = Date.now() - startTime
-    console.error("❌ Error en consulta de facturas pagadas:", error.message)
-    console.error("📍 Stack trace:", error.stack)
+    console.error("Error en consulta de facturas pagadas:", error.message)
+    console.error("Stack trace:", error.stack)
 
     res.status(500).json({
       success: false,
@@ -580,14 +551,13 @@ app.get("/api/invoices/paid/:cardcode", async (req, res) => {
   }
 })
 
-// 📋 ENDPOINT: Obtener SOLO facturas PENDIENTES (sin PR) por CardCode
 app.get("/api/invoices/pending/:cardcode", async (req, res) => {
   const startTime = Date.now()
 
   try {
     const cardCode = req.params.cardcode.trim()
 
-    console.log(`📋 [${new Date().toISOString()}] Consultando facturas PENDIENTES para CardCode: ${cardCode}`)
+    console.log(`[${new Date().toISOString()}] Consultando facturas PENDIENTES para CardCode: ${cardCode}`)
 
     if (!cardCode) {
       return res.status(400).json({
@@ -600,7 +570,6 @@ app.get("/api/invoices/pending/:cardcode", async (req, res) => {
 
     const pool = await connectToDatabase()
 
-    // Query modificado para obtener SOLO las facturas pendientes (NO PR)
     const pendingQuery = CARTERA_QUERY.replace(
       "WHERE T0.CardType = 'C' AND T0.CardCode = @cardCode",
       "WHERE T0.CardType = 'C' AND T0.CardCode = @cardCode AND T1.[TransType] != 24",
@@ -609,11 +578,10 @@ app.get("/api/invoices/pending/:cardcode", async (req, res) => {
     const result = await pool.request().input("cardCode", sql.VarChar, cardCode).query(pendingQuery)
 
     const queryTime = Date.now() - startTime
-    console.log(`📋 Facturas pendientes encontradas: ${result.recordset.length} (${queryTime}ms)`)
+    console.log(`Facturas pendientes encontradas: ${result.recordset.length} (${queryTime}ms)`)
 
-    // Si no hay facturas pendientes
     if (result.recordset.length === 0) {
-      console.log(`🎉 Usuario a paz y salvo: ${cardCode}`)
+      console.log(`Usuario a paz y salvo: ${cardCode}`)
       return res.json({
         success: true,
         message: "¡Felicitaciones! Te encuentras a paz y salvo",
@@ -625,7 +593,6 @@ app.get("/api/invoices/pending/:cardcode", async (req, res) => {
       })
     }
 
-    // Procesar las facturas pendientes (igual que el endpoint principal pero sin PR)
     const pendingInvoices = result.recordset.map((row) => {
       const daysUntilDue = calculateDaysUntilDue(row.DueDate)
       const status = getInvoiceStatus(daysUntilDue, row.Origen)
@@ -674,7 +641,6 @@ app.get("/api/invoices/pending/:cardcode", async (req, res) => {
       }
     })
 
-    // Calcular estadísticas de pendientes
     const overdue = pendingInvoices.filter((i) => i.isOverdue).length
     const urgent = pendingInvoices.filter((i) => i.isUrgent).length
     const upcoming = pendingInvoices.filter((i) => i.isUpcoming).length
@@ -682,7 +648,7 @@ app.get("/api/invoices/pending/:cardcode", async (req, res) => {
     const totalAmount = pendingInvoices.reduce((sum, invoice) => sum + invoice.amount, 0)
     const overdueAmount = pendingInvoices.filter((i) => i.isOverdue).reduce((sum, invoice) => sum + invoice.amount, 0)
 
-    console.log(`📋 Estadísticas pendientes para ${cardCode}:`)
+    console.log(`Estadísticas pendientes para ${cardCode}:`)
     console.log(`   - Total pendientes: ${pendingInvoices.length}`)
     console.log(`   - Vencidas: ${overdue}`)
     console.log(`   - Urgentes: ${urgent}`)
@@ -690,7 +656,6 @@ app.get("/api/invoices/pending/:cardcode", async (req, res) => {
     console.log(`   - Vigentes: ${normal}`)
     console.log(`   - Monto total: $${totalAmount.toLocaleString()}`)
 
-    // Ordenar por prioridad
     pendingInvoices.sort((a, b) => a.priority - b.priority)
 
     res.json({
@@ -718,8 +683,8 @@ app.get("/api/invoices/pending/:cardcode", async (req, res) => {
     })
   } catch (error) {
     const queryTime = Date.now() - startTime
-    console.error("❌ Error en consulta de facturas pendientes:", error.message)
-    console.error("📍 Stack trace:", error.stack)
+    console.error("Error en consulta de facturas pendientes:", error.message)
+    console.error("Stack trace:", error.stack)
 
     res.status(500).json({
       success: false,
@@ -732,12 +697,11 @@ app.get("/api/invoices/pending/:cardcode", async (req, res) => {
   }
 })
 
-// 🧪 Endpoint de prueba de conexión MEJORADO
 app.get("/api/test", async (req, res) => {
   const startTime = Date.now()
 
   try {
-    console.log("🧪 Ejecutando test de conexión...")
+    console.log("Ejecutando test de conexión...")
 
     const pool = await connectToDatabase()
     const result = await pool.request().query("SELECT 1 as test, GETDATE() as server_time")
@@ -745,7 +709,7 @@ app.get("/api/test", async (req, res) => {
     const queryTime = Date.now() - startTime
     const networkIPs = getNetworkIPs()
 
-    console.log("✅ Test de conexión exitoso")
+    console.log("Test de conexión exitoso")
 
     res.json({
       success: true,
@@ -774,7 +738,7 @@ app.get("/api/test", async (req, res) => {
     })
   } catch (error) {
     const queryTime = Date.now() - startTime
-    console.error("❌ Error en test de conexión:", error.message)
+    console.error("Error en test de conexión:", error.message)
 
     res.status(500).json({
       success: false,
@@ -797,7 +761,6 @@ app.get("/api/test", async (req, res) => {
   }
 })
 
-// 📋 Endpoint para diagnóstico completo del sistema
 app.get("/api/diagnostic", async (req, res) => {
   const diagnostic = {
     timestamp: new Date().toISOString(),
@@ -829,20 +792,17 @@ app.get("/api/diagnostic", async (req, res) => {
     tests: {},
   }
 
-  // Test de base de datos
   try {
     const pool = await connectToDatabase()
     diagnostic.database.status = "connected"
     diagnostic.database.connected = pool.connected
 
-    // Test de consulta básica en las tablas principales
     const testResult = await pool.request().query("SELECT COUNT(*) as total FROM OCRD WHERE CardType = 'C'")
     diagnostic.tests.table_access = {
       success: true,
       total_clients: testResult.recordset[0].total,
     }
 
-    // Test del query principal
     const queryTest = await pool.request().input("cardCode", sql.VarChar, "TEST").query(CARTERA_QUERY)
 
     diagnostic.tests.main_query = {
@@ -858,7 +818,6 @@ app.get("/api/diagnostic", async (req, res) => {
     }
   }
 
-  // Test de endpoints
   diagnostic.tests.endpoints = {
     test: "/api/test",
     invoices_all: "/api/invoices/by-cardcode/{cardcode}",
@@ -870,7 +829,6 @@ app.get("/api/diagnostic", async (req, res) => {
   res.json(diagnostic)
 })
 
-// 🔍 Endpoint para buscar facturas por múltiples criterios
 app.get("/api/invoices/search", async (req, res) => {
   try {
     const { cardCode, docNum, cardName, origen, limit = 50 } = req.query
@@ -927,7 +885,7 @@ app.get("/api/invoices/search", async (req, res) => {
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("❌ Error en búsqueda:", error.message)
+    console.error("Error en búsqueda:", error.message)
     res.status(500).json({
       success: false,
       error: error.message,
@@ -936,7 +894,6 @@ app.get("/api/invoices/search", async (req, res) => {
   }
 })
 
-// 🚫 Manejo de rutas no encontradas
 app.use("*", (req, res) => {
   res.status(404).json({
     success: false,
@@ -954,7 +911,6 @@ app.use("*", (req, res) => {
   })
 })
 
-// 🔧 Función para verificar dependencias
 function checkDependencies() {
   const requiredModules = ["express", "mssql", "cors"]
   const missing = []
@@ -968,63 +924,56 @@ function checkDependencies() {
   })
 
   if (missing.length > 0) {
-    console.log("❌ Módulos faltantes:", missing.join(", "))
-    console.log("💡 Ejecuta: npm install", missing.join(" "))
+    console.log("Módulos faltantes:", missing.join(", "))
+    console.log("Ejecuta: npm install", missing.join(" "))
     return false
   }
 
   return true
 }
 
-// 🚀 Función para iniciar el servidor
 async function startServer() {
-  console.log("🚀 Iniciando servidor ORAL-PLUS...")
+  console.log("Iniciando servidor ORAL-PLUS...")
   console.log("=".repeat(50))
 
-  // Verificar dependencias
   if (!checkDependencies()) {
     process.exit(1)
   }
 
-  // Mostrar información del sistema
-  console.log(`🖥️ Sistema: ${os.platform()} ${os.arch()}`)
-  console.log(`📍 Host: ${os.hostname()}`)
-  console.log(`🔧 Node.js: ${process.version}`)
-  console.log(`📂 Directorio: ${process.cwd()}`)
+  console.log(`Sistema: ${os.platform()} ${os.arch()}`)
+  console.log(`Host: ${os.hostname()}`)
+  console.log(`Node.js: ${process.version}`)
+  console.log(`Directorio: ${process.cwd()}`)
 
-  // Mostrar configuración de base de datos
-  console.log("\n🗄️ Configuración de Base de Datos:")
+  console.log("\nConfiguración de Base de Datos:")
   console.log(`   Servidor: ${dbConfig.server}:${dbConfig.port}`)
   console.log(`   Base de datos: ${dbConfig.database}`)
   console.log(`   Usuario: ${dbConfig.user}`)
 
-  // Intentar conectar a la base de datos
   try {
     await connectToDatabase()
   } catch (error) {
-    console.log("\n❌ No se pudo conectar a la base de datos")
-    console.log("⚠️ El servidor iniciará pero las consultas fallarán")
-    console.log("💡 Verifica la configuración en dbConfig")
+    console.log("\nNo se pudo conectar a la base de datos")
+    console.log("El servidor iniciará pero las consultas fallarán")
+    console.log("Verifica la configuración en dbConfig")
   }
 
-  // Iniciar servidor HTTP
   const server = app.listen(port, "0.0.0.0", () => {
-    console.log("\n🎉 ¡Servidor iniciado exitosamente!")
+    console.log("\n¡Servidor iniciado exitosamente!")
     console.log("=".repeat(50))
-    console.log(`🌐 Puerto: ${port}`)
-    console.log(`🔗 URL local: http://localhost:${port}/api`)
+    console.log(`Puerto: ${port}`)
+    console.log(`URL local: http://localhost:${port}/api`)
 
-    // Mostrar todas las IPs disponibles
     const networkIPs = getNetworkIPs()
     if (networkIPs.length > 0) {
-      console.log("\n📡 URLs de red disponibles:")
+      console.log("\nURLs de red disponibles:")
       networkIPs.forEach(({ interface: iface, ip, url }) => {
         console.log(`   ${iface}: ${url}`)
       })
-      console.log("\n💡 Usa cualquiera de estas URLs en tu app Flutter")
+      console.log("\nUsa cualquiera de estas URLs en tu app Flutter")
     }
 
-    console.log("\n🧪 Endpoints disponibles:")
+    console.log("\nEndpoints disponibles:")
     console.log(`   Test: http://localhost:${port}/api/test`)
     console.log(`   Diagnóstico: http://localhost:${port}/api/diagnostic`)
     console.log(`   Todas las facturas: http://localhost:${port}/api/invoices/by-cardcode/{cardcode}`)
@@ -1032,22 +981,21 @@ async function startServer() {
     console.log(`   Solo pendientes: http://localhost:${port}/api/invoices/pending/{cardcode}`)
     console.log(`   Búsqueda: http://localhost:${port}/api/invoices/search`)
 
-    console.log("\n✅ Servidor listo para recibir peticiones")
-    console.log("🛑 Presiona Ctrl+C para detener")
+    console.log("\nServidor listo para recibir peticiones")
+    console.log("Presiona Ctrl+C para detener")
   })
 
-  // Manejo de errores del servidor
   server.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
-      console.error(`❌ Error: El puerto ${port} está en uso`)
-      console.log("💡 Soluciones:")
+      console.error(`Error: El puerto ${port} está en uso`)
+      console.log("Soluciones:")
       console.log("1. Espera unos segundos y vuelve a intentar")
       console.log("2. Cambia el puerto en la línea 'const port = 3006'")
       console.log("3. Mata el proceso que usa el puerto:")
       console.log(`   Windows: netstat -ano | findstr :${port}`)
       console.log(`   Linux/Mac: lsof -ti:${port} | xargs kill`)
     } else {
-      console.error("❌ Error al iniciar el servidor:", err.message)
+      console.error("Error al iniciar el servidor:", err.message)
     }
     process.exit(1)
   })
@@ -1055,39 +1003,36 @@ async function startServer() {
   return server
 }
 
-// 🛑 Manejo de cierre graceful
 process.on("SIGINT", async () => {
-  console.log("\n🛑 Cerrando servidor...")
+  console.log("\nCerrando servidor...")
 
   if (globalPool) {
     try {
       await globalPool.close()
-      console.log("🔌 Desconectado de la base de datos")
+      console.log("Desconectado de la base de datos")
     } catch (error) {
-      console.error("❌ Error cerrando conexión:", error.message)
+      console.error("Error cerrando conexión:", error.message)
     }
   }
 
-  console.log("👋 ¡Hasta luego!")
+  console.log("¡Hasta luego!")
   process.exit(0)
 })
 
-// 🚨 Manejo de errores no capturados
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("❌ Unhandled Rejection at:", promise)
-  console.error("📍 Reason:", reason)
+  console.error("Unhandled Rejection at:", promise)
+  console.error("Reason:", reason)
 })
 
 process.on("uncaughtException", (error) => {
-  console.error("❌ Uncaught Exception:", error.message)
-  console.error("📍 Stack:", error.stack)
+  console.error("Uncaught Exception:", error.message)
+  console.error("Stack:", error.stack)
   process.exit(1)
 })
 
-// 🚀 Iniciar el servidor
 if (require.main === module) {
   startServer().catch((error) => {
-    console.error("❌ Error fatal al iniciar:", error.message)
+    console.error("Error fatal al iniciar:", error.message)
     process.exit(1)
   })
 }

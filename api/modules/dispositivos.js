@@ -1,12 +1,6 @@
-// Control de dispositivos por ID de servicio.
-// Cada instalación de la app genera un ID (SVC-XXXX-XXXX). El login asocia el
-// vendedor al dispositivo y solo deja entrar si está ACTIVO. Los usuarios de
-// soporte (SOPORTE_USUARIOS en .env) administran la activación y no pasan por
-// este control. Las dependencias (sql, jwt, pool) las inyecta server.js.
 
 const ESTADOS = ["PENDIENTE", "ACTIVO", "DESACTIVADO"]
 
-// Crea la tabla si no existe
 async function ensureTablas(pool) {
   await pool.request().query(`
     IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'dispositivos')
@@ -28,10 +22,7 @@ async function ensureTablas(pool) {
   `)
 }
 
-// Registra el dispositivo si es nuevo y le asocia la persona (sin pisar datos
-// previos con nulos). persona puede ser null antes del login.
 async function registrarYAsociar(pool, sql, idServicio, persona, plataforma) {
-  // El MERGE devuelve el estado con OUTPUT; no hace falta un SELECT aparte
   const r = await pool
     .request()
     .input("id_servicio", sql.NVarChar, idServicio)
@@ -59,15 +50,10 @@ async function registrarYAsociar(pool, sql, idServicio, persona, plataforma) {
     `)
 
   const estado = (r.recordset[0] && r.recordset[0].estado) || "PENDIENTE"
-  // El login acaba de leer el estado real: se refresca la caché para que las
-  // peticiones inmediatas no vean un estado viejo (p. ej. DESACTIVADO de una
-  // sesión anterior de este mismo dispositivo)
   estadoCache.set(idServicio, { estado, vence: Date.now() + ESTADO_TTL_MS })
   return estado
 }
 
-// Estado de cada dispositivo en caché un minuto: así desactivar desde Soporte
-// corta el acceso casi de inmediato sin consultar la BD en cada petición.
 const ESTADO_TTL_MS = 60 * 1000
 const estadoCache = new Map()
 
@@ -83,8 +69,6 @@ async function estadoDispositivo(pool, sql, idServicio) {
   return estado
 }
 
-// Rechaza las peticiones de un dispositivo que Soporte desactivó o eliminó,
-// aunque el token siga vigente. Los usuarios de soporte no pasan por aquí.
 function controlEstadoMiddleware(jwt, JWT_SECRET, getPool, sql) {
   return async (req, res, next) => {
     const h = req.headers.authorization
@@ -93,7 +77,7 @@ function controlEstadoMiddleware(jwt, JWT_SECRET, getPool, sql) {
     try {
       decoded = jwt.verify(h.slice(7), JWT_SECRET)
     } catch (_) {
-      return next() // cada ruta responde 401 por su cuenta
+      return next()
     }
     if (decoded.rol === "soporte" || !decoded.id_servicio) return next()
     try {
@@ -108,13 +92,11 @@ function controlEstadoMiddleware(jwt, JWT_SECRET, getPool, sql) {
         })
       }
     } catch (_) {
-      // Sin BD no se bloquea; el login ya hizo la validación
     }
     next()
   }
 }
 
-// Exige token con rol "soporte"
 function soporteMiddleware(jwt, JWT_SECRET) {
   return (req, res, next) => {
     const h = req.headers.authorization
@@ -134,9 +116,7 @@ function soporteMiddleware(jwt, JWT_SECRET) {
   }
 }
 
-// Rutas. getPool() devuelve el pool de la BD Pedidos en cada request.
 function registrarRutas(app, getPool, sql, requireSoporte) {
-  // App (pre-login, sin auth): registra el dispositivo y devuelve su estado.
   app.post("/api/dispositivos/registrar", async (req, res) => {
     try {
       const idServicio = (req.body.id_servicio || "").toString().trim()
@@ -151,7 +131,6 @@ function registrarRutas(app, getPool, sql, requireSoporte) {
     }
   })
 
-  // Soporte: listar dispositivos (con buscador por ID, nombre, documento o código).
   app.get("/api/dispositivos", requireSoporte, async (req, res) => {
     try {
       const buscar = (req.query.buscar || "").toString().trim()
@@ -172,7 +151,6 @@ function registrarRutas(app, getPool, sql, requireSoporte) {
     }
   })
 
-  // Soporte: cambiar estado (ACTIVO / DESACTIVADO / PENDIENTE).
   app.post("/api/dispositivos/:idServicio/estado", requireSoporte, async (req, res) => {
     try {
       const idServicio = (req.params.idServicio || "").toString().trim()
@@ -204,7 +182,6 @@ function registrarRutas(app, getPool, sql, requireSoporte) {
     }
   })
 
-  // Soporte: eliminar un dispositivo del registro.
   app.delete("/api/dispositivos/:idServicio", requireSoporte, async (req, res) => {
     try {
       const idServicio = (req.params.idServicio || "").toString().trim()

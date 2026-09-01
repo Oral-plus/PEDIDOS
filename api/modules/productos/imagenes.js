@@ -1,8 +1,3 @@
-// Imágenes de producto guardadas en la BD Pedidos (tabla productos_imagenes),
-// una por código SAP, como WebP de máximo 400x400. Todas pasan por el mismo
-// recorte (procesar), vengan de la migración o de Soporte TI desde la app.
-// Las versiones se mantienen en memoria para armar las URL sin consultar la
-// BD, y los bytes más pedidos se guardan en una caché pequeña.
 
 const sharp = require("sharp")
 
@@ -14,8 +9,8 @@ class AlmacenImagenes {
     this.sql = sql
     this.getPool = getPool
     this.maxCache = maxCache
-    this.versiones = new Map() // codigo -> version
-    this.cache = new Map() // codigo -> { contenido, mime, version }
+    this.versiones = new Map()
+    this.cache = new Map()
   }
 
   async ensureTabla() {
@@ -53,7 +48,6 @@ class AlmacenImagenes {
     return new Set(this.versiones.keys())
   }
 
-  // Recorte único para todas las imágenes: WebP, máximo 400x400, sin ampliar
   async procesar(buffer) {
     const { data, info } = await sharp(buffer)
       .rotate()
@@ -91,7 +85,6 @@ class AlmacenImagenes {
     return version
   }
 
-  // Bytes de la imagen (null si no existe)
   async obtener(codigo) {
     if (!this.versiones.has(codigo)) return null
     const enCache = this.cache.get(codigo)
@@ -122,7 +115,6 @@ class AlmacenImagenes {
   }
 }
 
-// Solo letras, números, guion y guion bajo en el código
 function limpiar(codigo) {
   return String(codigo || "").replace(/[^A-Za-z0-9_-]/g, "")
 }

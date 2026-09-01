@@ -1,8 +1,4 @@
-// Lectura del catálogo desde SAP. Dos fuentes con la misma salida:
-// el Service Layer (principal) y SQL directo (respaldo si el SL no responde).
-// Salida: [{ codigo, nombre, grupoCodigo, grupoNombre, descripcion, stock, precios: { lista: valor } }]
 
-// Grupos de producto terminado (OITB) que se publican en la app
 const GRUPOS_POR_DEFECTO = [157, 130, 132, 133, 137, 139, 140, 141, 142]
 
 function gruposDesdeEnv(valor) {

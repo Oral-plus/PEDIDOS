@@ -1,13 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
-/// Imagen de producto. Las fotos las sirve el backend por URL; se guardan en
-/// el disco del teléfono tras la primera descarga. Sin foto se muestra un
-/// icono. Acepta también rutas de assets por compatibilidad.
 class ProductoImagen extends StatelessWidget {
   final String? url;
   final BoxFit fit;
-  /// Ancho máximo al que se decodifica (píxeles físicos); ahorra memoria.
   final int cacheWidth;
   final double iconSize;
   final Color iconColor;

@@ -7,7 +7,6 @@ import 'cache_service.dart';
 import 'device_service.dart';
 import 'shared_http.dart';
 
-/// Cliente del backend de pedidos (server.js): auth, clientes, rutas y visitas.
 class ApiEasyService {
   ApiEasyService._() {
     ApiClient.onConnectionError = _olvidarBaseUrl;
@@ -16,11 +15,8 @@ class ApiEasyService {
   factory ApiEasyService() => _instance;
 
   static const List<String> _baseUrls = [
-    // Subdominio público (funciona dentro y fuera de la oficina)
     'https://gestores-api.oral-plus.com',
-    // LAN directa al servidor .249 (por si falla el internet)
     'http://192.168.2.249:3000',
-    // PC de desarrollo
     'http://192.168.2.73:3000',
     'http://10.0.2.2:3000',
     'http://localhost:3000',
@@ -44,14 +40,10 @@ class ApiEasyService {
   String get loginUsuario => _loginUsuario;
   bool get hasSession => _token != null && _token!.isNotEmpty && !sesionVencida;
 
-  /// Vencimiento de la sesión (máximo 12 horas desde el login).
   DateTime? get expira => _expira;
 
-  /// true si ya pasaron las 12 horas o la sesión no tiene vencimiento
-  /// conocido (sesiones de una versión anterior de la app).
   bool get sesionVencida => _expira == null || !DateTime.now().isBefore(_expira!);
 
-  /// true si la sesión actual es de un usuario de Soporte TI.
   bool get esSoporte => _usuario?['rol']?.toString() == 'soporte';
 
   void setToken(String? t) {
@@ -80,7 +72,6 @@ class ApiEasyService {
             ? DateTime.fromMillisecondsSinceEpoch(expiraMs)
             : _expiraDeToken(storedToken);
         if (sesionVencida) {
-          // Pasaron las 12 horas: se descarta la sesión y se pide el login
           _token = null;
           _expira = null;
           _loginUsuario = '';
@@ -131,8 +122,6 @@ class ApiEasyService {
     await _persistSession();
   }
 
-  /// Cierra la sesión en el servidor (el token deja de servir aunque no haya
-  /// vencido) y borra todo rastro local. Sin red, lo local se borra igual.
   Future<void> logout() async {
     final token = _token;
     if (token != null && token.isNotEmpty) {
@@ -150,7 +139,6 @@ class ApiEasyService {
     await clearSession();
   }
 
-  /// Vencimiento (claim exp) leído del propio JWT; null si no se puede leer.
   static DateTime? _expiraDeToken(String token) {
     try {
       final partes = token.split('.');
@@ -162,7 +150,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// Vencimiento informado por el backend en la respuesta del login.
   static DateTime? _expiraDeRespuesta(Map<String, dynamic> res) {
     final data = res['data'];
     if (data is! Map) return null;
@@ -180,7 +167,6 @@ class ApiEasyService {
     return h;
   }
 
-  /// URL base del backend ya resuelta (la misma que usan el resto de llamadas).
   Future<String> baseUrl() => _resolveBaseUrl();
 
   static const _baseUrlKey = 'api_base_url';
@@ -189,8 +175,6 @@ class ApiEasyService {
   Future<String>? _resolviendo;
   DateTime? _ultimaBusquedaFallida;
 
-  /// Devuelve el host cacheado. Si varias llamadas llegan a la vez sin host
-  /// resuelto, comparten una sola búsqueda.
   Future<String> _resolveBaseUrl() {
     final cached = _resolvedBaseUrl;
     if (cached != null) return Future.value(cached);
@@ -198,11 +182,7 @@ class ApiEasyService {
         _buscarBaseUrl().whenComplete(() => _resolviendo = null);
   }
 
-  /// Sondea todos los hosts a la vez. Se prefiere el que funcionó la última
-  /// vez (guardado en preferencias) y, si no, el primero de la lista que
-  /// responda. Solo se cachea un host que haya respondido.
   Future<String> _buscarBaseUrl() async {
-    // Si hace poco no respondió ninguno, no se vuelve a sondear todavía
     final fallo = _ultimaBusquedaFallida;
     if (fallo != null &&
         DateTime.now().difference(fallo) < const Duration(seconds: 30)) {
@@ -218,8 +198,6 @@ class ApiEasyService {
     final sondas = <String, Future<bool>>{
       for (final u in _baseUrls) u: _responde(u),
     };
-    // Gana el primer host de la lista si responde; el guardado solo se
-    // prefiere frente a los demás (es el respaldo que funcionó la última vez)
     final orden = [
       _baseUrls.first,
       if (guardado != null && sondas.containsKey(guardado)) guardado,
@@ -255,8 +233,6 @@ class ApiEasyService {
     }
   }
 
-  /// Descarta el host cacheado cuando deja de responder (por ejemplo al salir
-  /// de la red de la oficina); la siguiente llamada vuelve a buscar.
   void _olvidarBaseUrl(String baseUrl) {
     if (_resolvedBaseUrl == baseUrl) _resolvedBaseUrl = null;
   }
@@ -300,8 +276,6 @@ class ApiEasyService {
         'Credenciales incorrectas';
   }
 
-  /// POST /api/auth/login
-  /// Compatible con {usuario,password} y {documento,pin}
   Future<Map<String, dynamic>> login(String usuario, String password) async {
     try {
       final baseUrl = await _resolveBaseUrl();
@@ -324,8 +298,6 @@ class ApiEasyService {
 
       final response = Map<String, dynamic>.from(res as Map);
 
-      // Dispositivo aún no autorizado: el backend responde con needsActivation
-      // y el ID para que el vendedor lo envíe a Soporte TI.
       if (response['needsActivation'] == true) {
         return {
           'success': false,
@@ -351,7 +323,6 @@ class ApiEasyService {
             DateTime.now().add(const Duration(hours: 12));
         _usuario = _extractUsuario(response);
         _loginUsuario = usuario;
-        // Otro vendedor puede tener otros clientes y rutas
         _cache.limpiar();
         await _persistSession();
 
@@ -377,9 +348,7 @@ class ApiEasyService {
     return _resolvedBaseUrl ?? await _resolveBaseUrl();
   }
 
-  // Soporte TI: administración de dispositivos (requiere rol soporte)
 
-  /// GET /api/dispositivos - lista dispositivos con la persona asociada.
   Future<Map<String, dynamic>> getDispositivos({String? buscar}) async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada', 'data': <dynamic>[]};
@@ -412,8 +381,6 @@ class ApiEasyService {
     }
   }
 
-  /// GET /api/usuarios - quiénes pueden entrar a la app (vendedores SAP y
-  /// usuarios de la tabla usuarios), si son soporte y sus dispositivos.
   Future<Map<String, dynamic>> getUsuarios({String? buscar}) async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada', 'data': <dynamic>[]};
@@ -452,8 +419,6 @@ class ApiEasyService {
     }
   }
 
-  /// POST /api/dispositivos/:id/estado - activa/desactiva un dispositivo.
-  /// estado: 'ACTIVO' | 'DESACTIVADO' | 'PENDIENTE'.
   Future<Map<String, dynamic>> setDispositivoEstado(
       String idServicio, String estado) async {
     if (_token == null || _token!.isEmpty) {
@@ -481,7 +446,6 @@ class ApiEasyService {
     }
   }
 
-  /// DELETE /api/dispositivos/:id - elimina un dispositivo del registro.
   Future<Map<String, dynamic>> deleteDispositivo(String idServicio) async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada'};
@@ -506,9 +470,7 @@ class ApiEasyService {
     }
   }
 
-  // Soporte TI: catálogo de productos (imágenes y presentación)
 
-  /// GET /api/productos/admin - todos los artículos de SAP con su configuración.
   Future<Map<String, dynamic>> getProductosAdmin() async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada', 'data': <dynamic>[]};
@@ -535,7 +497,6 @@ class ApiEasyService {
     }
   }
 
-  /// PUT /api/productos/:codigo/imagen - sube o reemplaza la foto (multipart).
   Future<Map<String, dynamic>> subirImagenProducto(String codigo, String rutaArchivo) async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada'};
@@ -564,7 +525,6 @@ class ApiEasyService {
     }
   }
 
-  /// DELETE /api/productos/:codigo/imagen
   Future<Map<String, dynamic>> eliminarImagenProducto(String codigo) async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada'};
@@ -582,8 +542,6 @@ class ApiEasyService {
     }
   }
 
-  /// PUT /api/productos/:codigo/config - categoría, visible, orden, variante,
-  /// textura y descripción.
   Future<Map<String, dynamic>> guardarConfigProducto(String codigo, Map<String, dynamic> cambios) async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada'};
@@ -602,7 +560,6 @@ class ApiEasyService {
     }
   }
 
-  /// POST /api/productos/refrescar - vuelve a leer SAP ahora mismo.
   Future<Map<String, dynamic>> refrescarCatalogo() async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada'};
@@ -626,8 +583,6 @@ class ApiEasyService {
     }
   }
 
-  /// GET /api/clientes - Lista de clientes del vendor (requiere token).
-  /// Se guarda 10 min; [forzar] vuelve a pedirla al servidor.
   Future<Map<String, dynamic>> getClientes({bool forzar = false}) {
     return _cache.obtener(
       'clientes',
@@ -670,14 +625,12 @@ class ApiEasyService {
     }
   }
 
-  /// Detecta si un error corresponde a sesión expirada / no autorizada.
   bool _esSesionExpirada(Object e) {
     if (e is ApiException) return e.noAutorizado;
     final s = e.toString().toLowerCase();
     return s.contains('401') || s.contains('sesión expirada') || s.contains('sesion expirada');
   }
 
-  /// GET /api/clientes/:codigo - Detalle de un cliente (en caché 5 min)
   Future<Map<String, dynamic>?> getClientePorCodigo(String codigo) {
     return _cache.obtener(
       'cliente:$codigo',
@@ -706,9 +659,6 @@ class ApiEasyService {
     }
   }
 
-  /// POST /api/clientes/:codigo/actualizar-datos - corrige los datos de
-  /// contacto del cliente (se guarda en nuestra BD, no en SAP).
-  /// Devuelve { success, message, fechaActualizacion? }.
   Future<Map<String, dynamic>> actualizarDatosCliente(
     String codigo, {
     String nombre = '',
@@ -757,8 +707,6 @@ class ApiEasyService {
     }
   }
 
-  /// POST /api/pedidos/gestion - guarda la gestión del pedido de la visita
-  /// (liquidación, condiciones, forma de pago, evidencias).
   Future<Map<String, dynamic>> guardarGestionPedido({
     String numeroPedido = '',
     required String clienteId,
@@ -819,8 +767,6 @@ class ApiEasyService {
     }
   }
 
-  /// GET /api/clientes/:codigo/documentos - Facturas abiertas del cliente
-  /// (para recaudos). Devuelve { documentos: List, totalSaldo: double }.
   Future<Map<String, dynamic>> getDocumentosCliente(String codigo) async {
     if (_token == null || _token!.isEmpty) {
       return {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0};
@@ -854,7 +800,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// POST /api/recaudos - Guarda un recaudo con los documentos cruzados.
   Future<Map<String, dynamic>> guardarRecaudo({
     String numeroRecaudo = '',
     required String clienteId,
@@ -894,7 +839,6 @@ class ApiEasyService {
         timeout: const Duration(seconds: 25),
       );
       if (res['success'] == true) {
-        // Cambian las facturas abiertas y el saldo del cliente
         _cache.invalidar('documentos:$clienteId');
         _cache.invalidar('cartera:$clienteId');
       }
@@ -912,8 +856,6 @@ class ApiEasyService {
     }
   }
 
-  /// GET /api/clientes/cartera/:codigo - Cartera completa del cliente desde SAP
-  /// (en caché 2 min; se invalida al registrar recaudos o visitas)
   Future<Map<String, dynamic>?> getCarteraCliente(String codigo) {
     return _cache.obtener(
       'cartera:$codigo',
@@ -942,9 +884,6 @@ class ApiEasyService {
     }
   }
 
-  /// GET /api/clientes/:codigo/geocode - geocodifica la dirección del cliente
-  /// Retorna { lat, lng, formattedAddress, placeId }.
-  /// Una dirección no cambia: el resultado se guarda en el teléfono.
   Future<Map<String, dynamic>?> getGeocodeCliente(String codigo, {String? address}) async {
     if (_token == null || _token!.isEmpty) return null;
     final clave = 'geo:$codigo:${(address ?? '').trim().toUpperCase()}';
@@ -997,7 +936,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// GET /api/clientes/:codigo/tareas - tareas asignadas al cliente (en caché 5 min)
   Future<Map<String, dynamic>?> getTareasCliente(String codigo) {
     return _cache.obtener(
       'tareas:$codigo',
@@ -1022,8 +960,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// POST /api/clientes/:codigo/ia/sugerencias - recomendaciones IA para la visita.
-  /// Se guardan 1 h por cliente; [forzar] pide una respuesta nueva.
   Future<String?> getSugerenciasIA(String codigo, {
     Map<String, dynamic>? cliente,
     Map<String, dynamic>? ruta,
@@ -1062,7 +998,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// POST /api/clientes/:codigo/ia/chat - pregunta al asistente IA
   Future<String?> chatIA(String codigo, String pregunta, {
     Map<String, dynamic>? cliente,
     Map<String, dynamic>? ruta,
@@ -1087,8 +1022,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// GET /api/rutas/mias?periodo=hoy|semana|mes|todas - mis rutas del periodo
-  /// (en caché 2 min por periodo; [forzar] para el gesto de refrescar)
   Future<Map<String, dynamic>?> getMisRutas({String periodo = 'todas', bool forzar = false}) {
     return _cache.obtener(
       'rutasMias:$periodo',
@@ -1114,9 +1047,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// POST /api/rutas/extra - crea una ruta adicional de urgencia.
-  /// Requiere cliente + motivo (por qué visita) + observación.
-  /// Devuelve { success, message, id? }.
   Future<Map<String, dynamic>> crearRutaExtra({
     required String clienteId,
     String clienteNombre = '',
@@ -1155,13 +1085,11 @@ class ApiEasyService {
         await clearSession();
         return {'success': false, 'message': 'Sesión expirada'};
       }
-      // ApiClient lanza el mensaje del backend (p. ej. validaciones)
       final msg = e.toString().replaceFirst('Exception: ', '');
       return {'success': false, 'message': msg};
     }
   }
 
-  /// GET /api/clientes/:codigo/rutas - rutas registradas para el cliente (en caché 2 min)
   Future<Map<String, dynamic>?> getRutasCliente(String codigo, {int limite = 100}) {
     return _cache.obtener(
       'rutasCliente:$codigo',
@@ -1186,7 +1114,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// GET /api/clientes/:codigo/facturas-historico - todas las facturas (pagadas/abiertas)
   Future<Map<String, dynamic>?> getFacturasHistoricasCliente(String codigo, {int limite = 100}) async {
     if (_token == null || _token!.isEmpty) return null;
     try {
@@ -1203,8 +1130,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// GET /api/clientes/:codigo/comentarios
-  /// Devuelve { 'comentarios': List, 'freeText': String }
   Future<Map<String, dynamic>> getComentariosCliente(String codigo) async {
     if (_token == null || _token!.isEmpty) {
       return {'comentarios': <Map<String, dynamic>>[], 'freeText': ''};
@@ -1231,7 +1156,6 @@ class ApiEasyService {
     return {'comentarios': <Map<String, dynamic>>[], 'freeText': ''};
   }
 
-  /// POST /api/clientes/:codigo/comentarios
   Future<Map<String, dynamic>?> crearComentarioCliente(String codigo, String comentario) async {
     if (_token == null || _token!.isEmpty) return null;
     final texto = comentario.trim();
@@ -1253,7 +1177,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// POST /api/clientes/:codigo/visita - registra / finaliza una visita
   Future<Map<String, dynamic>?> registrarVisita(
     String codigo, {
     String? estadoCliente,
@@ -1303,7 +1226,6 @@ class ApiEasyService {
         timeout: const Duration(seconds: 15),
       );
       if (res['success'] == true) {
-        // La visita cambia cartera, tareas, rutas y el estado "visitado hoy"
         _cache.invalidar('cartera:$codigo');
         _cache.invalidar('tareas:$codigo');
         _cache.invalidar('visitasHoy:$codigo');
@@ -1316,7 +1238,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// GET /api/clientes/:codigo/visitas-hoy - ¿ya se visitó hoy?
   Future<Map<String, dynamic>?> getVisitasHoy(String codigo) {
     return _cache.obtener(
       'visitasHoy:$codigo',
@@ -1341,7 +1262,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// GET /api/clientes/:codigo/ultimo-pedido - último pedido con ítems
   Future<Map<String, dynamic>?> getUltimoPedido(String codigo, {DateTime? desde}) {
     return _cache.obtener(
       'pedidos:$codigo:ultimo:${desde?.toIso8601String() ?? ''}',
@@ -1367,7 +1287,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// GET /api/clientes/:codigo/pedidos-total - total de pedidos (opcionalmente desde una fecha)
   Future<double> getTotalPedidos(String codigo, {DateTime? desde}) async {
     if (_token == null || _token!.isEmpty) return 0;
     final total = await _cache.obtener<double?>(
@@ -1394,7 +1313,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// GET /api/clientes/:codigo/visita/ultima - última visita registrada
   Future<Map<String, dynamic>?> getUltimaVisita(String codigo) {
     return _cache.obtener(
       'ultimaVisita:$codigo',
@@ -1419,7 +1337,6 @@ class ApiEasyService {
     return null;
   }
 
-  /// PUT /api/clientes/:codigo/free-text - actualizar texto libre en OCRD
   Future<String?> actualizarFreeTextCliente(String codigo, String texto) async {
     if (_token == null || _token!.isEmpty) return null;
     try {

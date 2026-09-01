@@ -5,10 +5,6 @@ import '../utils/theme.dart';
 import '../widgets/app_header.dart';
 import 'ruta_detalle_screen.dart';
 
-/// Pantalla para revisar y corregir los datos de contacto de un cliente
-/// cuya información está desactualizada. Los cambios se guardan en nuestra
-/// base (no en SAP). Devuelve por Navigator.pop la nueva fecha de
-/// actualización (String ISO) si se guardó, o null si se canceló.
 class EditarClienteScreen extends StatefulWidget {
   final Map<String, dynamic> cliente;
   final int? rutaId;
@@ -34,7 +30,6 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
   final _correo = TextEditingController();
   final _ciudad = TextEditingController();
 
-  // Valores originales (para registrar el "antes" y detectar cambios).
   Map<String, String> _originales = {};
 
   bool _cargando = true;
@@ -68,7 +63,6 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
   }
 
   Future<void> _cargar() async {
-    // Prefill con lo que ya venga en el mapa cliente…
     _aplicar({
       'nombre': widget.cliente['nombre'],
       'direccion': widget.cliente['direccion'],
@@ -76,7 +70,6 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
       'correo': widget.cliente['correo'],
       'ciudad': widget.cliente['ciudad'],
     });
-    // …y luego refresca con el detalle actual del servidor.
     final detalle = await _api.getClientePorCodigo(_codigo);
     if (!mounted) return;
     if (detalle != null) _aplicar(detalle);

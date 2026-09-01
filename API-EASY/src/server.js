@@ -83,9 +83,8 @@ app.get('/api/orders/detail/:numeroPedido', async (req, res) => {
 app.use(errorHandler);
 
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`API corriendo en http://0.0.0.0:${PORT}`);
-  console.log(`Acceso red local: http://192.168.2.244:${PORT}`);
-  console.log(`Documentación: http://192.168.2.244:${PORT}/api/health`);
+  console.log(`API escuchando en el puerto ${PORT} (todas las interfaces)`);
+  console.log(`Estado disponible en /api/health`);
 });
 
 async function shutdown() {

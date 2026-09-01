@@ -173,8 +173,6 @@ class _RuteroScreenState extends State<RuteroScreen> {
         ]),
       ),
       body: Builder(builder: (context) {
-        // Cabecera fija y una fila por ruta: las rutas se construyen al hacer
-        // scroll, no todas de golpe (pueden ser hasta 100).
         final rutas = _rutasLista();
         final cabecera = <Widget>[
           _buildClienteHeader(nombre, codigo),

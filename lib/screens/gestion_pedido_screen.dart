@@ -7,17 +7,12 @@ import '../services/api_easy_service.dart';
 import '../utils/app_assets.dart';
 import '../utils/price_utils.dart';
 
-/// Pantalla de gestión del pedido, que sigue a la forma de pago en la visita.
-/// Opciones: Liquidación (subtotal/descuento/impuesto/flete/total),
-/// Condiciones (forma de pago, plazo, fecha de entrega, observaciones),
-/// Evidencias (fotos) y Guardar pedido.
-/// Devuelve `true` por Navigator.pop si el pedido se guardó.
 class GestionPedidoScreen extends StatefulWidget {
   final Map<String, dynamic> cliente;
   final Map<String, dynamic> ruta;
   final Map<String, dynamic>? ultimoPedido;
-  final Map<String, dynamic>? pago; // {metodo, banco, referencia, valor}
-  final Map<String, dynamic>? cartera; // {limiteCredito, balance, ...}
+  final Map<String, dynamic>? pago;
+  final Map<String, dynamic>? cartera;
 
   const GestionPedidoScreen({
     super.key,
@@ -36,17 +31,15 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
   final ApiEasyService _api = ApiEasyService();
   final ImagePicker _picker = ImagePicker();
 
-  // Paleta (igual que la forma de pago)
   static const Color _ink = Color(0xFF111827);
   static const Color _inkDeep = Color(0xFF0B1220);
   static const Color _gray = Color(0xFF6B7280);
   static const Color _line = Color(0xFFE5E7EB);
   static const Color _surface = Color(0xFFF3F4F6);
 
-  double _descuentoPct = 0; // porcentaje (0-100)
+  double _descuentoPct = 0;
   double _flete = 0;
 
-  // Monto del descuento calculado sobre el sub-total.
   double get _descuentoMonto => _subtotal * (_descuentoPct.clamp(0, 100)) / 100;
   int? _plazoDias;
   DateTime? _fechaEntrega;
@@ -64,7 +57,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
 
   double _n(dynamic v) => (v is num) ? v.toDouble() : (double.tryParse('${v ?? ''}') ?? 0);
 
-  // El precio de lista es el valor final: no se liquida IVA aparte
   double get _subtotal {
     final s = _n(widget.ultimoPedido?['subtotal']);
     if (s > 0) return s;
@@ -75,7 +67,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
 
   double get _total => (_subtotal - _descuentoMonto + _flete).clamp(0, double.infinity);
 
-  // Cupo (límite de crédito) del cliente
   double get _cupoAsignado => _n(widget.cartera?['limiteCredito']);
   double get _saldoUsado => _n(widget.cartera?['balance']);
   double get _cupoDisponible => _cupoAsignado - _saldoUsado;
@@ -136,7 +127,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     );
   }
 
-  // Header
   Widget _header() {
     return Container(
       decoration: const BoxDecoration(
@@ -199,7 +189,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     );
   }
 
-  // Resumen de liquidación
   Widget _resumenLiquidacion() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -274,7 +263,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     return partes.isEmpty ? 'Definir condiciones' : partes.join(' · ');
   }
 
-  // Fila de opción
   Widget _opcion({
     required IconData icon,
     required String titulo,
@@ -352,7 +340,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     );
   }
 
-  // Footer: guardar
   Widget _footer() {
     return Container(
       decoration: BoxDecoration(
@@ -394,7 +381,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     );
   }
 
-  // Liquidación (editar descuento + flete)
   Future<void> _abrirLiquidacion() async {
     final desc = TextEditingController(text: _descuentoPct > 0 ? _descuentoPct.toStringAsFixed(0) : '');
     final flete = TextEditingController(text: _flete > 0 ? _flete.toStringAsFixed(0) : '');
@@ -408,7 +394,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
           _campoNumero('Descuento (%)', desc, Icons.percent_rounded,
               esPorcentaje: true, onChanged: (_) => setSheet(() {})),
           const SizedBox(height: 8),
-          // Vista previa en vivo: el descuento se aplica automáticamente.
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -445,7 +430,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     flete.dispose();
   }
 
-  // Condiciones (plazo, fecha, observaciones)
   Future<void> _abrirCondiciones() async {
     final plazo = TextEditingController(text: _plazoDias?.toString() ?? '');
     final obs = TextEditingController(text: _observaciones);
@@ -553,7 +537,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     ]);
   }
 
-  // Bottom sheet genérico con guardar/cancelar y estado interno.
   Future<void> _sheet({
     required String titulo,
     required IconData icon,
@@ -611,7 +594,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     );
   }
 
-  // Evidencias
   Future<void> _abrirEvidencias() async {
     final fuente = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -650,15 +632,12 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     }
   }
 
-  // Guardar (con validación de cupo)
   Future<void> _guardar() async {
     String estado = 'GUARDADO';
 
-    // Validación de cupo: si el pedido supera el cupo disponible, se advierte
-    // que quedará BLOQUEADO y se pide confirmación.
     if (_excedeCupo) {
       final si = await _dialogCupo();
-      if (si != true) return; // NO → no se graba
+      if (si != true) return;
       estado = 'BLOQUEADO';
     }
 
@@ -703,8 +682,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
     }
   }
 
-  /// Diálogo de advertencia de cupo. Devuelve true si el vendedor confirma
-  /// grabar el pedido a pesar de que quedará BLOQUEADO.
   Future<bool?> _dialogCupo() {
     return showDialog<bool>(
       context: context,
@@ -785,7 +762,6 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
   }
 }
 
-/// Formatea miles con puntos mientras se escribe.
 class _MilesFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {

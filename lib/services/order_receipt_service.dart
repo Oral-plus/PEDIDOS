@@ -8,9 +8,7 @@ import '../utils/app_assets.dart';
 import '../utils/pdf_save_io.dart' if (dart.library.html) '../utils/pdf_save_web.dart' as pdf_save;
 import '../utils/csv_save_io.dart' if (dart.library.html) '../utils/csv_save_web.dart' as csv_save;
 
-/// Genera comprobantes de pedido: PDF (con logo) y CSV (para Excel).
 class OrderReceiptService {
-  // El logo se lee del bundle una sola vez
   static Uint8List? _logoBytes;
 
   static Future<Uint8List?> _cargarLogo() async {
@@ -22,7 +20,6 @@ class OrderReceiptService {
     return _logoBytes;
   }
 
-  /// Genera un PDF con el logo ORAL-PLUS y el detalle del pedido.
   static Future<void> generateAndSavePdf({
     required String clientName,
     required String cedula,
@@ -129,7 +126,6 @@ class OrderReceiptService {
     );
   }
 
-  /// Genera PDF tipo factura desde datos de un pedido existente.
   static Future<void> generateAndSavePdfFactura({
     required Map<String, dynamic> pedido,
     required List<Map<String, dynamic>> productos,
@@ -288,7 +284,6 @@ class OrderReceiptService {
     await pdf_save.savePdfBytes(fileName, bytes);
   }
 
-  /// Genera un CSV con el comprobante (ORAL-PLUS, productos, total). Se abre en Excel.
   static Future<void> generateAndSaveCsv({
     required String clientName,
     required String cedula,

@@ -15,9 +15,6 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 0;
 
-  // Cada pestaña se crea la primera vez que se muestra. Inicio y Productos se
-  // crean de entrada; Pedidos solo cuando el vendedor entra, así no consulta
-  // el servidor en cada apertura del dashboard.
   final List<Widget?> _pages = List<Widget?>.filled(3, null);
 
   @override

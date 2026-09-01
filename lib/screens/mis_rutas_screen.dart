@@ -24,9 +24,8 @@ class _MisRutasScreenState extends State<MisRutasScreen> {
   static Color get _border => AppTheme.borderColor;
   static Color get _textDark => AppTheme.darkBlue;
   static Color get _textMuted => AppTheme.textSecondary;
-  // Paleta monocromática (el verde solo se usa para "Visitado")
-  static const Color _primary = Color(0xFF1F2937); // negro-gris
-  static const Color _grayAccent = Color(0xFF6B7280); // gris
+  static const Color _primary = Color(0xFF1F2937);
+  static const Color _grayAccent = Color(0xFF6B7280);
 
   static const List<Map<String, String>> _periodos = [
     {'key': 'hoy', 'label': 'Hoy'},
@@ -54,14 +53,12 @@ class _MisRutasScreenState extends State<MisRutasScreen> {
     _cargar();
   }
 
-  // Rojo de urgencia: reservado para la acción de ruta extra.
   static const Color _rojoExtra = Color(0xFFDC2626);
 
   Future<void> _abrirRutaExtra() async {
     HapticFeedback.mediumImpact();
     final creado = await showRutaExtraSheet(context);
     if (creado && mounted) {
-      // Aseguramos que la ruta nueva (programada para hoy) sea visible.
       if (_periodo != 'hoy') {
         setState(() => _periodo = 'hoy');
       }
@@ -94,8 +91,6 @@ class _MisRutasScreenState extends State<MisRutasScreen> {
 
   Color _colorEstado(String estado) {
     final e = estado.toUpperCase();
-    // Paleta monocromática: los estados usan gris/negro. El verde queda
-    // reservado únicamente para las tarjetas ya "Visitado" (visitadoHoy).
     if (e.contains('COMPLET') || e.contains('FINALIZ')) return _primary;
     if (e.contains('PENDIENTE') || e.contains('PROGRAM') || e.contains('ACTIVA')) return _grayAccent;
     if (e.contains('CANCEL')) return _grayAccent;
@@ -248,7 +243,6 @@ class _MisRutasScreenState extends State<MisRutasScreen> {
     final visitado = r['visitadoHoy'] == true;
     final esExtra = r['esExtra'] == true;
     final motivoExtra = (r['motivoExtra'] ?? '').toString();
-    // Cuando el cliente ya fue visitado hoy, toda la tarjeta se pone verde.
     final acento = visitado ? AppTheme.successColor : color;
 
     return Container(
@@ -378,7 +372,6 @@ class _MisRutasScreenState extends State<MisRutasScreen> {
     );
   }
 
-  // Chip rojo para el motivo de una ruta extra.
   Widget _chipRojo(IconData icon, String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

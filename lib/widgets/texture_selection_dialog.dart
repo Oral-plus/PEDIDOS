@@ -204,7 +204,6 @@ class TextureSelectionDialog extends StatelessWidget {
   bool _productoDisponible(String codigoSap) {
     if (estadosSAP.containsKey(codigoSap)) {
       final estado = estadosSAP[codigoSap]!;
-      // Solo bloquea lo que no se le vende al cliente; el stock no impide pedir
       return estado['disponible'] == true;
     }
     return true;

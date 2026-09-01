@@ -10,7 +10,6 @@ class CartProvider extends ChangeNotifier {
   int _itemCount = 0;
   double _totalAmount = 0.0;
 
-  /// Vista de solo lectura sobre la lista real; no copia en cada acceso.
   List<CartItem> get items => _vista;
 
   int get itemCount => _itemCount;
@@ -19,7 +18,6 @@ class CartProvider extends ChangeNotifier {
 
   String get formattedTotal => PriceUtils.formatPriceDisplay(totalAmount);
 
-  // Los totales se recalculan una vez por cambio, no en cada lectura.
   void _actualizar() {
     var cantidad = 0;
     var total = 0.0;

@@ -12,7 +12,6 @@ Future<void> savePdfBytes(String filename, Uint8List bytes) async {
   html.document.body?.append(anchor);
   anchor.click();
   anchor.remove();
-  // Retrasar revoke: el navegador necesita tiempo para iniciar la descarga
   Future.delayed(const Duration(seconds: 2), () {
     html.Url.revokeObjectUrl(url);
   });

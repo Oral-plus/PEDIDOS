@@ -4,13 +4,10 @@ import '../services/api_easy_service.dart';
 import '../utils/app_assets.dart';
 import '../utils/price_utils.dart';
 
-/// Pantalla de Recaudos: aplica el dinero recibido a los documentos (facturas
-/// abiertas) del cliente. Pestañas PAGOS / DOCUMENTOS / NOTAS con las acciones
-/// Cruzar / Detalle / Quitar documento.
 class RecaudosScreen extends StatefulWidget {
   final String codigoCliente;
   final String nombreCliente;
-  final Map<String, dynamic>? pago; // {metodo, banco, referencia, valor}
+  final Map<String, dynamic>? pago;
 
   const RecaudosScreen({
     super.key,
@@ -38,7 +35,6 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
   bool _cargando = true;
   bool _guardando = false;
 
-  // Estado de cruce por docEntry.
   final Set<int> _cruzados = {};
   final Map<int, double> _abonos = {};
   final TextEditingController _recaudoCtrl = TextEditingController();
@@ -128,7 +124,6 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     );
   }
 
-  // Header con número de recaudo y totales
   Widget _header() {
     return Container(
       decoration: const BoxDecoration(
@@ -192,7 +187,6 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     ]);
   }
 
-  // Tab DOCUMENTOS
   Widget _tabDocumentos() {
     if (_docs.isEmpty) {
       return _vacio(Icons.description_outlined, 'Sin documentos abiertos');
@@ -293,7 +287,6 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     );
   }
 
-  // Menú Cruzar / Detalle / Quitar
   void _menuDocumento(Map<String, dynamic> d) {
     final entry = _docEntry(d);
     final cruzado = _cruzados.contains(entry);
@@ -396,7 +389,6 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     ctrl.dispose();
   }
 
-  // Tab PAGOS
   Widget _tabPagos() {
     final metodo = (widget.pago?['metodo'] ?? '').toString();
     return ListView(
@@ -442,7 +434,6 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     );
   }
 
-  // Tab NOTAS
   Widget _tabNotas() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
@@ -475,7 +466,6 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     );
   }
 
-  // Footer: guardar
   Widget _footer() {
     final activo = _cruzados.isNotEmpty && !_guardando;
     return Container(
@@ -574,8 +564,6 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
         backgroundColor: _verde,
         behavior: SnackBarBehavior.floating,
       ));
-      // Se devuelve el número y lo aplicado para que la forma de pago no
-      // permita cruzar otra vez y use ese monto como pago de cartera
       Navigator.of(context).pop({
         'numeroRecaudo': (res['numeroRecaudo'] ?? _numeroRecaudo).toString(),
         'totalAplicado': _totalAplicado,

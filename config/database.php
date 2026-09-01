@@ -1,9 +1,5 @@
 <?php
-// config/database.php
 
-// Carga las variables del archivo .env (mismo directorio). El .env contiene
-// los secretos y NO se versiona; el .htaccess de esta carpeta bloquea su
-// descarga por web.
 $__envFile = __DIR__ . '/.env';
 if (is_file($__envFile)) {
     foreach (file($__envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $__line) {
@@ -17,7 +13,6 @@ if (is_file($__envFile)) {
 }
 unset($__envFile, $__line, $__k, $__v);
 
-// Configuración para SQL Server (valores sensibles solo en .env)
 define('DB_HOST', getenv('DB_SERVER') ?: '');
 define('DB_NAME', getenv('DB_NAME') ?: 'SkyPagos');
 define('DB_USER', getenv('DB_USER') ?: '');
@@ -29,7 +24,6 @@ if (DB_PASS === '') {
     throw new Exception('Falta el archivo .env con DB_PASSWORD junto a config/database.php');
 }
 
-// Función para obtener la conexión a la base de datos
 function getDbConnection() {
     $connectionInfo = array(
         "Database" => DB_NAME,
@@ -49,14 +43,12 @@ function getDbConnection() {
     return $conn;
 }
 
-// Función para cerrar conexión (puedes usarla si quieres cerrar manualmente más adelante)
 function closeDbConnection($conn) {
     if ($conn) {
         sqlsrv_close($conn);
     }
 }
 
-// Función para ejecutar consultas preparadas
 function executeQuery($conn, $sql, $params = []) {
     $stmt = sqlsrv_prepare($conn, $sql, $params);
     
@@ -71,7 +63,6 @@ function executeQuery($conn, $sql, $params = []) {
     return $stmt;
 }
 
-// Headers para API
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
@@ -81,7 +72,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     exit(0);
 }
 
-// PROBAR CONEXIÓN AUTOMÁTICAMENTE
 echo "<h2>Prueba de Conexión a la Base de Datos</h2>";
 echo "<p><strong>Servidor:</strong> " . DB_HOST . ":" . DB_PORT . "</p>";
 echo "<p><strong>Base de Datos:</strong> " . DB_NAME . "</p>";
@@ -89,16 +79,13 @@ echo "<p><strong>Usuario:</strong> " . DB_USER . "</p>";
 echo "<hr>";
 
 try {
-    // Intentar conectar
     $conn = getDbConnection();
     
-    // Si llegamos aquí, la conexión fue exitosa
     echo "<div style='color: green; font-size: 18px; font-weight: bold;'>";
-    echo "✅ ¡CONEXIÓN EXITOSA!";
+    echo "¡CONEXIÓN EXITOSA!";
     echo "</div>";
     echo "<p>Te conectaste correctamente a la base de datos.</p>";
     
-    // Información adicional del servidor
     $sql = "SELECT @@VERSION as version, DB_NAME() as current_database";
     $stmt = sqlsrv_query($conn, $sql);
     
@@ -109,19 +96,14 @@ try {
         sqlsrv_free_stmt($stmt);
     }
     
-    // NO CERRAMOS LA CONEXIÓN AQUÍ para mantenerla abierta
-    // closeDbConnection($conn);
-    // echo "<p style='color: blue;'>Conexión cerrada correctamente.</p>";
     
 } catch (Exception $e) {
-    // Si hay error, mostrarlo
     echo "<div style='color: red; font-size: 18px; font-weight: bold;'>";
-    echo "❌ ERROR DE CONEXIÓN";
+    echo "ERROR DE CONEXIÓN";
     echo "</div>";
     echo "<p style='color: red;'>No se pudo conectar a la base de datos.</p>";
     echo "<p><strong>Error:</strong> " . $e->getMessage() . "</p>";
     
-    // Sugerencias de solución
     echo "<h3>Posibles soluciones:</h3>";
     echo "<ul>";
     echo "<li>Verificar que SQL Server esté ejecutándose</li>";

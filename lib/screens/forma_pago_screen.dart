@@ -6,31 +6,16 @@ import 'package:image_picker/image_picker.dart';
 import '../utils/app_assets.dart';
 import 'recaudos_screen.dart';
 
-/// Pantalla "Forma de pago" - se muestra OBLIGATORIAMENTE al finalizar la
-/// visita para registrar el recaudo del cliente (valor, fecha y evidencias).
-///
-/// Devuelve por Navigator.pop un mapa:
-///   { 'valor': double, 'fecha': DateTime, 'evidencias': int }
-/// Si el usuario vuelve atrás sin registrar, devuelve null (la visita NO se
-/// finaliza - el formulario es "sí o sí").
-///
-/// Paleta 100% monocromática (blanco / negro / gris).
 class FormaPagoScreen extends StatefulWidget {
   final String nombreCliente;
-  final String numeroCuenta; // NIT / código del cliente
-  final int totalDocumentos; // facturas abiertas
-  final int documentosPorCruzar; // facturas vencidas
-  final double dineroFaltante; // saldo de cartera
-  final double totalPedido; // total del pedido reservado en la visita
-  // Pago ya registrado en esta visita (para editarlo sin volver a escribirlo).
+  final String numeroCuenta;
+  final int totalDocumentos;
+  final int documentosPorCruzar;
+  final double dineroFaltante;
+  final double totalPedido;
   final Map<String, dynamic>? pagoInicial;
-  // Recaudo ya guardado en la BD durante esta visita: no se cruza otra vez,
-  // aunque el pago no se haya confirmado todavía. valorRecaudoPrevio es lo
-  // que se aplicó a cartera en ese recaudo.
   final String? numeroRecaudoPrevio;
   final double valorRecaudoPrevio;
-  // Avisa apenas se guarda un recaudo, para que la visita lo recuerde aunque
-  // el vendedor salga de esta pantalla sin confirmar el pago.
   final void Function(String numeroRecaudo, double totalAplicado)? onRecaudoGuardado;
 
   const FormaPagoScreen({
@@ -52,22 +37,20 @@ class FormaPagoScreen extends StatefulWidget {
 }
 
 class _FormaPagoScreenState extends State<FormaPagoScreen> {
-  // Paleta monocromática
-  static const Color _ink = Color(0xFF111827); // negro suave
-  static const Color _inkDeep = Color(0xFF0B1220); // casi negro (degradados)
-  static const Color _gray = Color(0xFF6B7280); // gris medio
-  static const Color _line = Color(0xFFE5E7EB); // línea sutil
-  static const Color _surface = Color(0xFFF3F4F6); // fondo gris muy claro
+  static const Color _ink = Color(0xFF111827);
+  static const Color _inkDeep = Color(0xFF0B1220);
+  static const Color _gray = Color(0xFF6B7280);
+  static const Color _line = Color(0xFFE5E7EB);
+  static const Color _surface = Color(0xFFF3F4F6);
 
   static const List<String> _meses = [
     'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
     'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'
   ];
 
-  // Un campo por concepto: cartera pendiente y pedido reservado.
   final TextEditingController _pagoCartera = TextEditingController();
   final TextEditingController _pagoPedido = TextEditingController();
-  final TextEditingController _valorCtrl = TextEditingController(); // caso sin cartera ni pedido
+  final TextEditingController _valorCtrl = TextEditingController();
   DateTime _fecha = DateTime.now();
 
   bool get _tieneCartera => widget.dineroFaltante > 0;
@@ -78,24 +61,18 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   double get _montoCartera => _tieneCartera ? _parse(_pagoCartera) : 0;
   double get _montoPedido => _tienePedido ? _parse(_pagoPedido) : 0;
 
-  // Evidencias (fotos tomadas o elegidas de la galería).
   final ImagePicker _picker = ImagePicker();
   final List<XFile> _evidenciasFotos = [];
-  // Evidencias contadas en un registro anterior de este mismo pago
   int _evidenciasPrevias = 0;
   int get _evidencias => _evidenciasFotos.length + _evidenciasPrevias;
 
-  // Método de pago y datos del recaudo
   String? _metodo;
   final TextEditingController _banco = TextEditingController();
   final TextEditingController _referencia = TextEditingController();
 
-  // Número del recaudo ya guardado en la BD (null si no se ha cruzado).
-  // Un recaudo guardado no se repite ni se marca "sin recaudo".
   String? _numeroRecaudo;
   bool get _recaudoCruzado => _numeroRecaudo != null && _numeroRecaudo!.isNotEmpty;
 
-  /// Métodos de pago disponibles y qué datos exigen.
   static const List<Map<String, dynamic>> _metodos = [
     {'id': 'Efectivo', 'icon': Icons.payments_rounded, 'banco': false, 'ref': false},
     {'id': 'Transferencia', 'icon': Icons.swap_horiz_rounded, 'banco': true, 'ref': true},
@@ -116,14 +93,12 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   @override
   void initState() {
     super.initState();
-    // Prefill: por defecto se paga el total de cada concepto.
     if (_tieneCartera) _pagoCartera.text = _miles(widget.dineroFaltante);
     if (_tienePedido) _pagoPedido.text = _miles(widget.totalPedido);
     _cargarPagoInicial();
     final previo = widget.numeroRecaudoPrevio ?? '';
     if (previo.isNotEmpty) {
       _numeroRecaudo = previo;
-      // El pago de cartera es lo que se aplicó en ese recaudo
       if (_tieneCartera && widget.valorRecaudoPrevio > 0) {
         _pagoCartera.text = _miles(widget.valorRecaudoPrevio);
       }
@@ -133,9 +108,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     }
   }
 
-  // Recupera lo que el vendedor ya había registrado en esta visita. Se
-  // respetan sus valores (incluido 0); solo el pedido toma el total por
-  // defecto si no existía cuando registró el pago.
   void _cargarPagoInicial() {
     final p = widget.pagoInicial;
     if (p == null) return;
@@ -174,7 +146,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   double get _valorNum =>
       _tieneConceptos ? (_montoCartera + _montoPedido) : _parse(_valorCtrl);
 
-  // Formatea un número con puntos de miles (para prefijar los campos).
   String _miles(num v) {
     final s = v.toStringAsFixed(0);
     final b = StringBuffer();
@@ -218,7 +189,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     if (d != null) setState(() => _fecha = d);
   }
 
-  /// Muestra el selector Cámara / Galería y agrega la foto elegida.
   Future<void> _adicionarEvidencia() async {
     HapticFeedback.selectionClick();
     final fuente = await showModalBottomSheet<ImageSource>(
@@ -291,7 +261,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
       ));
   }
 
-  /// Registra el pago: animación de carga con el logo y cierra devolviendo el valor.
   Future<void> _realizar() async {
     if (_valorNum <= 0) {
       _aviso('Ingresa el valor del pago');
@@ -337,7 +306,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     });
   }
 
-  /// El cliente no entregó dinero: confirmar y continuar con recaudo $0.
   Future<void> _sinRecaudo() async {
     HapticFeedback.selectionClick();
     if (_recaudoCruzado) {
@@ -433,7 +401,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     );
   }
 
-  // Header oscuro tipo "hero" con logo + resumen de cartera
   Widget _header() {
     return Container(
       decoration: const BoxDecoration(
@@ -449,7 +416,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
           padding: const EdgeInsets.fromLTRB(16, 10, 8, 14),
           child: Column(children: [
             Row(children: [
-              // Logo en píldora blanca para resaltar sobre el fondo oscuro
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
@@ -511,7 +477,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
 
   Widget _dividerV() => Container(width: 1, height: 30, color: Colors.white.withOpacity(0.10));
 
-  // Sección de evidencias
   Widget _seccionEvidencias() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -608,7 +573,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     ]);
   }
 
-  // Sección: método de pago + datos necesarios
   Widget _seccionMetodoPago() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -727,7 +691,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     ]);
   }
 
-  // Campo de datos
   Widget _campo({
     required String label,
     required String valor,
@@ -771,7 +734,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     );
   }
 
-  // Sección: valor del pago (campo normal, igual que el resto)
   Future<void> _abrirRecaudos() async {
     HapticFeedback.selectionClick();
     if (_recaudoCruzado) {
@@ -793,8 +755,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
         ),
       ),
     );
-    // RecaudosScreen devuelve el número del recaudo y lo aplicado cuando lo
-    // guarda en la BD
     if (resultado is Map) {
       final numero = (resultado['numeroRecaudo'] ?? '').toString();
       final aplicado = (resultado['totalAplicado'] as num?)?.toDouble() ?? 0;
@@ -844,7 +804,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
                 : 'Saldo ${_pesos(widget.dineroFaltante)}',
             controller: _pagoCartera,
             maximo: widget.dineroFaltante,
-            // Con el recaudo ya guardado el monto de cartera no se cambia aquí
             bloqueado: _recaudoCruzado,
           ),
           const SizedBox(height: 8),
@@ -994,7 +953,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     );
   }
 
-  // Barra inferior de acciones
   Widget _footerAcciones() {
     return Container(
       decoration: BoxDecoration(
@@ -1038,7 +996,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   }
 }
 
-/// Formatea el número con separador de miles (puntos) mientras se escribe.
 class _MilesInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
@@ -1063,7 +1020,6 @@ class _MilesInputFormatter extends TextInputFormatter {
   }
 }
 
-// Overlay de carga con el logo animado (halo + barra de progreso)
 class _ProcesandoPagoDialog extends StatefulWidget {
   const _ProcesandoPagoDialog();
 

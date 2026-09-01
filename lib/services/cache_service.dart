@@ -1,8 +1,3 @@
-/// Caché en memoria con vencimiento por clave.
-///
-/// Evita repetir peticiones que devuelven lo mismo (clientes, cartera,
-/// tareas, precios). Si dos pantallas piden la misma clave a la vez, comparten
-/// una sola petición en curso.
 class CacheService {
   CacheService._();
   static final CacheService _instance = CacheService._();
@@ -11,9 +6,6 @@ class CacheService {
   final Map<String, _Entrada> _datos = {};
   final Map<String, Future<dynamic>> _enVuelo = {};
 
-  /// Devuelve el valor guardado si no venció; si no, ejecuta [cargar] y guarda
-  /// el resultado durante [ttl]. Un resultado null nunca se guarda; con
-  /// [guardarSi] se puede exigir además una condición (p. ej. success == true).
   Future<T> obtener<T>(
     String clave,
     Duration ttl,
@@ -41,7 +33,6 @@ class CacheService {
     }
   }
 
-  /// Valor guardado (o null si no existe o venció).
   T? leer<T>(String clave) {
     final e = _datos[clave];
     if (e == null) return null;
@@ -60,12 +51,10 @@ class CacheService {
     _datos.remove(clave);
   }
 
-  /// Borra todas las claves que empiecen por [prefijo].
   void invalidarPrefijo(String prefijo) {
     _datos.removeWhere((k, _) => k.startsWith(prefijo));
   }
 
-  /// Borra todo (cambio de sesión).
   void limpiar() {
     _datos.clear();
   }

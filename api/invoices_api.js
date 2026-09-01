@@ -8,11 +8,9 @@ require("dotenv").config()
 const app = express()
 const port = 3005
 
-// Middleware
 app.use(cors())
 app.use(express.json())
 
-// 🔧 CONFIGURACIÓN DE LA BASE DE DATOS - credenciales desde api/.env
 const dbConfig = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
@@ -33,27 +31,24 @@ const dbConfig = {
   },
 }
 
-// Variable global para el pool de conexiones
 let globalPool = null
 
-// 🔗 Función para conectar a la base de datos con reintentos
 async function connectToDatabase() {
   if (globalPool && globalPool.connected) {
     return globalPool
   }
 
   try {
-    console.log("🔄 Conectando a la base de datos...")
-    console.log(`📍 Servidor: ${dbConfig.server}:${dbConfig.port}`)
-    console.log(`🗄️ Base de datos: ${dbConfig.database}`)
-    console.log(`👤 Usuario: ${dbConfig.user}`)
+    console.log("Conectando a la base de datos...")
+    console.log(`Servidor: ${dbConfig.server}:${dbConfig.port}`)
+    console.log(`Base de datos: ${dbConfig.database}`)
+    console.log(`Usuario: ${dbConfig.user}`)
 
     globalPool = new sql.ConnectionPool(dbConfig)
     await globalPool.connect()
 
-    console.log("✅ Conectado a SQL Server exitosamente")
+    console.log("Conectado a SQL Server exitosamente")
 
-    // Verificar que la tabla existe
     const testResult = await globalPool.request().query(`
       SELECT COUNT(*) as total 
       FROM INFORMATION_SCHEMA.TABLES 
@@ -61,16 +56,16 @@ async function connectToDatabase() {
     `)
 
     if (testResult.recordset[0].total === 0) {
-      console.log("⚠️ ADVERTENCIA: Tabla CONSULTA_CARTERA no encontrada")
+      console.log("ADVERTENCIA: Tabla CONSULTA_CARTERA no encontrada")
     } else {
       const countResult = await globalPool.request().query("SELECT COUNT(*) as total FROM CONSULTA_CARTERA")
-      console.log(`📄 Total de registros en CONSULTA_CARTERA: ${countResult.recordset[0].total}`)
+      console.log(`Total de registros en CONSULTA_CARTERA: ${countResult.recordset[0].total}`)
     }
 
     return globalPool
   } catch (err) {
-    console.error("❌ Error conectando a la base de datos:", err.message)
-    console.log("💡 Verifica:")
+    console.error("Error conectando a la base de datos:", err.message)
+    console.log("Verifica:")
     console.log("   - Que SQL Server esté ejecutándose")
     console.log("   - Las credenciales sean correctas")
     console.log("   - El servidor sea accesible desde esta máquina")
@@ -79,14 +74,12 @@ async function connectToDatabase() {
   }
 }
 
-// 📅 Función para formatear fecha
 function formatDate(date) {
   if (!date) return ""
   const d = new Date(date)
   return d.toLocaleDateString("es-CO")
 }
 
-// 💰 Función para formatear moneda
 function formatCurrency(amount) {
   if (!amount) return "$0"
   return new Intl.NumberFormat("es-CO", {
@@ -97,7 +90,6 @@ function formatCurrency(amount) {
   }).format(amount)
 }
 
-// ⏰ Función para calcular días hasta vencimiento
 function calculateDaysUntilDue(dueDate) {
   if (!dueDate) return 0
   const today = new Date()
@@ -107,7 +99,6 @@ function calculateDaysUntilDue(dueDate) {
   return diffDays
 }
 
-// 📊 Función para determinar el estado de la factura
 function getInvoiceStatus(daysUntilDue) {
   if (daysUntilDue < 0) return "Vencida"
   if (daysUntilDue <= 3) return "Urgente"
@@ -115,7 +106,6 @@ function getInvoiceStatus(daysUntilDue) {
   return "Vigente"
 }
 
-// 🎯 Función para obtener el icono del estado
 function getStatusIcon(status) {
   switch (status) {
     case "Vencida":
@@ -129,7 +119,6 @@ function getStatusIcon(status) {
   }
 }
 
-// 🔢 Función para obtener la prioridad (para ordenamiento)
 function getPriority(status) {
   switch (status) {
     case "Vencida":
@@ -143,7 +132,6 @@ function getPriority(status) {
   }
 }
 
-// 🌐 Función para obtener IPs de la máquina
 function getNetworkIPs() {
   const interfaces = os.networkInterfaces()
   const ips = []
@@ -163,16 +151,14 @@ function getNetworkIPs() {
   return ips
 }
 
-// 🚀 ENDPOINT PRINCIPAL: Obtener facturas por CardCode
-// EXACTAMENTE como el PHP: SELECT * FROM CONSULTA_CARTERA WHERE CardCode = ?
 app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
   const startTime = Date.now()
 
   try {
     const cardCode = req.params.cardcode.trim()
 
-    console.log(`🔍 [${new Date().toISOString()}] Consultando facturas para CardCode: ${cardCode}`)
-    console.log(`🔍 Equivalente SQL: SELECT * FROM CONSULTA_CARTERA WHERE CardCode = '${cardCode}'`)
+    console.log(`[${new Date().toISOString()}] Consultando facturas para CardCode: ${cardCode}`)
+    console.log(`Equivalente SQL: SELECT * FROM CONSULTA_CARTERA WHERE CardCode = '${cardCode}'`)
 
     if (!cardCode) {
       return res.status(400).json({
@@ -185,18 +171,16 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
 
     const pool = await connectToDatabase()
 
-    // CONSULTA EXACTA como el PHP
     const result = await pool
       .request()
       .input("cardCode", sql.VarChar, cardCode)
       .query("SELECT * FROM CONSULTA_CARTERA WHERE CardCode = @cardCode")
 
     const queryTime = Date.now() - startTime
-    console.log(`📄 Registros encontrados: ${result.recordset.length} (${queryTime}ms)`)
+    console.log(`Registros encontrados: ${result.recordset.length} (${queryTime}ms)`)
 
-    // Si no hay resultados, equivalente a "Te encuentras a paz y salvo"
     if (result.recordset.length === 0) {
-      console.log(`🎉 Usuario a paz y salvo: ${cardCode}`)
+      console.log(`Usuario a paz y salvo: ${cardCode}`)
       return res.json({
         success: true,
         message: "Te encuentras a paz y salvo",
@@ -208,13 +192,11 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
       })
     }
 
-    // Procesar las facturas encontradas
     const invoices = result.recordset.map((row) => {
       const daysUntilDue = calculateDaysUntilDue(row.DocDueDate)
       const status = getInvoiceStatus(daysUntilDue)
       const formattedAmount = formatCurrency(row.valor_formateado || 0)
 
-      // Generar datos para Wompi (como en el PHP)
       const amountInCents = Math.round((row.valor_formateado || 0) * 100)
       const reference = `ORAL-${row.DocNum}-${Date.now()}`
 
@@ -252,7 +234,6 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
       }
     })
 
-    // Calcular estadísticas
     const overdue = invoices.filter((i) => i.isOverdue).length
     const urgent = invoices.filter((i) => i.isUrgent && !i.isOverdue).length
     const upcoming = invoices.filter((i) => i.isUpcoming).length
@@ -260,7 +241,7 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
     const totalAmount = invoices.reduce((sum, invoice) => sum + invoice.amount, 0)
     const overdueAmount = invoices.filter((i) => i.isOverdue).reduce((sum, invoice) => sum + invoice.amount, 0)
 
-    console.log(`📊 Estadísticas para ${cardCode}:`)
+    console.log(`Estadísticas para ${cardCode}:`)
     console.log(`   - Total: ${invoices.length}`)
     console.log(`   - Vencidas: ${overdue}`)
     console.log(`   - Urgentes: ${urgent}`)
@@ -268,7 +249,6 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
     console.log(`   - Vigentes: ${normal}`)
     console.log(`   - Monto total: $${totalAmount.toLocaleString()}`)
 
-    // Ordenar por prioridad (vencidas primero)
     invoices.sort((a, b) => a.priority - b.priority)
 
     res.json({
@@ -296,8 +276,8 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
     })
   } catch (error) {
     const queryTime = Date.now() - startTime
-    console.error("❌ Error en consulta por CardCode:", error.message)
-    console.error("📍 Stack trace:", error.stack)
+    console.error("Error en consulta por CardCode:", error.message)
+    console.error("Stack trace:", error.stack)
 
     res.status(500).json({
       success: false,
@@ -310,12 +290,11 @@ app.get("/api/invoices/by-cardcode/:cardcode", async (req, res) => {
   }
 })
 
-// 🧪 Endpoint de prueba de conexión MEJORADO
 app.get("/api/test", async (req, res) => {
   const startTime = Date.now()
 
   try {
-    console.log("🧪 Ejecutando test de conexión...")
+    console.log("Ejecutando test de conexión...")
 
     const pool = await connectToDatabase()
     const result = await pool.request().query("SELECT 1 as test, GETDATE() as server_time")
@@ -323,7 +302,7 @@ app.get("/api/test", async (req, res) => {
     const queryTime = Date.now() - startTime
     const networkIPs = getNetworkIPs()
 
-    console.log("✅ Test de conexión exitoso")
+    console.log("Test de conexión exitoso")
 
     res.json({
       success: true,
@@ -352,7 +331,7 @@ app.get("/api/test", async (req, res) => {
     })
   } catch (error) {
     const queryTime = Date.now() - startTime
-    console.error("❌ Error en test de conexión:", error.message)
+    console.error("Error en test de conexión:", error.message)
 
     res.status(500).json({
       success: false,
@@ -375,7 +354,6 @@ app.get("/api/test", async (req, res) => {
   }
 })
 
-// 📋 Endpoint para diagnóstico completo del sistema
 app.get("/api/diagnostic", async (req, res) => {
   const diagnostic = {
     timestamp: new Date().toISOString(),
@@ -407,13 +385,11 @@ app.get("/api/diagnostic", async (req, res) => {
     tests: {},
   }
 
-  // Test de base de datos
   try {
     const pool = await connectToDatabase()
     diagnostic.database.status = "connected"
     diagnostic.database.connected = pool.connected
 
-    // Test de consulta básica
     const testResult = await pool.request().query("SELECT COUNT(*) as total FROM CONSULTA_CARTERA")
     diagnostic.tests.table_access = {
       success: true,
@@ -428,7 +404,6 @@ app.get("/api/diagnostic", async (req, res) => {
     }
   }
 
-  // Test de endpoints
   diagnostic.tests.endpoints = {
     test: "/api/test",
     invoices_by_cardcode: "/api/invoices/by-cardcode/{cardcode}",
@@ -439,12 +414,11 @@ app.get("/api/diagnostic", async (req, res) => {
   res.json(diagnostic)
 })
 
-// 📄 Endpoint para obtener todas las facturas (auxiliar)
 app.get("/api/invoices/all", async (req, res) => {
   const startTime = Date.now()
 
   try {
-    console.log("📄 Obteniendo todas las facturas...")
+    console.log("Obteniendo todas las facturas...")
 
     const pool = await connectToDatabase()
     const result = await pool.request().query("SELECT TOP 100 * FROM CONSULTA_CARTERA ORDER BY DocDueDate DESC")
@@ -469,7 +443,7 @@ app.get("/api/invoices/all", async (req, res) => {
     })
 
     const queryTime = Date.now() - startTime
-    console.log(`✅ ${invoices.length} facturas obtenidas (${queryTime}ms)`)
+    console.log(`${invoices.length} facturas obtenidas (${queryTime}ms)`)
 
     res.json({
       success: true,
@@ -481,7 +455,7 @@ app.get("/api/invoices/all", async (req, res) => {
     })
   } catch (error) {
     const queryTime = Date.now() - startTime
-    console.error("❌ Error obteniendo todas las facturas:", error.message)
+    console.error("Error obteniendo todas las facturas:", error.message)
 
     res.status(500).json({
       success: false,
@@ -493,7 +467,6 @@ app.get("/api/invoices/all", async (req, res) => {
   }
 })
 
-// 🔍 Endpoint para buscar facturas por múltiples criterios
 app.get("/api/invoices/search", async (req, res) => {
   try {
     const { cardCode, docNum, cardName, limit = 50 } = req.query
@@ -534,7 +507,7 @@ app.get("/api/invoices/search", async (req, res) => {
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("❌ Error en búsqueda:", error.message)
+    console.error("Error en búsqueda:", error.message)
     res.status(500).json({
       success: false,
       error: error.message,
@@ -543,7 +516,6 @@ app.get("/api/invoices/search", async (req, res) => {
   }
 })
 
-// 🚫 Manejo de rutas no encontradas
 app.use("*", (req, res) => {
   res.status(404).json({
     success: false,
@@ -560,7 +532,6 @@ app.use("*", (req, res) => {
   })
 })
 
-// 🔧 Función para verificar dependencias
 function checkDependencies() {
   const requiredModules = ["express", "mssql", "cors"]
   const missing = []
@@ -574,83 +545,75 @@ function checkDependencies() {
   })
 
   if (missing.length > 0) {
-    console.log("❌ Módulos faltantes:", missing.join(", "))
-    console.log("💡 Ejecuta: npm install", missing.join(" "))
+    console.log("Módulos faltantes:", missing.join(", "))
+    console.log("Ejecuta: npm install", missing.join(" "))
     return false
   }
 
   return true
 }
 
-// 🚀 Función para iniciar el servidor
 async function startServer() {
-  console.log("🚀 Iniciando servidor ORAL-PLUS...")
+  console.log("Iniciando servidor ORAL-PLUS...")
   console.log("=" * 50)
 
-  // Verificar dependencias
   if (!checkDependencies()) {
     process.exit(1)
   }
 
-  // Mostrar información del sistema
-  console.log(`🖥️ Sistema: ${os.platform()} ${os.arch()}`)
-  console.log(`📍 Host: ${os.hostname()}`)
-  console.log(`🔧 Node.js: ${process.version}`)
-  console.log(`📂 Directorio: ${process.cwd()}`)
+  console.log(`Sistema: ${os.platform()} ${os.arch()}`)
+  console.log(`Host: ${os.hostname()}`)
+  console.log(`Node.js: ${process.version}`)
+  console.log(`Directorio: ${process.cwd()}`)
 
-  // Mostrar configuración de base de datos
-  console.log("\n🗄️ Configuración de Base de Datos:")
+  console.log("\nConfiguración de Base de Datos:")
   console.log(`   Servidor: ${dbConfig.server}:${dbConfig.port}`)
   console.log(`   Base de datos: ${dbConfig.database}`)
   console.log(`   Usuario: ${dbConfig.user}`)
 
-  // Intentar conectar a la base de datos
   try {
     await connectToDatabase()
   } catch (error) {
-    console.log("\n❌ No se pudo conectar a la base de datos")
-    console.log("⚠️ El servidor iniciará pero las consultas fallarán")
-    console.log("💡 Verifica la configuración en dbConfig")
+    console.log("\nNo se pudo conectar a la base de datos")
+    console.log("El servidor iniciará pero las consultas fallarán")
+    console.log("Verifica la configuración en dbConfig")
   }
 
-  // Iniciar servidor HTTP
   const server = app.listen(port, "0.0.0.0", () => {
-    console.log("\n🎉 ¡Servidor iniciado exitosamente!")
+    console.log("\n¡Servidor iniciado exitosamente!")
     console.log("=" * 50)
-    console.log(`🌐 Puerto: ${port}`)
-    console.log(`🔗 URL local: http://localhost:${port}/api`)
+    console.log(`Puerto: ${port}`)
+    console.log(`URL local: http://localhost:${port}/api`)
 
-    // Mostrar todas las IPs disponibles
     const networkIPs = getNetworkIPs()
     if (networkIPs.length > 0) {
-      console.log("\n📡 URLs de red disponibles:")
+      console.log("\nURLs de red disponibles:")
       networkIPs.forEach(({ interface: iface, ip, url }) => {
         console.log(`   ${iface}: ${url}`)
       })
-      console.log("\n💡 Usa cualquiera de estas URLs en tu app Flutter")
+      console.log("\nUsa cualquiera de estas URLs en tu app Flutter")
     }
 
-    console.log("\n🧪 Endpoints disponibles:")
+    console.log("\nEndpoints disponibles:")
     console.log(`   Test: http://localhost:${port}/api/test`)
     console.log(`   Diagnóstico: http://localhost:${port}/api/diagnostic`)
     console.log(`   Facturas: http://localhost:${port}/api/invoices/by-cardcode/{cardcode}`)
 
-    console.log("\n✅ Servidor listo para recibir peticiones")
-    console.log("🛑 Presiona Ctrl+C para detener")
+    console.log("\nServidor listo para recibir peticiones")
+    console.log("Presiona Ctrl+C para detener")
   })
 
-  // Manejo de errores del servidor
   server.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
-      console.error(`❌ Error: El puerto ${port} está en uso`)
-      console.log("💡 Soluciones:")
+      console.error(`Error: El puerto ${port} está en uso`)
+      console.log("Soluciones:")
       console.log("1. Espera unos segundos y vuelve a intentar")
       console.log("2. Cambia el puerto en la línea 'const port = 3005'")
       console.log("3. Mata el proceso que usa el puerto:")
       console.log(`   Windows: netstat -ano | findstr :${port}`)
       console.log(`   Linux/Mac: lsof -ti:${port} | xargs kill`)
     } else {
-      console.error("❌ Error al iniciar el servidor:", err.message)
+      console.error("Error al iniciar el servidor:", err.message)
     }
     process.exit(1)
   })
@@ -658,39 +621,36 @@ async function startServer() {
   return server
 }
 
-// 🛑 Manejo de cierre graceful
 process.on("SIGINT", async () => {
-  console.log("\n🛑 Cerrando servidor...")
+  console.log("\nCerrando servidor...")
 
   if (globalPool) {
     try {
       await globalPool.close()
-      console.log("🔌 Desconectado de la base de datos")
+      console.log("Desconectado de la base de datos")
     } catch (error) {
-      console.error("❌ Error cerrando conexión:", error.message)
+      console.error("Error cerrando conexión:", error.message)
     }
   }
 
-  console.log("👋 ¡Hasta luego!")
+  console.log("¡Hasta luego!")
   process.exit(0)
 })
 
-// 🚨 Manejo de errores no capturados
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("❌ Unhandled Rejection at:", promise)
-  console.error("📍 Reason:", reason)
+  console.error("Unhandled Rejection at:", promise)
+  console.error("Reason:", reason)
 })
 
 process.on("uncaughtException", (error) => {
-  console.error("❌ Uncaught Exception:", error.message)
-  console.error("📍 Stack:", error.stack)
+  console.error("Uncaught Exception:", error.message)
+  console.error("Stack:", error.stack)
   process.exit(1)
 })
 
-// 🚀 Iniciar el servidor
 if (require.main === module) {
   startServer().catch((error) => {
-    console.error("❌ Error fatal al iniciar:", error.message)
+    console.error("Error fatal al iniciar:", error.message)
     process.exit(1)
   })
 }

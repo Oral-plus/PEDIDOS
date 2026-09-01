@@ -63,8 +63,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     super.dispose();
   }
 
-  // Lee el carrito en vivo (widget.cartItems es una copia estática) para que
-  // borrar o editar productos se refleje al instante.
   List<CartItem> get _validItems {
     List<CartItem> fuente;
     try {
@@ -86,7 +84,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _acceptTerms &&
       !_isProcessingOrder;
 
-  // Carga de datos
 
   Future<void> _loadUserData() async {
     if (!mounted) return;
@@ -107,7 +104,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (cedula.isEmpty || !mounted) return;
     setState(() => _isSearchingUser = true);
     try {
-      // /api/clientes/:codigo resuelve el cliente en SAP
       final data = await ApiEasyService().getClientePorCodigo(cedula.trim());
       if (!mounted) return;
       if (data != null && (data['nombre']?.toString().trim().isNotEmpty ?? false)) {
@@ -128,7 +124,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  // Geolocalización
 
   Future<void> _getDeviceLocation() async {
     if (!mounted) return;
@@ -165,7 +160,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  // Procesamiento del pedido
 
   Future<void> _processOrder() async {
     if (!_formKey.currentState!.validate()) return;
@@ -226,7 +220,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Escucha cambios del carrito (borrar/editar productos) para redibujar.
     context.watch<CartProvider>();
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
@@ -416,8 +409,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
             )
           else
-            // Column en vez de ListView con shrinkWrap: evita medir dos veces
-            // dentro del scroll de la pantalla
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Column(
@@ -458,7 +449,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 const SizedBox(height: 6),
                 _badge(item.codigoSap, AppTheme.textSecondary),
                 const SizedBox(height: 10),
-                // Control de cantidad: − [n] +  (toca el número para editar exacto)
                 Container(
                   decoration: BoxDecoration(
                     color: AppTheme.elegantGray,
