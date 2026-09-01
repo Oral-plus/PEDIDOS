@@ -56,6 +56,7 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
   }
 
   Map<String, dynamic>? _pago;
+  Map<String, dynamic>? _encuesta;
   String get _pagoKey => '${_visitaKey}_pago';
 
   String? _numeroRecaudo;
@@ -266,8 +267,8 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
 
     final tieneMotivo = _motivo != null && _motivo!.isNotEmpty;
 
-    Map<String, dynamic>? encuesta;
-    if (!tieneMotivo) {
+    Map<String, dynamic>? encuesta = _encuesta;
+    if (!tieneMotivo && encuesta == null) {
       encuesta = await Navigator.of(context).push<Map<String, dynamic>>(
         MaterialPageRoute(
           builder: (_) => EncuestaVisitaScreen(nombreCliente: _nombreCliente),
@@ -285,25 +286,21 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
         }
         return;
       }
+      _encuesta = encuesta;
     }
 
     if (!mounted) return;
 
     var pago = _pago;
     if (pago == null) {
-      pago = await _abrirFormaPago();
-      if (pago == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Registra el pago (o confirma sin recaudo) para finalizar la visita'),
-              backgroundColor: AppTheme.accentColor,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-        return;
-      }
+      final tieneRecaudo = _numeroRecaudo != null && _numeroRecaudo!.isNotEmpty;
+      pago = {
+        'valor': tieneRecaudo ? _valorRecaudo : 0.0,
+        'metodo': tieneRecaudo ? 'Recaudo' : 'Sin recaudo',
+        'banco': '',
+        'referencia': '',
+        'numeroRecaudo': _numeroRecaudo,
+      };
     } else if (_pagoDesactualizado) {
       final revisar = await _confirmarRevisarPago();
       if (!mounted) return;
@@ -320,17 +317,19 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
 
     if (!mounted) return;
 
-    await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => GestionPedidoScreen(
-          cliente: widget.cliente,
-          ruta: widget.ruta,
-          ultimoPedido: _ultimoPedido,
-          pago: pago,
-          cartera: _cartera,
+    if (_totalPedidos > 0 || _ultimoPedido != null) {
+      await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => GestionPedidoScreen(
+            cliente: widget.cliente,
+            ruta: widget.ruta,
+            ultimoPedido: _ultimoPedido,
+            pago: pago,
+            cartera: _cartera,
+          ),
         ),
-      ),
-    );
+      );
+    }
 
     if (!mounted) return;
     setState(() => _guardando = true);
@@ -350,6 +349,7 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
       metodoPago: metodoPago,
       bancoPago: bancoPago,
       referenciaPago: referenciaPago,
+      numeroRecaudo: (pago['numeroRecaudo'] ?? _numeroRecaudo)?.toString(),
       encuestaTipo: encuesta?['nombre']?.toString(),
       encuestaRespuestas: encuesta != null
           ? {
@@ -373,6 +373,7 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
         await prefs.remove(_recaudoKey);
       } catch (_) {}
       _pago = null;
+      _encuesta = null;
       _numeroRecaudo = null;
       _valorRecaudo = 0;
       _visitaActiva?.finalizar();
@@ -508,8 +509,8 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
             Text(
               !registrado
                   ? (numRecaudo.isNotEmpty
-                      ? 'Recaudo $numRecaudo guardado; falta confirmar el pago'
-                      : 'Se registra desde el menú "Cartera y pago" o al finalizar')
+                      ? 'Recaudo $numRecaudo guardado; confirma el pago si quieres detallarlo'
+                      : 'Opcional: registra el pago si el cliente entregó dinero')
                   : valor > 0
                       ? '${_pesos(valor)} · $metodo${numRecaudo.isNotEmpty ? ' · Recaudo $numRecaudo' : ''}'
                       : 'Sin recaudo',

@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import '../services/api_easy_service.dart';
 import '../utils/app_assets.dart';
 import 'recaudos_screen.dart';
 
@@ -292,6 +293,11 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     );
 
     if (!mounted) return;
+    final noSubidas = await _subirEvidenciasPago();
+    if (!mounted) return;
+    if (noSubidas > 0) {
+      _aviso('$noSubidas evidencia(s) no se pudieron enviar al servidor');
+    }
     HapticFeedback.heavyImpact();
     Navigator.of(context).pop({
       'valor': _valorNum,
@@ -304,6 +310,23 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
       'referencia': _referencia.text.trim(),
       'numeroRecaudo': _numeroRecaudo,
     });
+  }
+
+  Future<int> _subirEvidenciasPago() async {
+    if (_evidenciasFotos.isEmpty) return 0;
+    final api = ApiEasyService();
+    final numeroRecaudo = _numeroRecaudo ?? '';
+    var fallidas = 0;
+    for (final foto in _evidenciasFotos) {
+      final r = await api.subirEvidencia(
+        foto.path,
+        origen: numeroRecaudo.isNotEmpty ? 'recaudo' : 'visita',
+        numeroRecaudo: numeroRecaudo,
+        clienteId: widget.numeroCuenta,
+      );
+      if (r['success'] != true) fallidas++;
+    }
+    return fallidas;
   }
 
   Future<void> _sinRecaudo() async {
@@ -338,6 +361,11 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
       ),
     );
     if (seguro == true && mounted) {
+      final noSubidas = await _subirEvidenciasPago();
+      if (!mounted) return;
+      if (noSubidas > 0) {
+        _aviso('$noSubidas evidencia(s) no se pudieron enviar al servidor');
+      }
       Navigator.of(context).pop({
         'valor': 0.0,
         'valorCartera': 0.0,

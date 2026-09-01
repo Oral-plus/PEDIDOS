@@ -11,6 +11,7 @@ const dispositivos = require("./modules/dispositivos")
 const productos = require("./modules/productos")
 const sesiones = require("./modules/sesiones")
 const clientesExtra = require("./modules/clientes_extra")
+const evidencias = require("./modules/evidencias")
 require("dotenv").config()
 
 const app = express()
@@ -2197,6 +2198,8 @@ async function ensureVisitasTabla(pool) {
       ALTER TABLE dbo.visitas_clientes ADD banco_pago NVARCHAR(120) NULL;
     IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name='referencia_pago' AND Object_ID=Object_ID('dbo.visitas_clientes'))
       ALTER TABLE dbo.visitas_clientes ADD referencia_pago NVARCHAR(120) NULL;
+    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name='numero_recaudo' AND Object_ID=Object_ID('dbo.visitas_clientes'))
+      ALTER TABLE dbo.visitas_clientes ADD numero_recaudo NVARCHAR(60) NULL;
   `)
   visitasTablaLista = true
 
@@ -2300,6 +2303,7 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
     const metodoPago = (b.metodoPago || "").toString().trim()
     const bancoPago = (b.bancoPago || "").toString().trim()
     const referenciaPago = (b.referenciaPago || "").toString().trim()
+    const numeroRecaudo = (b.numeroRecaudo || "").toString().trim()
     const horaInicio = b.horaInicio ? new Date(b.horaInicio) : null
     const horaFin = b.horaFin ? new Date(b.horaFin) : new Date()
     const duracionSeg = Number.parseInt(b.duracionSegundos, 10)
@@ -2350,16 +2354,17 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
       .input("metPago", sql.NVarChar, metodoPago || null)
       .input("bancoPago", sql.NVarChar, bancoPago || null)
       .input("refPago", sql.NVarChar, referenciaPago || null)
+      .input("numRec", sql.NVarChar, numeroRecaudo || null)
       .query(`
         INSERT INTO visitas_clientes
           (cliente_id, ruta_id, vendedor_id, vendedor_nombre, estado_cliente, observacion,
            motivo_no_gestion, total_pedidos, total_cartera, total_recaudos,
            hora_inicio, hora_fin, duracion_segundos, encuesta_tipo, encuesta_respuestas,
-           segunda_visita, motivo_segunda_visita, metodo_pago, banco_pago, referencia_pago)
+           segunda_visita, motivo_segunda_visita, metodo_pago, banco_pago, referencia_pago, numero_recaudo)
         OUTPUT INSERTED.id, CONVERT(VARCHAR(19), INSERTED.fecha, 120) AS fecha
         VALUES (@cliente, @rutaId, @vendId, @vendNom, @estado, @obs,
                 @motivo, @tPed, @tCar, @tRec, @hIni, @hFin, @dur, @encTipo, @encResp,
-                @segunda, @motSeg, @metPago, @bancoPago, @refPago)
+                @segunda, @motSeg, @metPago, @bancoPago, @refPago, @numRec)
       `)
 
     const row = insert.recordset[0]
@@ -2440,6 +2445,7 @@ async function ensurePedidosGestionTabla() {
       forma_pago      NVARCHAR(60)  NULL,
       banco_pago      NVARCHAR(120) NULL,
       referencia_pago NVARCHAR(120) NULL,
+      numero_recaudo  NVARCHAR(60)  NULL,
       plazo_dias      INT           NULL,
       fecha_entrega   NVARCHAR(30)  NULL,
       observaciones   NVARCHAR(MAX) NULL,
@@ -2447,6 +2453,8 @@ async function ensurePedidosGestionTabla() {
       estado          NVARCHAR(30)  NOT NULL CONSTRAINT DF_pedgest_estado DEFAULT ('GUARDADO'),
       fecha           DATETIME      NOT NULL CONSTRAINT DF_pedgest_fecha DEFAULT (GETDATE())
     );
+    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name='numero_recaudo' AND Object_ID=Object_ID('dbo.pedidos_gestion'))
+      ALTER TABLE dbo.pedidos_gestion ADD numero_recaudo NVARCHAR(60) NULL;
   `)
   pedidosGestionTablaLista = true
 }
@@ -2493,6 +2501,7 @@ app.post("/api/pedidos/gestion", authenticateToken, async (req, res) => {
       .input("formaPago", sql.NVarChar, (b.formaPago || "").toString().trim() || null)
       .input("bancoPago", sql.NVarChar, (b.bancoPago || "").toString().trim() || null)
       .input("refPago", sql.NVarChar, (b.referenciaPago || "").toString().trim() || null)
+      .input("numRec", sql.NVarChar, (b.numeroRecaudo || "").toString().trim() || null)
       .input("plazo", sql.Int, Number.isNaN(Number.parseInt(b.plazoDias, 10)) ? null : Number.parseInt(b.plazoDias, 10))
       .input("fechaEntrega", sql.NVarChar, (b.fechaEntrega || "").toString().trim() || null)
       .input("obs", sql.NVarChar, (b.observaciones || "").toString().trim() || null)
@@ -2502,12 +2511,12 @@ app.post("/api/pedidos/gestion", authenticateToken, async (req, res) => {
         INSERT INTO dbo.pedidos_gestion
           (numero_pedido, cliente_id, cliente_nombre, vendedor_id, vendedor_nombre,
            subtotal, descuento, impuesto, flete, total,
-           forma_pago, banco_pago, referencia_pago, plazo_dias, fecha_entrega, observaciones, evidencias, estado)
+           forma_pago, banco_pago, referencia_pago, numero_recaudo, plazo_dias, fecha_entrega, observaciones, evidencias, estado)
         OUTPUT INSERTED.id
         VALUES
           (@numero, @clienteId, @clienteNombre, @vendId, @vendNom,
            @subtotal, @descuento, @impuesto, @flete, @total,
-           @formaPago, @bancoPago, @refPago, @plazo, @fechaEntrega, @obs, @evid, @estado)
+           @formaPago, @bancoPago, @refPago, @numRec, @plazo, @fechaEntrega, @obs, @evid, @estado)
       `)
 
     const id = result.recordset[0].id
@@ -3093,6 +3102,13 @@ clientesExtra.registrarRutas(app, {
   sql,
   serviceLayer: catalogo.repositorio.sl,
   limiteDesdeQuery,
+  log: console,
+})
+
+evidencias.registrarRutas(app, {
+  requireAuth: authenticateToken,
+  getPedidosPool: () => pedidosPool,
+  sql,
   log: console,
 })
 

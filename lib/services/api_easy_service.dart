@@ -525,6 +525,45 @@ class ApiEasyService {
     }
   }
 
+  Future<Map<String, dynamic>> subirEvidencia(
+    String rutaArchivo, {
+    required String origen,
+    String numeroRecaudo = '',
+    String numeroPedido = '',
+    String clienteId = '',
+  }) async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'message': 'Sesión expirada'};
+    }
+    try {
+      final base = await _baseUrlForRequest();
+      final req = http.MultipartRequest('POST', Uri.parse('$base/api/evidencias'));
+      req.headers['Authorization'] = 'Bearer $_token';
+      req.headers['Accept'] = 'application/json';
+      req.fields['origen'] = origen;
+      if (numeroRecaudo.isNotEmpty) req.fields['numeroRecaudo'] = numeroRecaudo;
+      if (numeroPedido.isNotEmpty) req.fields['numeroPedido'] = numeroPedido;
+      if (clienteId.isNotEmpty) req.fields['clienteId'] = clienteId;
+      req.files.add(await http.MultipartFile.fromPath('foto', rutaArchivo));
+      final streamed = await SharedHttp.client.send(req).timeout(const Duration(seconds: 45));
+      final res = await http.Response.fromStream(streamed);
+      final tipo = res.headers['content-type'] ?? '';
+      if (tipo.contains('application/json')) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
+        if (res.statusCode == 200 && data is Map && data['success'] == true) {
+          return {'success': true, 'id': (data['data'] is Map) ? data['data']['id'] : null};
+        }
+        return {
+          'success': false,
+          'message': (data is Map ? data['message']?.toString() : null) ?? 'No se pudo subir la evidencia',
+        };
+      }
+      return {'success': false, 'message': 'No se pudo subir la evidencia (${res.statusCode})'};
+    } catch (e) {
+      return {'success': false, 'message': e.toString().replaceFirst('Exception: ', '')};
+    }
+  }
+
   Future<Map<String, dynamic>> eliminarImagenProducto(String codigo) async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada'};
@@ -719,6 +758,7 @@ class ApiEasyService {
     String formaPago = '',
     String bancoPago = '',
     String referenciaPago = '',
+    String numeroRecaudo = '',
     int? plazoDias,
     String fechaEntrega = '',
     String observaciones = '',
@@ -743,6 +783,7 @@ class ApiEasyService {
           'formaPago': formaPago,
           'bancoPago': bancoPago,
           'referenciaPago': referenciaPago,
+          if (numeroRecaudo.isNotEmpty) 'numeroRecaudo': numeroRecaudo,
           if (plazoDias != null) 'plazoDias': plazoDias,
           'fechaEntrega': fechaEntrega,
           'observaciones': observaciones,
@@ -1189,6 +1230,7 @@ class ApiEasyService {
     String? metodoPago,
     String? bancoPago,
     String? referenciaPago,
+    String? numeroRecaudo,
     DateTime? horaInicio,
     DateTime? horaFin,
     int? duracionSegundos,
@@ -1212,6 +1254,7 @@ class ApiEasyService {
           if (metodoPago != null && metodoPago.isNotEmpty) 'metodoPago': metodoPago,
           if (bancoPago != null && bancoPago.isNotEmpty) 'bancoPago': bancoPago,
           if (referenciaPago != null && referenciaPago.isNotEmpty) 'referenciaPago': referenciaPago,
+          if (numeroRecaudo != null && numeroRecaudo.isNotEmpty) 'numeroRecaudo': numeroRecaudo,
           if (horaInicio != null) 'horaInicio': horaInicio.toIso8601String(),
           if (horaFin != null) 'horaFin': horaFin.toIso8601String(),
           if (duracionSegundos != null) 'duracionSegundos': duracionSegundos,

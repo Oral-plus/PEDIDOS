@@ -655,6 +655,7 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
       formaPago: (widget.pago?['metodo'] ?? '').toString(),
       bancoPago: (widget.pago?['banco'] ?? '').toString(),
       referenciaPago: (widget.pago?['referencia'] ?? '').toString(),
+      numeroRecaudo: (widget.pago?['numeroRecaudo'] ?? '').toString(),
       plazoDias: _plazoDias,
       fechaEntrega: _fechaEntrega == null ? '' : DateFormat('yyyy-MM-dd').format(_fechaEntrega!),
       observaciones: _observaciones,
@@ -662,9 +663,18 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
       estado: estado,
     );
     if (!mounted) return;
-    setState(() => _guardando = false);
     if (res['success'] == true) {
+      final noSubidas = await _subirEvidencias();
+      if (!mounted) return;
+      setState(() => _guardando = false);
       HapticFeedback.heavyImpact();
+      if (noSubidas > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$noSubidas evidencia(s) no se pudieron enviar al servidor'),
+          backgroundColor: const Color(0xFFB45309),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
       if (estado == 'BLOQUEADO') {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Pedido guardado en estado BLOQUEADO (excede el cupo)'),
@@ -674,12 +684,28 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
       }
       Navigator.of(context).pop(true);
     } else {
+      setState(() => _guardando = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text((res['message'] ?? 'No se pudo guardar el pedido').toString()),
         backgroundColor: const Color(0xFFB91C1C),
         behavior: SnackBarBehavior.floating,
       ));
     }
+  }
+
+  Future<int> _subirEvidencias() async {
+    var fallidas = 0;
+    for (final foto in _evidencias) {
+      final r = await _api.subirEvidencia(
+        foto.path,
+        origen: 'gestion',
+        numeroRecaudo: (widget.pago?['numeroRecaudo'] ?? '').toString(),
+        numeroPedido: _numeroPedido,
+        clienteId: _codigo,
+      );
+      if (r['success'] != true) fallidas++;
+    }
+    return fallidas;
   }
 
   Future<bool?> _dialogCupo() {

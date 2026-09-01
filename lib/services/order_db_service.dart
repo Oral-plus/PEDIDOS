@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../models/cart_item.dart';
 import 'api_easy_service.dart';
 import 'cache_service.dart';
@@ -9,12 +10,37 @@ class OrderDbService {
   static final OrderDbService _instance = OrderDbService._();
   factory OrderDbService() => _instance;
 
-  static const Map<String, String> _headers = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  };
+  static Map<String, String> get _headers {
+    final h = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    final token = ApiEasyService().token;
+    if (token != null && token.isNotEmpty) {
+      h['Authorization'] = 'Bearer $token';
+    }
+    return h;
+  }
 
   static Future<String> _baseUrl() => ApiEasyService().baseUrl();
+
+  static Map<String, dynamic> _leerJson(http.Response res) {
+    final tipo = res.headers['content-type'] ?? '';
+    if (tipo.contains('application/json')) {
+      try {
+        final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    return {};
+  }
+
+  static String _mensajeError(http.Response res, Map<String, dynamic> data, String porDefecto) {
+    final msg = data['message']?.toString();
+    if (msg != null && msg.isNotEmpty) return msg;
+    if (res.statusCode == 401) return 'Sesión inválida o expirada. Inicia sesión nuevamente.';
+    return '$porDefecto (${res.statusCode})';
+  }
 
   static Future<Map<String, dynamic>> saveOrder({
     required List<CartItem> cartItems,
@@ -72,7 +98,7 @@ class OrderDbService {
           )
           .timeout(const Duration(seconds: 30));
 
-      final data = jsonDecode(res.body) as Map<String, dynamic>? ?? {};
+      final data = _leerJson(res);
 
       if (res.statusCode == 200 && data['success'] == true) {
         CacheService().invalidarPrefijo('pedidos:');
@@ -87,7 +113,7 @@ class OrderDbService {
 
       return {
         'success': false,
-        'message': data['message']?.toString() ?? 'Error al registrar el pedido',
+        'message': _mensajeError(res, data, 'Error al registrar el pedido'),
       };
     } catch (e) {
       return {
@@ -108,7 +134,10 @@ class OrderDbService {
           .get(Uri.parse(url), headers: _headers)
           .timeout(const Duration(seconds: 15));
 
-      final data = jsonDecode(res.body) as Map<String, dynamic>? ?? {};
+      final data = _leerJson(res);
+      if (data.isEmpty) {
+        return {'success': false, 'message': _mensajeError(res, data, 'Error al consultar pedidos')};
+      }
       return data;
     } catch (e) {
       return {'success': false, 'message': 'Error: ${e.toString()}'};
@@ -123,7 +152,10 @@ class OrderDbService {
           .get(Uri.parse('$workingUrl/api/orders/detail/$numeroPedido'), headers: _headers)
           .timeout(const Duration(seconds: 15));
 
-      final data = jsonDecode(res.body) as Map<String, dynamic>? ?? {};
+      final data = _leerJson(res);
+      if (data.isEmpty) {
+        return {'success': false, 'message': _mensajeError(res, data, 'Error al consultar el pedido')};
+      }
       return data;
     } catch (e) {
       return {'success': false, 'message': 'Error: ${e.toString()}'};
