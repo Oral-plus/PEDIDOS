@@ -389,7 +389,7 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
           totalDocumentos: (_cartera?['totalFacturasAbiertas'] as num?)?.toInt() ?? 0,
           documentosPorCruzar: (_cartera?['facturasVencidas'] as num?)?.toInt() ?? 0,
           dineroFaltante: _totalCartera,
-          totalPedido: _totalPedidos,
+          totalPedido: 0,
           pagoInicial: _pago,
           numeroRecaudoPrevio: _numeroRecaudo,
           valorRecaudoPrevio: _valorRecaudo,

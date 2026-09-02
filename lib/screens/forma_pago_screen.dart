@@ -252,7 +252,11 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
       ..showSnackBar(SnackBar(
         behavior: SnackBarBehavior.floating,
         backgroundColor: _ink,
-        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600)),
+        elevation: 6,
+        duration: const Duration(seconds: 2),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
       ));
   }
 
@@ -417,9 +421,9 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
               ),
             ),
           ),
-          _footerAcciones(),
         ],
       ),
+      bottomNavigationBar: _footerAcciones(),
     );
   }
 
