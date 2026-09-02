@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -19,7 +20,13 @@ class CatalogoService {
 
   String? ultimoError;
 
+  bool _limpiezaHecha = false;
+
   Future<Catalogo?> obtener(String codigoCliente, {bool forzar = false}) {
+    if (!_limpiezaHecha) {
+      _limpiezaHecha = true;
+      unawaited(limpiarDisco());
+    }
     final cliente = codigoCliente.trim();
     return _cache.obtener<Catalogo?>(
       'catalogo:$cliente',
@@ -30,6 +37,45 @@ class CatalogoService {
   }
 
   void invalidar() => _cache.invalidarPrefijo('catalogo:');
+
+  Future<void> limpiarDisco({
+    Duration maxEdad = const Duration(days: 30),
+    int maxArchivos = 60,
+  }) async {
+    try {
+      final dir = await getApplicationSupportDirectory();
+      final archivos = dir
+          .listSync()
+          .whereType<File>()
+          .where((f) {
+            final n = f.uri.pathSegments.last;
+            return n.startsWith('catalogo_') && n.endsWith('.json');
+          })
+          .toList();
+      if (archivos.isEmpty) return;
+
+      final ahora = DateTime.now();
+      final vivos = <File>[];
+      for (final f in archivos) {
+        try {
+          if (ahora.difference(f.statSync().modified) > maxEdad) {
+            await f.delete();
+          } else {
+            vivos.add(f);
+          }
+        } catch (_) {}
+      }
+
+      if (vivos.length > maxArchivos) {
+        vivos.sort((a, b) => a.statSync().modified.compareTo(b.statSync().modified));
+        for (final f in vivos.take(vivos.length - maxArchivos)) {
+          try {
+            await f.delete();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
 
   Future<Catalogo?> _descargar(String cliente) async {
     final api = ApiEasyService();
