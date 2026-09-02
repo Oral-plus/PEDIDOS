@@ -14,12 +14,12 @@ class ApiEasyService {
   static final ApiEasyService _instance = ApiEasyService._();
   factory ApiEasyService() => _instance;
 
+  // Build de PRUEBAS: solo backend local. Sin URLs publicas para que nunca
+  // se desvie a otro servidor; si el local no responde, el error es visible.
   static const List<String> _baseUrls = [
     'http://192.168.2.73:3000',
     'http://10.0.2.2:3000',
     'http://localhost:3000',
-    'http://192.168.2.249:3000',
-    'https://gestores-api.oral-plus.com',
   ];
 
   static const _tokenKey = 'auth_token';
@@ -170,7 +170,7 @@ class ApiEasyService {
   Future<String> baseUrl() => _resolveBaseUrl();
 
   static const _baseUrlKey = 'api_base_url';
-  static const _sondaLan = Duration(milliseconds: 1500);
+  static const _sondaLan = Duration(seconds: 4);
   static const _sondaPublica = Duration(seconds: 6);
   Future<String>? _resolviendo;
   DateTime? _ultimaBusquedaFallida;
