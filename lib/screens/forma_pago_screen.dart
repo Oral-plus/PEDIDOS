@@ -77,12 +77,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   static const List<Map<String, dynamic>> _metodos = [
     {'id': 'Efectivo', 'icon': Icons.payments_rounded, 'banco': false, 'ref': false},
     {'id': 'Transferencia', 'icon': Icons.swap_horiz_rounded, 'banco': true, 'ref': true},
-    {'id': 'Consignación', 'icon': Icons.account_balance_rounded, 'banco': true, 'ref': true},
-    {'id': 'Cheque', 'icon': Icons.receipt_long_rounded, 'banco': true, 'ref': true},
-    {'id': 'Nequi', 'icon': Icons.phone_android_rounded, 'banco': false, 'ref': true},
-    {'id': 'Daviplata', 'icon': Icons.phone_android_rounded, 'banco': false, 'ref': true},
-    {'id': 'Tarjeta', 'icon': Icons.credit_card_rounded, 'banco': false, 'ref': true},
-    {'id': 'Otro', 'icon': Icons.more_horiz_rounded, 'banco': false, 'ref': false},
   ];
 
   Map<String, dynamic>? get _metodoCfg =>
@@ -764,6 +758,18 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
 
   Future<void> _abrirRecaudos() async {
     HapticFeedback.selectionClick();
+    if (_metodo == null) {
+      _aviso('Selecciona el método de pago antes de cruzar la cartera');
+      return;
+    }
+    if (_requiereBanco && _banco.text.trim().isEmpty) {
+      _aviso('Indica el banco / entidad antes de cruzar la cartera');
+      return;
+    }
+    if (_requiereRef && _referencia.text.trim().isEmpty) {
+      _aviso('Indica la referencia / N° de comprobante antes de cruzar la cartera');
+      return;
+    }
     if (_recaudoCruzado) {
       _aviso('El recaudo $_numeroRecaudo ya quedó registrado en esta visita');
       return;

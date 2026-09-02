@@ -762,46 +762,78 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   void _showSuccessDialog(Map<String, dynamic> result) {
     showDialog(
-      context: context, barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check_circle_rounded, color: AppTheme.successColor, size: 64),
-            const SizedBox(height: 16),
-            const Text('¡Pedido Exitoso!', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 8),
-            Text('Nº Documento: ${result['docNum'] ?? '—'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _actionIcon(Icons.picture_as_pdf_rounded, 'PDF', () => _downloadPdf(result)),
-                _actionIcon(Icons.table_view_rounded, 'Excel', () => _downloadExcel(result)),
-              ],
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () { Navigator.pop(ctx); Navigator.pop(context); },
-              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.darkBlue, minimumSize: const Size(double.infinity, 50)),
-              child: const Text('Volver al inicio'),
-            ),
-          ],
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(0.6),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.white,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 68, height: 68,
+                decoration: BoxDecoration(color: AppTheme.successColor.withOpacity(0.12), shape: BoxShape.circle),
+                child: const Icon(Icons.check_rounded, color: AppTheme.successColor, size: 38),
+              ),
+              const SizedBox(height: 18),
+              const Text('Pedido registrado',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: AppTheme.darkBlue)),
+              const SizedBox(height: 6),
+              Text('N° ${result['docNum'] ?? '—'}',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSecondary)),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(child: _reciboTile(Icons.picture_as_pdf_rounded, 'PDF', () => _downloadPdf(result))),
+                  const SizedBox(width: 12),
+                  Expanded(child: _reciboTile(Icons.table_view_rounded, 'Excel', () => _downloadExcel(result))),
+                ],
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity, height: 50,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.darkBlue,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () { Navigator.pop(ctx); Navigator.pop(context); },
+                  child: const Text('Volver al inicio',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _actionIcon(IconData icon, String label, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppTheme.elegantGray, borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: AppTheme.primaryBlue)),
-          const SizedBox(height: 4),
-          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-        ],
+  Widget _reciboTile(IconData icon, String label, VoidCallback onTap) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            color: AppTheme.elegantGray,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.12)),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: AppTheme.primaryBlue, size: 26),
+              const SizedBox(height: 6),
+              Text(label, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppTheme.darkBlue)),
+            ],
+          ),
+        ),
       ),
     );
   }

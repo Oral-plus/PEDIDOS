@@ -175,6 +175,7 @@ class _RutaDetalleScreenState extends State<RutaDetalleScreen> {
     );
     if (ok == true && mounted) {
       setState(() => _visitaRegistrada = true);
+      Navigator.of(context).pop(true);
     }
   }
 
