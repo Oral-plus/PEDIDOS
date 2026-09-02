@@ -2,7 +2,7 @@ name: skypagos
 description: "Portal de pedidos ORAL-PLUS"
 publish_to: "none"
 
-version: 1.0.17+18
+version: 1.0.18+19
 
 environment:
   sdk: ">=3.1.0 <4.0.0"
