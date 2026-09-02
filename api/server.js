@@ -1355,38 +1355,46 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
 
     const b = req.body || {}
     const clienteId = (b.clienteId || "").toString().trim()
-    if (!clienteId) return res.status(400).json({ success: false, message: "Cliente requerido" })
+    if (!clienteId) { console.warn("Recaudo RECHAZADO: llego sin cliente"); return res.status(400).json({ success: false, message: "Cliente requerido" }) }
     // En multipart los documentos llegan como JSON en texto
     let docs = b.documentos
     if (typeof docs === "string") {
       try { docs = JSON.parse(docs) } catch (_) { docs = [] }
     }
     if (!Array.isArray(docs)) docs = []
-    if (docs.length === 0) return res.status(400).json({ success: false, message: "Selecciona al menos un documento" })
+    if (docs.length === 0) { console.warn(`Recaudo RECHAZADO cliente=${clienteId}: llego sin documentos`); return res.status(400).json({ success: false, message: "Selecciona al menos un documento" }) }
 
     const num = (v) => { const n = Number.parseFloat(v); return Number.isNaN(n) ? 0 : n }
 
     // Los importes deben ser los recogidos en la app: ni nulos ni en cero.
     // Se rechaza antes de tocar la base para no guardar recaudos vacios.
+    const esMultipart = String(req.headers['content-type'] || '').includes('multipart')
+    const nFotos = Array.isArray(req.files) ? req.files.length : 0
+    console.info(`Recaudo ENTRANTE cliente=${clienteId} num=${b.numeroRecaudo || "-"} docs=${docs.length} fotos=${nFotos} envio=${esMultipart ? "multipart" : "json"}`)
+    const rechazar = (motivo) => {
+      console.warn(`Recaudo RECHAZADO cliente=${clienteId} num=${b.numeroRecaudo || "-"} recaudo=${num(b.totalRecaudo)} aplicado=${num(b.totalAplicado)} forma=${(b.formaPago || "-")}: ${motivo}`)
+      return res.status(400).json({ success: false, message: motivo })
+    }
+
     const formaPago = (b.formaPago || "").toString().trim()
     const totalRecaudo = num(b.totalRecaudo)
     const totalAplicado = num(b.totalAplicado)
     if (!formaPago) {
-      return res.status(400).json({ success: false, message: "Indica la forma de pago del recaudo" })
+      return rechazar("Indica la forma de pago del recaudo")
     }
     if (totalRecaudo <= 0) {
-      return res.status(400).json({ success: false, message: "El valor recaudado debe ser mayor a cero" })
+      return rechazar("El valor recaudado debe ser mayor a cero")
     }
     if (totalAplicado <= 0) {
-      return res.status(400).json({ success: false, message: "Debes aplicar al menos un abono mayor a cero" })
+      return rechazar("Debes aplicar al menos un abono mayor a cero")
     }
     const docSinAbono = docs.findIndex((d) => num(d.abono) <= 0)
     if (docSinAbono >= 0) {
-      return res.status(400).json({ success: false, message: `El documento ${docSinAbono + 1} no tiene un abono mayor a cero` })
+      return rechazar(`El documento ${docSinAbono + 1} no tiene un abono mayor a cero`)
     }
     const sumaAbonos = docs.reduce((s, d) => s + num(d.abono), 0)
     if (Math.abs(sumaAbonos - totalAplicado) > 1) {
-      return res.status(400).json({ success: false, message: "El total aplicado no coincide con la suma de los abonos" })
+      return rechazar("El total aplicado no coincide con la suma de los abonos")
     }
 
     const numeroRecaudo = (b.numeroRecaudo || "").toString().trim() ||
