@@ -841,6 +841,30 @@ class ApiEasyService {
     return null;
   }
 
+  Future<Map<String, dynamic>> _recaudoConFotos(
+    Map<String, dynamic> campos,
+    List<String> fotos,
+  ) async {
+    final base = await _baseUrlForRequest();
+    final req = http.MultipartRequest('POST', Uri.parse('$base/api/recaudos'));
+    req.headers['Authorization'] = 'Bearer $_token';
+    req.headers['Accept'] = 'application/json';
+    campos.forEach((k, v) {
+      req.fields[k] = v is String ? v : jsonEncode(v);
+    });
+    for (final ruta in fotos) {
+      req.files.add(await http.MultipartFile.fromPath('fotos', ruta));
+    }
+    final streamed = await SharedHttp.client.send(req).timeout(const Duration(seconds: 90));
+    final res = await http.Response.fromStream(streamed);
+    final tipo = res.headers['content-type'] ?? '';
+    if (tipo.contains('application/json')) {
+      final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    }
+    return {'success': false, 'message': 'No se pudo guardar el recaudo (${res.statusCode})'};
+  }
+
   Future<Map<String, dynamic>> guardarRecaudo({
     String numeroRecaudo = '',
     required String clienteId,
@@ -854,31 +878,37 @@ class ApiEasyService {
     double saldo = 0,
     String notas = '',
     required List<Map<String, dynamic>> documentos,
+    List<String> fotos = const [],
   }) async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada'};
     }
+    final campos = <String, dynamic>{
+      'numeroRecaudo': numeroRecaudo,
+      'clienteId': clienteId,
+      'clienteNombre': clienteNombre,
+      'formaPago': formaPago,
+      'bancoPago': bancoPago,
+      'referenciaPago': referenciaPago,
+      'totalDocumentos': totalDocumentos,
+      'totalAplicado': totalAplicado,
+      'totalRecaudo': totalRecaudo,
+      'saldo': saldo,
+      'notas': notas,
+      'documentos': documentos,
+    };
     try {
-      final res = await ApiClient.post(
-        '/api/recaudos',
-        body: {
-          'numeroRecaudo': numeroRecaudo,
-          'clienteId': clienteId,
-          'clienteNombre': clienteNombre,
-          'formaPago': formaPago,
-          'bancoPago': bancoPago,
-          'referenciaPago': referenciaPago,
-          'totalDocumentos': totalDocumentos,
-          'totalAplicado': totalAplicado,
-          'totalRecaudo': totalRecaudo,
-          'saldo': saldo,
-          'notas': notas,
-          'documentos': documentos,
-        },
-        customBaseUrl: await _baseUrlForRequest(),
-        headers: _headers,
-        timeout: const Duration(seconds: 25),
-      );
+      // Con fotos se envia todo en una sola peticion para que el servidor
+      // guarde recaudo, documentos y evidencias en la misma transaccion.
+      final res = fotos.isEmpty
+          ? await ApiClient.post(
+              '/api/recaudos',
+              body: campos,
+              customBaseUrl: await _baseUrlForRequest(),
+              headers: _headers,
+              timeout: const Duration(seconds: 25),
+            )
+          : await _recaudoConFotos(campos, fotos);
       if (res['success'] == true) {
         _cache.invalidar('documentos:$clienteId');
         _cache.invalidar('cartera:$clienteId');
@@ -887,6 +917,7 @@ class ApiEasyService {
         'success': res['success'] == true,
         'message': res['message']?.toString() ?? '',
         'numeroRecaudo': (res['data'] is Map) ? res['data']['numeroRecaudo'] : null,
+        'evidencias': (res['data'] is Map) ? (res['data']['evidencias'] ?? 0) : 0,
       };
     } catch (e) {
       if (_esSesionExpirada(e)) {

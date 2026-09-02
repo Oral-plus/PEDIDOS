@@ -12,6 +12,14 @@ const productos = require("./modules/productos")
 const sesiones = require("./modules/sesiones")
 const clientesExtra = require("./modules/clientes_extra")
 const evidencias = require("./modules/evidencias")
+const multer = require("multer")
+
+// Recibe las fotos del recaudo en la misma peticion, para guardarlas en la
+// misma transaccion. Si la peticion es JSON, multer la deja pasar sin tocarla.
+const subidaEvidencias = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 12 * 1024 * 1024, files: 10 },
+})
 require("dotenv").config()
 
 const app = express()
@@ -1331,7 +1339,7 @@ async function resolverRecaudoIdPedidos(numeroRecaudo) {
   }
 }
 
-app.post("/api/recaudos", authenticateToken, async (req, res) => {
+app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10), async (req, res) => {
   try {
     const authHeader = req.headers.authorization || ""
     let slpCode = null, vendedorNombre = ""
@@ -1348,7 +1356,12 @@ app.post("/api/recaudos", authenticateToken, async (req, res) => {
     const b = req.body || {}
     const clienteId = (b.clienteId || "").toString().trim()
     if (!clienteId) return res.status(400).json({ success: false, message: "Cliente requerido" })
-    const docs = Array.isArray(b.documentos) ? b.documentos : []
+    // En multipart los documentos llegan como JSON en texto
+    let docs = b.documentos
+    if (typeof docs === "string") {
+      try { docs = JSON.parse(docs) } catch (_) { docs = [] }
+    }
+    if (!Array.isArray(docs)) docs = []
     if (docs.length === 0) return res.status(400).json({ success: false, message: "Selecciona al menos un documento" })
 
     const num = (v) => { const n = Number.parseFloat(v); return Number.isNaN(n) ? 0 : n }
@@ -1356,6 +1369,15 @@ app.post("/api/recaudos", authenticateToken, async (req, res) => {
       `REC-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`
 
     await ensureRecaudosTablas()
+
+    // Las imagenes se procesan ANTES de abrir la transaccion (trabajo de CPU)
+    // y se insertan dentro de ella: el recaudo y sus evidencias son todo o nada.
+    const fotos = Array.isArray(req.files) ? req.files.filter((f) => f && f.buffer && f.buffer.length > 0) : []
+    const imagenes = []
+    if (fotos.length > 0) {
+      await evidencias.ensureTabla(pedidosPool)
+      for (const f of fotos) imagenes.push(await evidencias.procesar(f.buffer))
+    }
 
     const transaction = pedidosPool.transaction()
     await transaction.begin()
@@ -1401,14 +1423,37 @@ app.post("/api/recaudos", authenticateToken, async (req, res) => {
       ],
     )
 
+    for (const img of imagenes) {
+      await transaction.request()
+        .input("origen", sql.NVarChar, "recaudo")
+        .input("numRec", sql.NVarChar, numeroRecaudo)
+        .input("cliente", sql.NVarChar, clienteId)
+        .input("vendId", sql.Int, slpCode)
+        .input("vendNom", sql.NVarChar, vendedorNombre || null)
+        .input("recaudoId", sql.Int, recaudoId)
+        .input("contenido", sql.VarBinary(sql.MAX), img.contenido)
+        .input("tamano", sql.Int, img.contenido.length)
+        .input("ancho", sql.Int, img.ancho)
+        .input("alto", sql.Int, img.alto)
+        .query(`
+          INSERT INTO dbo.evidencias_archivos
+            (origen, numero_recaudo, cliente_id, vendedor_id, vendedor_nombre, recaudo_id, contenido, tamano, ancho, alto)
+          VALUES (@origen, @numRec, @cliente, @vendId, @vendNom, @recaudoId, @contenido, @tamano, @ancho, @alto)
+        `)
+    }
+
     await transaction.commit()
     } catch (err) {
       await transaction.rollback()
       throw err
     }
 
-    console.log(`Recaudo ${numeroRecaudo} #${recaudoId} cliente ${clienteId}: ${docs.length} doc(s), aplicado ${num(b.totalAplicado)}`)
-    res.json({ success: true, message: "Recaudo guardado correctamente", data: { id: recaudoId, numeroRecaudo } })
+    console.log(`Recaudo ${numeroRecaudo} #${recaudoId} cliente ${clienteId}: ${docs.length} doc(s), ${imagenes.length} evidencia(s), aplicado ${num(b.totalAplicado)}`)
+    res.json({
+      success: true,
+      message: "Recaudo guardado correctamente",
+      data: { id: recaudoId, numeroRecaudo, evidencias: imagenes.length },
+    })
   } catch (error) {
     console.error("Error guardando recaudo:", error.message)
     res.status(500).json({ success: false, message: "No se pudo guardar el recaudo" })
