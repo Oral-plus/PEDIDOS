@@ -301,35 +301,12 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
         'referencia': '',
         'numeroRecaudo': _numeroRecaudo,
       };
-    } else if (_pagoDesactualizado) {
-      final revisar = await _confirmarRevisarPago();
-      if (!mounted) return;
-      if (revisar) {
-        final nuevo = await _abrirFormaPago();
-        if (nuevo != null) pago = nuevo;
-      }
     }
     if (!mounted) return;
     final totalRecaudos = (pago['valor'] as num?)?.toDouble() ?? 0;
     final metodoPago = pago['metodo']?.toString() ?? '';
     final bancoPago = pago['banco']?.toString() ?? '';
     final referenciaPago = pago['referencia']?.toString() ?? '';
-
-    if (!mounted) return;
-
-    if (_totalPedidos > 0 || _ultimoPedido != null) {
-      await Navigator.of(context).push<bool>(
-        MaterialPageRoute(
-          builder: (_) => GestionPedidoScreen(
-            cliente: widget.cliente,
-            ruta: widget.ruta,
-            ultimoPedido: _ultimoPedido,
-            pago: pago,
-            cartera: _cartera,
-          ),
-        ),
-      );
-    }
 
     if (!mounted) return;
     setState(() => _guardando = true);
@@ -450,33 +427,20 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     } catch (_) {}
   }
 
-  Future<bool> _confirmarRevisarPago() async {
-    final r = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('El pedido cambió', style: TextStyle(color: _textDark, fontWeight: FontWeight.w800)),
-        content: Text(
-          'Cuando registraste el pago el pedido sumaba ${_pesos(_totalPedidoBasePago)} y ahora suma ${_pesos(_totalPedidos)}. ¿Quieres revisar el pago antes de finalizar?',
-          style: TextStyle(color: _textMuted),
+  Future<void> _abrirGestionPedido() async {
+    if (_guardando) return;
+    HapticFeedback.mediumImpact();
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => GestionPedidoScreen(
+          cliente: widget.cliente,
+          ruta: widget.ruta,
+          ultimoPedido: _ultimoPedido,
+          pago: _pago,
+          cartera: _cartera,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Continuar así', style: TextStyle(color: _textMuted, fontWeight: FontWeight.w700)),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: _primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Revisar', style: TextStyle(fontWeight: FontWeight.w700)),
-          ),
-        ],
       ),
     );
-    return r == true;
   }
 
   Widget _tarjetaPago() {
@@ -576,6 +540,11 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
               decoration: BoxDecoration(color: _primary.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
               child: Text('${items.length} ítem(s)',
                   style: TextStyle(color: _primary, fontSize: 11, fontWeight: FontWeight.w800)),
+            ),
+            TextButton(
+              onPressed: _guardando ? null : _abrirGestionPedido,
+              child: Text('Detallar',
+                  style: TextStyle(color: _primary, fontWeight: FontWeight.w800)),
             ),
           ]),
         ),
