@@ -261,11 +261,34 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     }
   }
 
+  void _avisoInfo(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: _textDark,
+        elevation: 6,
+        duration: const Duration(seconds: 3),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+      ));
+  }
+
   Future<void> _finalizarVisita() async {
     if (_guardando) return;
     HapticFeedback.mediumImpact();
 
     final tieneMotivo = _motivo != null && _motivo!.isNotEmpty;
+
+    final hizoPedido = _totalPedidos > 0;
+    final hizoPago = ((_pago?['valor'] as num?)?.toDouble() ?? 0) > 0 ||
+        (_numeroRecaudo != null && _numeroRecaudo!.isNotEmpty);
+    if (!hizoPedido && !hizoPago && !tieneMotivo) {
+      _avisoInfo('El cliente no registró pedido ni pago. Selecciona el motivo de la visita para finalizar.');
+      return;
+    }
 
     Map<String, dynamic>? encuesta = _encuesta;
     if (!tieneMotivo && encuesta == null) {
