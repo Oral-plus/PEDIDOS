@@ -1,7 +1,7 @@
 const { spawnSync } = require("child_process")
 const path = require("path")
 
-const PRUEBAS = ["seguridad.js", "sesion.js", "catalogo.js", "pagos.js", "insercion_completa.js", "atomicidad.js", "relaciones.js", "recaudo_completo.js", "recaudo_atomico.js", "validaciones_datos.js", "recaudo_validacion.js"]
+const PRUEBAS = ["seguridad.js", "sesion.js", "catalogo.js", "pagos.js", "insercion_completa.js", "atomicidad.js", "relaciones.js", "recaudo_completo.js", "recaudo_atomico.js", "validaciones_datos.js", "recaudo_validacion.js", "cartera_recaudo.js"]
 const raizApi = path.join(__dirname, "..", "..")
 let fallos = 0
 
