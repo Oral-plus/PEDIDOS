@@ -1307,8 +1307,28 @@ async function ensureRecaudosTablas() {
       CREATE INDEX IX_recaudos_doc_recaudo ON dbo.recaudos_documentos(recaudo_id);
     IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_recaudos_cliente_fecha' AND object_id = OBJECT_ID('dbo.recaudos'))
       CREATE INDEX IX_recaudos_cliente_fecha ON dbo.recaudos(cliente_id, fecha DESC);
+    IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='recaudos' AND COLUMN_NAME='numero_recaudo' AND CHARACTER_MAXIMUM_LENGTH < 60)
+      ALTER TABLE dbo.recaudos ALTER COLUMN numero_recaudo NVARCHAR(60) NOT NULL;
+    IF (NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_recaudos_numero' AND object_id = OBJECT_ID('dbo.recaudos')))
+       AND (NOT EXISTS (SELECT numero_recaudo FROM dbo.recaudos GROUP BY numero_recaudo HAVING COUNT(*) > 1))
+      CREATE UNIQUE INDEX UQ_recaudos_numero ON dbo.recaudos(numero_recaudo);
+    IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_recdoc_recaudo')
+      ALTER TABLE dbo.recaudos_documentos
+        ADD CONSTRAINT FK_recdoc_recaudo FOREIGN KEY (recaudo_id) REFERENCES dbo.recaudos(id) ON DELETE CASCADE;
   `)
   recaudosTablasListas = true
+}
+
+async function resolverRecaudoIdPedidos(numeroRecaudo) {
+  if (!numeroRecaudo) return null
+  try {
+    const r = await pedidosPool.request()
+      .input("n", sql.NVarChar, numeroRecaudo)
+      .query("SELECT TOP 1 id FROM dbo.recaudos WHERE numero_recaudo = @n ORDER BY id DESC")
+    return r.recordset[0] ? r.recordset[0].id : null
+  } catch (_) {
+    return null
+  }
 }
 
 app.post("/api/recaudos", authenticateToken, async (req, res) => {
@@ -1891,6 +1911,15 @@ async function ensureEncuestasTablas(pool) {
       CREATE INDEX IX_encuestas_resp_encuesta ON dbo.encuestas_respuestas(encuesta_id);
     IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_encuestas_cliente' AND object_id = OBJECT_ID('dbo.encuestas_visitas'))
       CREATE INDEX IX_encuestas_cliente ON dbo.encuestas_visitas(cliente_id, id DESC);
+    IF OBJECT_ID('dbo.visitas_clientes') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_encvis_visita')
+       AND NOT EXISTS (SELECT 1 FROM dbo.encuestas_visitas ev WHERE ev.visita_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.visitas_clientes v WHERE v.id = ev.visita_id))
+      ALTER TABLE dbo.encuestas_visitas
+        ADD CONSTRAINT FK_encvis_visita FOREIGN KEY (visita_id) REFERENCES dbo.visitas_clientes(id) ON DELETE CASCADE;
+    IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_encresp_encuesta')
+       AND NOT EXISTS (SELECT 1 FROM dbo.encuestas_respuestas er WHERE NOT EXISTS (SELECT 1 FROM dbo.encuestas_visitas ev WHERE ev.id = er.encuesta_id))
+      ALTER TABLE dbo.encuestas_respuestas
+        ADD CONSTRAINT FK_encresp_encuesta FOREIGN KEY (encuesta_id) REFERENCES dbo.encuestas_visitas(id) ON DELETE CASCADE;
   `)
   encuestasTablasListas = true
 }
@@ -2200,6 +2229,8 @@ async function ensureVisitasTabla(pool) {
       ALTER TABLE dbo.visitas_clientes ADD referencia_pago NVARCHAR(120) NULL;
     IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name='numero_recaudo' AND Object_ID=Object_ID('dbo.visitas_clientes'))
       ALTER TABLE dbo.visitas_clientes ADD numero_recaudo NVARCHAR(60) NULL;
+    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name='recaudo_id' AND Object_ID=Object_ID('dbo.visitas_clientes'))
+      ALTER TABLE dbo.visitas_clientes ADD recaudo_id INT NULL;
   `)
   visitasTablaLista = true
 
@@ -2332,6 +2363,7 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
 
     const ruta = await connectRuta()
     await ensureVisitasTabla(ruta)
+    const recaudoIdVisita = await resolverRecaudoIdPedidos(numeroRecaudo || null)
 
     const insert = await ruta.request()
       .input("cliente", sql.NVarChar, codigo)
@@ -2355,16 +2387,17 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
       .input("bancoPago", sql.NVarChar, bancoPago || null)
       .input("refPago", sql.NVarChar, referenciaPago || null)
       .input("numRec", sql.NVarChar, numeroRecaudo || null)
+      .input("recaudoId", sql.Int, recaudoIdVisita)
       .query(`
         INSERT INTO visitas_clientes
           (cliente_id, ruta_id, vendedor_id, vendedor_nombre, estado_cliente, observacion,
            motivo_no_gestion, total_pedidos, total_cartera, total_recaudos,
            hora_inicio, hora_fin, duracion_segundos, encuesta_tipo, encuesta_respuestas,
-           segunda_visita, motivo_segunda_visita, metodo_pago, banco_pago, referencia_pago, numero_recaudo)
+           segunda_visita, motivo_segunda_visita, metodo_pago, banco_pago, referencia_pago, numero_recaudo, recaudo_id)
         OUTPUT INSERTED.id, CONVERT(VARCHAR(19), INSERTED.fecha, 120) AS fecha
         VALUES (@cliente, @rutaId, @vendId, @vendNom, @estado, @obs,
                 @motivo, @tPed, @tCar, @tRec, @hIni, @hFin, @dur, @encTipo, @encResp,
-                @segunda, @motSeg, @metPago, @bancoPago, @refPago, @numRec)
+                @segunda, @motSeg, @metPago, @bancoPago, @refPago, @numRec, @recaudoId)
       `)
 
     const row = insert.recordset[0]
@@ -2455,6 +2488,14 @@ async function ensurePedidosGestionTabla() {
     );
     IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name='numero_recaudo' AND Object_ID=Object_ID('dbo.pedidos_gestion'))
       ALTER TABLE dbo.pedidos_gestion ADD numero_recaudo NVARCHAR(60) NULL;
+    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name='recaudo_id' AND Object_ID=Object_ID('dbo.pedidos_gestion'))
+      ALTER TABLE dbo.pedidos_gestion ADD recaudo_id INT NULL;
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_pedgest_recaudo_id' AND object_id = OBJECT_ID('dbo.pedidos_gestion'))
+      CREATE INDEX IX_pedgest_recaudo_id ON dbo.pedidos_gestion(recaudo_id);
+    IF OBJECT_ID('dbo.recaudos') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_pedgest_recaudo')
+      ALTER TABLE dbo.pedidos_gestion
+        ADD CONSTRAINT FK_pedgest_recaudo FOREIGN KEY (recaudo_id) REFERENCES dbo.recaudos(id) ON DELETE CASCADE;
   `)
   pedidosGestionTablaLista = true
 }
@@ -2486,6 +2527,9 @@ app.post("/api/pedidos/gestion", authenticateToken, async (req, res) => {
 
     await ensurePedidosGestionTabla()
 
+    const numRecGestion = (b.numeroRecaudo || "").toString().trim() || null
+    const recaudoIdGestion = await resolverRecaudoIdPedidos(numRecGestion)
+
     const result = await pedidosPool
       .request()
       .input("numero", sql.NVarChar, (b.numeroPedido || "").toString().trim() || null)
@@ -2501,7 +2545,8 @@ app.post("/api/pedidos/gestion", authenticateToken, async (req, res) => {
       .input("formaPago", sql.NVarChar, (b.formaPago || "").toString().trim() || null)
       .input("bancoPago", sql.NVarChar, (b.bancoPago || "").toString().trim() || null)
       .input("refPago", sql.NVarChar, (b.referenciaPago || "").toString().trim() || null)
-      .input("numRec", sql.NVarChar, (b.numeroRecaudo || "").toString().trim() || null)
+      .input("numRec", sql.NVarChar, numRecGestion)
+      .input("recaudoId", sql.Int, recaudoIdGestion)
       .input("plazo", sql.Int, Number.isNaN(Number.parseInt(b.plazoDias, 10)) ? null : Number.parseInt(b.plazoDias, 10))
       .input("fechaEntrega", sql.NVarChar, (b.fechaEntrega || "").toString().trim() || null)
       .input("obs", sql.NVarChar, (b.observaciones || "").toString().trim() || null)
@@ -2511,12 +2556,12 @@ app.post("/api/pedidos/gestion", authenticateToken, async (req, res) => {
         INSERT INTO dbo.pedidos_gestion
           (numero_pedido, cliente_id, cliente_nombre, vendedor_id, vendedor_nombre,
            subtotal, descuento, impuesto, flete, total,
-           forma_pago, banco_pago, referencia_pago, numero_recaudo, plazo_dias, fecha_entrega, observaciones, evidencias, estado)
+           forma_pago, banco_pago, referencia_pago, numero_recaudo, recaudo_id, plazo_dias, fecha_entrega, observaciones, evidencias, estado)
         OUTPUT INSERTED.id
         VALUES
           (@numero, @clienteId, @clienteNombre, @vendId, @vendNom,
            @subtotal, @descuento, @impuesto, @flete, @total,
-           @formaPago, @bancoPago, @refPago, @numRec, @plazo, @fechaEntrega, @obs, @evid, @estado)
+           @formaPago, @bancoPago, @refPago, @numRec, @recaudoId, @plazo, @fechaEntrega, @obs, @evid, @estado)
       `)
 
     const id = result.recordset[0].id

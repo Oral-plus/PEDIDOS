@@ -25,14 +25,35 @@ async function ensureTabla(pool) {
       tamano          INT            NOT NULL,
       ancho           INT            NULL,
       alto            INT            NULL,
+      recaudo_id      INT            NULL,
       fecha           DATETIME       NOT NULL CONSTRAINT DF_evid_fecha DEFAULT (GETDATE())
     );
+    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name='recaudo_id' AND Object_ID=Object_ID('dbo.evidencias_archivos'))
+      ALTER TABLE dbo.evidencias_archivos ADD recaudo_id INT NULL;
     IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_evid_recaudo' AND object_id = OBJECT_ID('dbo.evidencias_archivos'))
       CREATE INDEX IX_evid_recaudo ON dbo.evidencias_archivos(numero_recaudo);
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_evid_recaudo_id' AND object_id = OBJECT_ID('dbo.evidencias_archivos'))
+      CREATE INDEX IX_evid_recaudo_id ON dbo.evidencias_archivos(recaudo_id);
     IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_evid_cliente' AND object_id = OBJECT_ID('dbo.evidencias_archivos'))
       CREATE INDEX IX_evid_cliente ON dbo.evidencias_archivos(cliente_id, fecha DESC);
+    IF OBJECT_ID('dbo.recaudos') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_evid_recaudo')
+      ALTER TABLE dbo.evidencias_archivos
+        ADD CONSTRAINT FK_evid_recaudo FOREIGN KEY (recaudo_id) REFERENCES dbo.recaudos(id) ON DELETE CASCADE;
   `)
   tablaLista = true
+}
+
+async function resolverRecaudoId(pool, sql, numeroRecaudo) {
+  if (!numeroRecaudo) return null
+  try {
+    const r = await pool.request()
+      .input("n", sql.NVarChar, numeroRecaudo)
+      .query("SELECT TOP 1 id FROM dbo.recaudos WHERE numero_recaudo = @n ORDER BY id DESC")
+    return r.recordset[0] ? r.recordset[0].id : null
+  } catch (_) {
+    return null
+  }
 }
 
 async function procesar(buffer) {
@@ -70,6 +91,7 @@ function registrarRutas(app, { requireAuth, getPedidosPool, sql, log }) {
 
       const pool = getPedidosPool()
       await ensureTabla(pool)
+      const recaudoId = await resolverRecaudoId(pool, sql, numeroRecaudo)
       const r = await pool
         .request()
         .input("origen", sql.NVarChar, origen)
@@ -78,19 +100,20 @@ function registrarRutas(app, { requireAuth, getPedidosPool, sql, log }) {
         .input("cliente", sql.NVarChar, clienteId)
         .input("vendId", sql.Int, vendedorId)
         .input("vendNom", sql.NVarChar, vendedorNombre)
+        .input("recaudoId", sql.Int, recaudoId)
         .input("contenido", sql.VarBinary(sql.MAX), contenido)
         .input("tamano", sql.Int, contenido.length)
         .input("ancho", sql.Int, ancho)
         .input("alto", sql.Int, alto)
         .query(`
           INSERT INTO dbo.evidencias_archivos
-            (origen, numero_recaudo, numero_pedido, cliente_id, vendedor_id, vendedor_nombre, contenido, tamano, ancho, alto)
+            (origen, numero_recaudo, numero_pedido, cliente_id, vendedor_id, vendedor_nombre, recaudo_id, contenido, tamano, ancho, alto)
           OUTPUT INSERTED.id
-          VALUES (@origen, @numRec, @numPed, @cliente, @vendId, @vendNom, @contenido, @tamano, @ancho, @alto)
+          VALUES (@origen, @numRec, @numPed, @cliente, @vendId, @vendNom, @recaudoId, @contenido, @tamano, @ancho, @alto)
         `)
 
       const id = r.recordset[0].id
-      log.info(`Evidencia #${id} ${origen} cliente ${clienteId || "-"} recaudo ${numeroRecaudo || "-"} pedido ${numeroPedido || "-"} ${contenido.length} bytes vend ${vendedorId != null ? vendedorId : "-"}`)
+      log.info(`Evidencia #${id} ${origen} cliente ${clienteId || "-"} recaudo ${numeroRecaudo || "-"}(id ${recaudoId != null ? recaudoId : "-"}) pedido ${numeroPedido || "-"} ${contenido.length} bytes vend ${vendedorId != null ? vendedorId : "-"}`)
       res.json({ success: true, message: "Evidencia guardada", data: { id, tamano: contenido.length } })
     } catch (error) {
       log.error("Error guardando evidencia:", error.message)
