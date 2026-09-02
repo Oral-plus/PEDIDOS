@@ -307,15 +307,25 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('Finalizar pedido', style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800, color: AppTheme.darkBlue, letterSpacing: -0.4)),
+                    const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text('Finalizar pedido',
+                          maxLines: 1,
+                          softWrap: false,
+                          style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800, color: AppTheme.darkBlue, letterSpacing: -0.4)),
+                    ),
                     const SizedBox(height: 1),
                     Text('$n ${n == 1 ? 'producto' : 'productos'} seleccionado${n == 1 ? '' : 's'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary, fontWeight: FontWeight.w500)),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                 decoration: BoxDecoration(
