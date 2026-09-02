@@ -15,11 +15,11 @@ class ApiEasyService {
   factory ApiEasyService() => _instance;
 
   static const List<String> _baseUrls = [
-    'https://gestores-api.oral-plus.com',
-    'http://192.168.2.249:3000',
     'http://192.168.2.73:3000',
     'http://10.0.2.2:3000',
     'http://localhost:3000',
+    'http://192.168.2.249:3000',
+    'https://gestores-api.oral-plus.com',
   ];
 
   static const _tokenKey = 'auth_token';
