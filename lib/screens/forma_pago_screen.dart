@@ -790,18 +790,26 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
             'valorCartera': _montoCartera,
             'valor': _valorNum,
           },
+          fotos: _evidenciasFotos.map((f) => f.path).toList(),
         ),
       ),
     );
     if (resultado is Map) {
       final numero = (resultado['numeroRecaudo'] ?? '').toString();
       final aplicado = (resultado['totalAplicado'] as num?)?.toDouble() ?? 0;
+      final guardadas = (resultado['evidencias'] as num?)?.toInt() ?? 0;
       if (numero.isEmpty) return;
       widget.onRecaudoGuardado?.call(numero, aplicado);
       if (mounted) {
         setState(() {
           _numeroRecaudo = numero;
           if (_tieneCartera && aplicado > 0) _pagoCartera.text = _miles(aplicado);
+          // Las fotos ya quedaron guardadas junto al recaudo: se contabilizan
+          // como previas para no volver a subirlas al registrar el pago.
+          if (guardadas > 0) {
+            _evidenciasPrevias += guardadas;
+            _evidenciasFotos.removeRange(0, guardadas.clamp(0, _evidenciasFotos.length));
+          }
         });
       }
     }

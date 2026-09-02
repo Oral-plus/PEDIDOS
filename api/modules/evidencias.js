@@ -185,4 +185,4 @@ function registrarRutas(app, { requireAuth, getPedidosPool, sql, log }) {
   })
 }
 
-module.exports = { registrarRutas, ensureTabla }
+module.exports = { registrarRutas, ensureTabla, procesar, resolverRecaudoId }

@@ -8,12 +8,16 @@ class RecaudosScreen extends StatefulWidget {
   final String codigoCliente;
   final String nombreCliente;
   final Map<String, dynamic>? pago;
+  /// Rutas de las fotos de evidencia. Viajan con el recaudo en la misma
+  /// peticion para que se guarden en la misma transaccion.
+  final List<String> fotos;
 
   const RecaudosScreen({
     super.key,
     required this.codigoCliente,
     this.nombreCliente = '',
     this.pago,
+    this.fotos = const [],
   });
 
   @override
@@ -554,6 +558,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
       saldo: _saldo,
       notas: _notas.text.trim(),
       documentos: documentos,
+      fotos: widget.fotos,
     );
     if (!mounted) return;
     setState(() => _guardando = false);
@@ -567,6 +572,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
       Navigator.of(context).pop({
         'numeroRecaudo': (res['numeroRecaudo'] ?? _numeroRecaudo).toString(),
         'totalAplicado': _totalAplicado,
+        'evidencias': res['evidencias'] ?? 0,
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
