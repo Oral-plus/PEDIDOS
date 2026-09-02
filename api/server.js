@@ -1314,7 +1314,7 @@ async function ensureRecaudosTablas() {
       CREATE UNIQUE INDEX UQ_recaudos_numero ON dbo.recaudos(numero_recaudo);
     IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_recdoc_recaudo')
       ALTER TABLE dbo.recaudos_documentos
-        ADD CONSTRAINT FK_recdoc_recaudo FOREIGN KEY (recaudo_id) REFERENCES dbo.recaudos(id);
+        ADD CONSTRAINT FK_recdoc_recaudo FOREIGN KEY (recaudo_id) REFERENCES dbo.recaudos(id) ON DELETE CASCADE;
   `)
   recaudosTablasListas = true
 }
@@ -1911,6 +1911,15 @@ async function ensureEncuestasTablas(pool) {
       CREATE INDEX IX_encuestas_resp_encuesta ON dbo.encuestas_respuestas(encuesta_id);
     IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_encuestas_cliente' AND object_id = OBJECT_ID('dbo.encuestas_visitas'))
       CREATE INDEX IX_encuestas_cliente ON dbo.encuestas_visitas(cliente_id, id DESC);
+    IF OBJECT_ID('dbo.visitas_clientes') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_encvis_visita')
+       AND NOT EXISTS (SELECT 1 FROM dbo.encuestas_visitas ev WHERE ev.visita_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.visitas_clientes v WHERE v.id = ev.visita_id))
+      ALTER TABLE dbo.encuestas_visitas
+        ADD CONSTRAINT FK_encvis_visita FOREIGN KEY (visita_id) REFERENCES dbo.visitas_clientes(id) ON DELETE CASCADE;
+    IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_encresp_encuesta')
+       AND NOT EXISTS (SELECT 1 FROM dbo.encuestas_respuestas er WHERE NOT EXISTS (SELECT 1 FROM dbo.encuestas_visitas ev WHERE ev.id = er.encuesta_id))
+      ALTER TABLE dbo.encuestas_respuestas
+        ADD CONSTRAINT FK_encresp_encuesta FOREIGN KEY (encuesta_id) REFERENCES dbo.encuestas_visitas(id) ON DELETE CASCADE;
   `)
   encuestasTablasListas = true
 }
@@ -2486,7 +2495,7 @@ async function ensurePedidosGestionTabla() {
     IF OBJECT_ID('dbo.recaudos') IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_pedgest_recaudo')
       ALTER TABLE dbo.pedidos_gestion
-        ADD CONSTRAINT FK_pedgest_recaudo FOREIGN KEY (recaudo_id) REFERENCES dbo.recaudos(id);
+        ADD CONSTRAINT FK_pedgest_recaudo FOREIGN KEY (recaudo_id) REFERENCES dbo.recaudos(id) ON DELETE CASCADE;
   `)
   pedidosGestionTablaLista = true
 }

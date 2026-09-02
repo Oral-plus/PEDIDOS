@@ -39,7 +39,7 @@ async function ensureTabla(pool) {
     IF OBJECT_ID('dbo.recaudos') IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_evid_recaudo')
       ALTER TABLE dbo.evidencias_archivos
-        ADD CONSTRAINT FK_evid_recaudo FOREIGN KEY (recaudo_id) REFERENCES dbo.recaudos(id);
+        ADD CONSTRAINT FK_evid_recaudo FOREIGN KEY (recaudo_id) REFERENCES dbo.recaudos(id) ON DELETE CASCADE;
   `)
   tablaLista = true
 }

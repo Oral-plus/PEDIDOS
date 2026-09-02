@@ -76,32 +76,41 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const fGes = gesId ? await uno("SELECT recaudo_id FROM dbo.pedidos_gestion WHERE id=@id", [["id", sql.Int, gesId]]) : null
   ok("gestion: recaudo_id = id del recaudo (FK)", fGes && fGes.recaudo_id === recaudoId, `recaudo_id=${fGes && fGes.recaudo_id}`)
 
-  // Visita -> recaudo_id (referencia por id entre BD, sin FK)
-  const rVis = await llamar("POST", `/api/clientes/${CLIENTE}/visita`, { token, body: { observacion: "prueba rel", metodoPago: "Transferencia", numeroRecaudo: NUM_RECAUDO, totalRecaudos: 5000 } })
+  // Visita + encuesta -> recaudo_id (ref por id entre BD) y cadena encuesta->respuestas
+  const rVis = await llamar("POST", `/api/clientes/${CLIENTE}/visita`, { token, body: { observacion: "prueba rel", metodoPago: "Transferencia", numeroRecaudo: NUM_RECAUDO, totalRecaudos: 5000, encuestaTipo: "Enc prueba", encuestaRespuestas: { tipo: "T1", nombre: "Enc prueba", respuestas: { p1: "si", p2: "no" } } } })
   const visId = rVis.json && rVis.json.data && rVis.json.data.id
   const fVis = visId ? await unoR("SELECT recaudo_id FROM visitas_clientes WHERE id=@id", [["id", sql.Int, visId]]) : null
   ok("visita: recaudo_id = id del recaudo (referencia entre BD)", fVis && fVis.recaudo_id === recaudoId, `recaudo_id=${fVis && fVis.recaudo_id}`)
+
+  const fEnc = visId ? await unoR("SELECT id FROM dbo.encuestas_visitas WHERE visita_id=@id", [["id", sql.Int, visId]]) : null
+  const encId = fEnc && fEnc.id
+  const nResp = encId ? (await unoR("SELECT COUNT(*) n FROM dbo.encuestas_respuestas WHERE encuesta_id=@id", [["id", sql.Int, encId]])).n : 0
+  ok("encuesta: enlazada a la visita (visita_id) con 2 respuestas", encId && nResp === 2, `enc=${encId} resp=${nResp}`)
+
+  const fkRuta = (await ruta.request().query("SELECT name FROM sys.foreign_keys WHERE name IN ('FK_encvis_visita','FK_encresp_encuesta')")).recordset.map((r) => r.name)
+  ok("FK de encuestas declaradas: FK_encvis_visita, FK_encresp_encuesta", fkRuta.length === 2, fkRuta.join(","))
+
+  // Borrado en cascada: al borrar la visita se van encuesta y respuestas
+  if (visId) await ruta.request().input("id", sql.Int, visId).input("c", sql.NVarChar, CLIENTE).query("DELETE FROM visitas_clientes WHERE id=@id AND cliente_id=@c")
+  const encTras = encId ? (await unoR("SELECT COUNT(*) n FROM dbo.encuestas_visitas WHERE id=@id", [["id", sql.Int, encId]])).n : -1
+  const respTras = encId ? (await unoR("SELECT COUNT(*) n FROM dbo.encuestas_respuestas WHERE encuesta_id=@id", [["id", sql.Int, encId]])).n : -1
+  ok("cascada: borrar la visita elimina su encuesta y respuestas", encTras === 0 && respTras === 0, `enc=${encTras} resp=${respTras}`)
 
   // Las FK existen en la BD Pedidos
   const fks = (await pedidos.request().query("SELECT name FROM sys.foreign_keys WHERE name IN ('FK_evid_recaudo','FK_pedgest_recaudo','FK_recdoc_recaudo')")).recordset.map((r) => r.name)
   ok("FK declaradas: FK_evid_recaudo, FK_pedgest_recaudo, FK_recdoc_recaudo", fks.length === 3, fks.join(","))
 
-  // La FK IMPIDE borrar el recaudo mientras tenga hijos (evidencia/gestion/documentos)
-  let bloqueo = false, msg = ""
-  try {
-    await pedidos.request().input("id", sql.Int, recaudoId).query("DELETE FROM dbo.recaudos WHERE id=@id")
-  } catch (e) { bloqueo = true; msg = e.message.split(".")[0] }
-  ok("la FK impide borrar el recaudo con hijos (integridad referencial)", bloqueo, msg)
+  // La FK con ON DELETE CASCADE: borrar el recaudo elimina sus hijos (documentos, evidencia, gestion)
+  await pedidos.request().input("id", sql.Int, recaudoId).query("DELETE FROM dbo.recaudos WHERE id=@id")
+  const recTras = (await uno("SELECT COUNT(*) n FROM dbo.recaudos WHERE id=@id", [["id", sql.Int, recaudoId]])).n
+  const eviTras = eviId ? (await uno("SELECT COUNT(*) n FROM dbo.evidencias_archivos WHERE id=@id", [["id", sql.Int, eviId]])).n : -1
+  const gesTras = gesId ? (await uno("SELECT COUNT(*) n FROM dbo.pedidos_gestion WHERE id=@id", [["id", sql.Int, gesId]])).n : -1
+  const docTras = (await uno("SELECT COUNT(*) n FROM dbo.recaudos_documentos WHERE recaudo_id=@id", [["id", sql.Int, recaudoId]])).n
+  ok("cascada: borrar el recaudo elimina documentos, evidencia y gestion", recTras === 0 && eviTras === 0 && gesTras === 0 && docTras === 0, `rec=${recTras} evi=${eviTras} ges=${gesTras} doc=${docTras}`)
 
-  // limpieza en orden (hijos -> padre)
+  // limpieza restante (la visita en BD Ruta ya se borro en la prueba de cascada de encuestas)
   try {
-    if (eviId) await pedidos.request().input("id", sql.Int, eviId).query("DELETE FROM dbo.evidencias_archivos WHERE id=@id")
-    if (gesId) await pedidos.request().input("id", sql.Int, gesId).query("DELETE FROM dbo.pedidos_gestion WHERE id=@id")
-    if (visId) await ruta.request().input("id", sql.Int, visId).input("c", sql.NVarChar, CLIENTE).query("DELETE FROM visitas_clientes WHERE id=@id AND cliente_id=@c")
-    if (recaudoId) {
-      await pedidos.request().input("id", sql.Int, recaudoId).query("DELETE FROM dbo.recaudos_documentos WHERE recaudo_id=@id")
-      await pedidos.request().input("id", sql.Int, recaudoId).query("DELETE FROM dbo.recaudos WHERE id=@id")
-    }
+    await ruta.request().input("c", sql.NVarChar, CLIENTE).query("DELETE FROM visitas_clientes WHERE cliente_id=@c")
     await sesiones.cerrar(pedidos, sql, jti, "prueba")
   } catch (e) { process.stdout.write("aviso limpieza: " + e.message + "\n") }
   await pedidos.close(); await ruta.close()
