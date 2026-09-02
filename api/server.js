@@ -1365,6 +1365,30 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
     if (docs.length === 0) return res.status(400).json({ success: false, message: "Selecciona al menos un documento" })
 
     const num = (v) => { const n = Number.parseFloat(v); return Number.isNaN(n) ? 0 : n }
+
+    // Los importes deben ser los recogidos en la app: ni nulos ni en cero.
+    // Se rechaza antes de tocar la base para no guardar recaudos vacios.
+    const formaPago = (b.formaPago || "").toString().trim()
+    const totalRecaudo = num(b.totalRecaudo)
+    const totalAplicado = num(b.totalAplicado)
+    if (!formaPago) {
+      return res.status(400).json({ success: false, message: "Indica la forma de pago del recaudo" })
+    }
+    if (totalRecaudo <= 0) {
+      return res.status(400).json({ success: false, message: "El valor recaudado debe ser mayor a cero" })
+    }
+    if (totalAplicado <= 0) {
+      return res.status(400).json({ success: false, message: "Debes aplicar al menos un abono mayor a cero" })
+    }
+    const docSinAbono = docs.findIndex((d) => num(d.abono) <= 0)
+    if (docSinAbono >= 0) {
+      return res.status(400).json({ success: false, message: `El documento ${docSinAbono + 1} no tiene un abono mayor a cero` })
+    }
+    const sumaAbonos = docs.reduce((s, d) => s + num(d.abono), 0)
+    if (Math.abs(sumaAbonos - totalAplicado) > 1) {
+      return res.status(400).json({ success: false, message: "El total aplicado no coincide con la suma de los abonos" })
+    }
+
     const numeroRecaudo = (b.numeroRecaudo || "").toString().trim() ||
       `REC-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`
 
@@ -1389,12 +1413,12 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
       .input("clienteNombre", sql.NVarChar, (b.clienteNombre || "").toString().trim() || null)
       .input("vendId", sql.Int, slpCode)
       .input("vendNom", sql.NVarChar, vendedorNombre || null)
-      .input("formaPago", sql.NVarChar, (b.formaPago || "").toString().trim() || null)
+      .input("formaPago", sql.NVarChar, formaPago)
       .input("bancoPago", sql.NVarChar, (b.bancoPago || "").toString().trim() || null)
       .input("refPago", sql.NVarChar, (b.referenciaPago || "").toString().trim() || null)
       .input("totDocs", sql.Decimal(18, 2), num(b.totalDocumentos))
-      .input("totApl", sql.Decimal(18, 2), num(b.totalAplicado))
-      .input("totRec", sql.Decimal(18, 2), num(b.totalRecaudo))
+      .input("totApl", sql.Decimal(18, 2), totalAplicado)
+      .input("totRec", sql.Decimal(18, 2), totalRecaudo)
       .input("saldo", sql.Decimal(18, 2), num(b.saldo))
       .input("notas", sql.NVarChar, (b.notas || "").toString().trim() || null)
       .query(`
@@ -1492,8 +1516,9 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
 
     let subtotalNum = 0
     const items = productos.map((p) => {
-      const precio = Number.parseFloat(p.precio) || 0
-      const cant = Number.parseInt(p.cantidad) || 1
+      // Sin valores por defecto: se guarda lo que recogio la app o se rechaza.
+      const precio = Number.parseFloat(p.precio)
+      const cant = Number.parseInt(p.cantidad, 10)
       const totalLinea = precio * cant
       subtotalNum += totalLinea
       return {
@@ -1506,8 +1531,25 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       }
     })
 
+    // Los datos del pedido deben ser los recogidos en la app: ni nulos ni en cero.
+    const sinCodigo = items.findIndex((i) => !i.codigo || !i.codigo.trim())
+    if (sinCodigo >= 0) {
+      return res.status(400).json({ success: false, message: `El producto ${sinCodigo + 1} no tiene código` })
+    }
+    const sinCantidad = items.findIndex((i) => !(i.cantidad > 0))
+    if (sinCantidad >= 0) {
+      return res.status(400).json({ success: false, message: `El producto ${items[sinCantidad].codigo} tiene cantidad en cero` })
+    }
+    const sinPrecio = items.findIndex((i) => !(i.precio > 0))
+    if (sinPrecio >= 0) {
+      return res.status(400).json({ success: false, message: `El producto ${items[sinPrecio].codigo} no tiene precio` })
+    }
+
     const iva = 0
     const total = subtotalNum
+    if (!(total > 0)) {
+      return res.status(400).json({ success: false, message: "El total del pedido debe ser mayor a cero" })
+    }
 
     const transaction = pedidosPool.transaction()
     await transaction.begin()

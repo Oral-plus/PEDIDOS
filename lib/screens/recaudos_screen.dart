@@ -514,7 +514,98 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     );
   }
 
+  void _aviso(String msg) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: _ink,
+        elevation: 6,
+        duration: const Duration(seconds: 3),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+      ));
+  }
+
+  Future<void> _confirmarRecaudo(String numero, int evidencias) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(0.6),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.white,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 68, height: 68,
+              decoration: BoxDecoration(color: _verde.withOpacity(0.12), shape: BoxShape.circle),
+              child: Icon(Icons.check_rounded, color: _verde, size: 38),
+            ),
+            const SizedBox(height: 18),
+            const Text('Recaudo registrado',
+                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: _ink)),
+            const SizedBox(height: 6),
+            Text('N° $numero',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _gray)),
+            const SizedBox(height: 20),
+            _filaConfirm('Valor recaudado', _pesos(_totalRecaudo), destacado: true),
+            _filaConfirm('Total aplicado', _pesos(_totalAplicado)),
+            _filaConfirm('Saldo', _pesos(_saldo)),
+            _filaConfirm('Documentos cruzados', '${_cruzados.length}'),
+            _filaConfirm('Evidencias guardadas', '$evidencias'),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity, height: 50,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: _inkDeep,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Entendido',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _filaConfirm(String label, String valor, {bool destacado = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text(label, style: const TextStyle(color: _gray, fontSize: 13.5, fontWeight: FontWeight.w600)),
+        Text(valor,
+            style: TextStyle(
+              color: destacado ? _verde : _ink,
+              fontSize: destacado ? 16 : 14,
+              fontWeight: destacado ? FontWeight.w900 : FontWeight.w700,
+            )),
+      ]),
+    );
+  }
+
   Future<void> _guardar() async {
+    // Los importes deben ser reales: sin esto se guardaba el recaudo en ceros.
+    if (_cruzados.isEmpty) {
+      _aviso('Selecciona al menos un documento para cruzar');
+      return;
+    }
+    if (_totalRecaudo <= 0) {
+      _aviso('Ingresa el valor recaudado: no puede quedar en cero');
+      return;
+    }
+    if (_totalAplicado <= 0) {
+      _aviso('Los abonos de los documentos no pueden quedar en cero');
+      return;
+    }
+
     if (_totalAplicado > _totalRecaudo && _totalRecaudo > 0) {
       final ok = await showDialog<bool>(
         context: context,
@@ -564,15 +655,14 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     setState(() => _guardando = false);
     if (res['success'] == true) {
       HapticFeedback.heavyImpact();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Recaudo ${res['numeroRecaudo'] ?? ''} guardado'),
-        backgroundColor: _verde,
-        behavior: SnackBarBehavior.floating,
-      ));
+      final numero = (res['numeroRecaudo'] ?? _numeroRecaudo).toString();
+      final evidencias = (res['evidencias'] as num?)?.toInt() ?? 0;
+      await _confirmarRecaudo(numero, evidencias);
+      if (!mounted) return;
       Navigator.of(context).pop({
-        'numeroRecaudo': (res['numeroRecaudo'] ?? _numeroRecaudo).toString(),
+        'numeroRecaudo': numero,
         'totalAplicado': _totalAplicado,
-        'evidencias': res['evidencias'] ?? 0,
+        'evidencias': evidencias,
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

@@ -94,10 +94,15 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
     .query("SELECT mime, tamano, ancho, alto, recaudo_id, numero_recaudo FROM dbo.evidencias_archivos WHERE recaudo_id=@v ORDER BY id")).recordset : []
   ok("misma transaccion: 2 documentos y 2 imagenes ligadas por recaudo_id", nDocs === 2 && evs.length === 2 && evs.every((e) => e.recaudo_id === recId && e.numero_recaudo === NUM_OK && e.mime === "image/webp" && e.tamano > 0), `docs=${nDocs} imgs=${evs.length} ${evs.map((e) => e.ancho + "x" + e.alto).join(",")}`)
 
-  // ── 2) FALLO A MITAD: un documento invalido (due_date > 20) debe revertir TODO ──
+  // ── 2) FALLO A MITAD: importes coherentes (pasan validacion) pero un
+  // due_date mas largo que la columna, para que reviente DENTRO de la
+  // transaccion y se compruebe el rollback real, no el rechazo previo.
   const NUM_MAL = `REC-ATOM-MAL-${ts}`
   const docsMal = [{ docEntry: 301, docNum: "FV-3001", numFactura: "FE3001", saldo: 100000, abono: 100000, dueDate: "X".repeat(50) }]
-  const camposMal = { ...campos, numeroRecaudo: NUM_MAL, documentos: JSON.stringify(docsMal) }
+  const camposMal = {
+    ...campos, numeroRecaudo: NUM_MAL, documentos: JSON.stringify(docsMal),
+    totalDocumentos: 100000, totalAplicado: 100000, totalRecaudo: 100000, saldo: 0,
+  }
   const archivosMal = [
     { campo: "fotos", nombre: "m1.png", mime: "image/png", contenido: await foto(800, { r: 90, g: 90, b: 200 }) },
     { campo: "fotos", nombre: "m2.png", mime: "image/png", contenido: await foto(850, { r: 200, g: 200, b: 40 }) },
@@ -109,7 +114,8 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
 
   // ── 3) Compatibilidad: sigue funcionando el envio JSON sin fotos ──
   const NUM_JSON = `REC-ATOM-JSON-${ts}`
-  const r3 = await llamar("POST", "/api/recaudos", { token, body: { numeroRecaudo: NUM_JSON, clienteId: CLIENTE, clienteNombre: "SIN FOTOS", formaPago: "Efectivo", totalAplicado: 50000, totalRecaudo: 50000, documentos: docsOk } })
+  // los importes deben cuadrar con los abonos (400000 + 200000)
+  const r3 = await llamar("POST", "/api/recaudos", { token, body: { numeroRecaudo: NUM_JSON, clienteId: CLIENTE, clienteNombre: "SIN FOTOS", formaPago: "Efectivo", totalDocumentos: 700000, totalAplicado: 600000, totalRecaudo: 600000, saldo: 0, documentos: docsOk } })
   const recJson = r3.json && r3.json.data && r3.json.data.id
   ok("compatibilidad: el envio JSON sin fotos sigue funcionando", r3.status === 200 && recJson && r3.json.data.evidencias === 0, `id=${recJson} evidencias=${r3.json && r3.json.data && r3.json.data.evidencias}`)
 
