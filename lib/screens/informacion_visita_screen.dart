@@ -68,6 +68,7 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
       _pago != null && !_recargandoPedidos && _totalPedidoBasePago != _totalPedidos;
 
   double _totalPedidos = 0;
+  double? _totalPedidosBase;
   bool _recargandoPedidos = false;
 
   VisitaActivaProvider? _visitaActiva;
@@ -254,6 +255,7 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     if (mounted) {
       setState(() {
         _totalPedidos = results[0] as double;
+        _totalPedidosBase ??= _totalPedidos;
         _ultimoPedido = results[1] as Map<String, dynamic>?;
         _productosPedido = _contarProductosPedido(_ultimoPedido);
         _recargandoPedidos = false;
@@ -282,11 +284,11 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
 
     final tieneMotivo = _motivo != null && _motivo!.isNotEmpty;
 
-    final hizoPedido = _totalPedidos > 0;
+    final hizoPedido = _totalPedidosBase != null && _totalPedidos > _totalPedidosBase!;
     final hizoPago = ((_pago?['valor'] as num?)?.toDouble() ?? 0) > 0 ||
         (_numeroRecaudo != null && _numeroRecaudo!.isNotEmpty);
     if (!hizoPedido && !hizoPago && !tieneMotivo) {
-      _avisoInfo('El cliente no registró pedido ni pago. Selecciona el motivo de la visita para finalizar.');
+      _avisoInfo('El cliente no registró pedido ni pago en esta visita. Selecciona el motivo para finalizar.');
       return;
     }
 
