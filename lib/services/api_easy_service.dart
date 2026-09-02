@@ -932,6 +932,7 @@ class ApiEasyService {
     final enMemoria = _cache.leer<Map<String, dynamic>>(clave);
     if (enMemoria != null) return enMemoria;
 
+    const maxEdad = Duration(days: 30);
     SharedPreferences? prefs;
     try {
       prefs = await SharedPreferences.getInstance();
@@ -939,25 +940,42 @@ class ApiEasyService {
       if (guardado != null) {
         final decoded = jsonDecode(guardado);
         if (decoded is Map) {
-          final geo = Map<String, dynamic>.from(decoded);
-          _cache.guardar(clave, geo, const Duration(days: 30));
-          return geo;
+          final ts = decoded['ts'];
+          final geoRaw = decoded['geo'];
+          if (ts is num && geoRaw is Map) {
+            final edad = DateTime.now()
+                .difference(DateTime.fromMillisecondsSinceEpoch(ts.toInt()));
+            if (edad <= maxEdad) {
+              final geo = Map<String, dynamic>.from(geoRaw);
+              _cache.guardar(clave, geo, maxEdad - edad);
+              return geo;
+            }
+            await prefs.remove(clave);
+          } else {
+            final geo = Map<String, dynamic>.from(decoded);
+            await prefs.setString(clave, _sobreGeo(geo));
+            _cache.guardar(clave, geo, maxEdad);
+            return geo;
+          }
         }
       }
     } catch (_) {}
 
     final geo = await _cache.obtener<Map<String, dynamic>?>(
       clave,
-      const Duration(days: 30),
+      maxEdad,
       () => _getGeocodeClienteRed(codigo, address),
     );
     if (geo != null) {
       try {
-        await prefs?.setString(clave, jsonEncode(geo));
+        await prefs?.setString(clave, _sobreGeo(geo));
       } catch (_) {}
     }
     return geo;
   }
+
+  static String _sobreGeo(Map<String, dynamic> geo) =>
+      jsonEncode({'ts': DateTime.now().millisecondsSinceEpoch, 'geo': geo});
 
   Future<Map<String, dynamic>?> _getGeocodeClienteRed(String codigo, String? address) async {
     try {

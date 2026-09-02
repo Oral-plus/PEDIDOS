@@ -75,6 +75,9 @@ const RUTAS = [
   ["POST", "/api/clientes/C1000100148/comentarios", { comentario: "x" }],
   ["PUT", "/api/clientes/C1000100148/free-text", { texto: "x" }],
   ["GET", "/api/clientes/C1000100148/facturas-historico"],
+  ["POST", "/api/evidencias", { origen: "recaudo" }],
+  ["GET", "/api/evidencias?numeroRecaudo=REC-1"],
+  ["GET", "/api/evidencias/1/foto"],
 ]
 
 ;(async () => {

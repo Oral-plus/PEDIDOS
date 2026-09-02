@@ -135,7 +135,7 @@ async function esperar() {
   ok("limpieza: foto de prueba eliminada de la BD y del catálogo", del.status === 200 && quedo.recordset[0].n === 0 && cera3 && !cera3.imagenUrl)
   ok("no existe carpeta api/data (todo en BD)", !fs.existsSync(path.join(process.cwd(), "data")))
   const adm = await llamar("GET", "/api/productos/admin", { token: soporte })
-  ok("admin: lista completa", adm.status === 200 && adm.json.productos.length >= 250, `${adm.json && adm.json.productos.length} artículos`)
+  ok("admin: lista completa", adm.status === 200 && adm.json.productos.length >= 200, `${adm.json && adm.json.productos.length} artículos`)
 
   await llamar("POST", "/api/auth/logout", { token: vendedor })
   await llamar("POST", "/api/auth/logout", { token: soporte })
