@@ -514,20 +514,6 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     );
   }
 
-  void _aviso(String msg) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: _ink,
-        elevation: 6,
-        duration: const Duration(seconds: 3),
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-      ));
-  }
-
   Future<void> _confirmarRecaudo(String numero, int evidencias) {
     return showDialog<void>(
       context: context,
@@ -592,36 +578,8 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
   }
 
   Future<void> _guardar() async {
-    // Los importes deben ser reales: sin esto se guardaba el recaudo en ceros.
-    if (_cruzados.isEmpty) {
-      _aviso('Selecciona al menos un documento para cruzar');
-      return;
-    }
-    if (_totalRecaudo <= 0) {
-      _aviso('Ingresa el valor recaudado: no puede quedar en cero');
-      return;
-    }
-    if (_totalAplicado <= 0) {
-      _aviso('Los abonos de los documentos no pueden quedar en cero');
-      return;
-    }
-
-    if (_totalAplicado > _totalRecaudo && _totalRecaudo > 0) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: const Text('Aplicado supera el recaudo'),
-          content: Text('Estás aplicando ${_pesos(_totalAplicado)} pero el recaudo es ${_pesos(_totalRecaudo)}. ¿Continuar de todas formas?'),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Revisar')),
-            FilledButton(style: FilledButton.styleFrom(backgroundColor: _ink), onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Continuar')),
-          ],
-        ),
-      );
-      if (ok != true) return;
-    }
-
+    // Envío plano: se guarda tal cual lo que está en pantalla. La aprobación
+    // la hace el otro proyecto sobre la base intermedia.
     setState(() => _guardando = true);
     HapticFeedback.mediumImpact();
     final documentos = _docs.where((d) => _cruzados.contains(_docEntry(d))).map((d) {

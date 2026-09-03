@@ -75,7 +75,9 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
     notas: "validacion de recaudo", documentos: JSON.stringify([docOk]),
   }
 
-  // ── Casos que deben rechazarse (con foto adjunta: la imagen tampoco debe quedar) ──
+  // ── Inserción plana: la BD es intermedia y se guarda tal cual lo que la app
+  //    recolecte (ceros, vacíos o sin documentos). La aprobación la hace otro
+  //    proyecto; aquí una simple inserción no debe fallar.
   const casos = [
     ["valor recaudado en cero", { totalRecaudo: "0.0" }],
     ["valor recaudado nulo", { totalRecaudo: "null" }],
@@ -92,7 +94,8 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
     const r = await llamar("POST", "/api/recaudos", { token, mp: multipart(campos, archivos) })
     const rec = await cuenta("dbo.recaudos", "numero_recaudo", numero)
     const evi = await cuenta("dbo.evidencias_archivos", "numero_recaudo", numero)
-    ok(`rechaza y no guarda nada: ${nombre}`, r.status === 400 && rec === 0 && evi === 0, `${r.status} rec=${rec} img=${evi} · ${r.json && r.json.message}`)
+    ok(`guarda tal cual, con su imagen: ${nombre}`, r.status === 200 && rec === 1 && evi === 1, `${r.status} rec=${rec} img=${evi} · ${r.json && r.json.message}`)
+    await pedidos.request().input("n", sql.NVarChar, numero).query("DELETE FROM dbo.recaudos WHERE numero_recaudo=@n")
   }
 
   // ── Recaudo valido: entra completo, con la imagen, en una sola operacion ──

@@ -44,9 +44,10 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const docOk = { docEntry: 1, docNum: "F1", numFactura: "FE1", saldo: 100000, abono: 100000, dueDate: "2026-09-30" }
   const baseRec = { clienteId: CLIENTE, clienteNombre: "VALIDACION", formaPago: "Efectivo", totalDocumentos: 100000, totalAplicado: 100000, totalRecaudo: 100000, saldo: 0, documentos: [docOk] }
 
-  // ── RECAUDO: casos que deben rechazarse ──
+  // ── RECAUDO: inserción plana, se guarda tal cual lo que llega del front
+  //    (la BD es intermedia; la aprobación la hace otro proyecto) ──
   const casos = [
-    ["recaudo sin valor recaudado (cero)", { ...baseRec, numeroRecaudo: `V0-${ts}`, totalRecaudo: 0 }],
+    ["recaudo con valor recaudado en cero", { ...baseRec, numeroRecaudo: `V0-${ts}`, totalRecaudo: 0 }],
     ["recaudo con valor recaudado nulo", { ...baseRec, numeroRecaudo: `VN-${ts}`, totalRecaudo: null }],
     ["recaudo sin forma de pago", { ...baseRec, numeroRecaudo: `VF-${ts}`, formaPago: "" }],
     ["recaudo con total aplicado en cero", { ...baseRec, numeroRecaudo: `VA-${ts}`, totalAplicado: 0, documentos: [{ ...docOk, abono: 0 }] }],
@@ -56,7 +57,8 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   for (const [nombre, cuerpo] of casos) {
     const r = await llamar("POST", "/api/recaudos", { token, body: cuerpo })
     const guardado = await cuenta("dbo.recaudos", "numero_recaudo", cuerpo.numeroRecaudo)
-    ok(`rechaza: ${nombre}`, r.status === 400 && guardado === 0, `${r.status} · ${r.json && r.json.message}`)
+    ok(`guarda tal cual: ${nombre}`, r.status === 200 && guardado === 1, `${r.status} · ${r.json && r.json.message}`)
+    await pedidos.request().input("n", sql.NVarChar, cuerpo.numeroRecaudo).query("DELETE FROM dbo.recaudos WHERE numero_recaudo=@n")
   }
 
   // ── RECAUDO valido: entra con sus importes intactos ──
@@ -67,7 +69,7 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   ok("acepta el recaudo valido con sus importes reales", rOk.status === 200 && fila && Number(fila.total_recaudo) === 150000 && Number(fila.total_aplicado) === 100000 && fila.forma_pago === "Efectivo", fila && `recaudo=${Number(fila.total_recaudo)} aplicado=${Number(fila.total_aplicado)}`)
   if (recId) await pedidos.request().input("i", sql.Int, recId).query("DELETE FROM dbo.recaudos WHERE id=@i")
 
-  // ── PEDIDO: casos que deben rechazarse ──
+  // ── PEDIDO: inserción plana, se guarda tal cual lo que llega del front ──
   const basePed = { cedula: CLIENTE, nombre: "VALIDACION", correo: "v@oral-plus.com", codigoCliente: CLIENTE, vendedor: "PRUEBA" }
   const casosPed = [
     ["pedido con producto sin código", { ...basePed, productos: [{ codigo: "", nombre: "X", cantidad: 1, precio: 1000 }] }],
@@ -78,10 +80,10 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const antes = await cuenta("pedidos", "codigo_cliente", CLIENTE)
   for (const [nombre, cuerpo] of casosPed) {
     const r = await llamar("POST", "/api/orders", { token, body: cuerpo })
-    ok(`rechaza: ${nombre}`, r.status === 400, `${r.status} · ${r.json && r.json.message}`)
+    ok(`guarda tal cual: ${nombre}`, r.status === 200, `${r.status} · ${r.json && r.json.message}`)
   }
   const despues = await cuenta("pedidos", "codigo_cliente", CLIENTE)
-  ok("ningún pedido inválido quedó guardado", despues === antes, `${antes} -> ${despues}`)
+  ok("todos los pedidos planos quedaron guardados", despues === antes + casosPed.length, `${antes} -> ${despues}`)
 
   // ── PEDIDO valido: entra con sus importes ──
   const rPedOk = await llamar("POST", "/api/orders", { token, body: { ...basePed, productos: [{ codigo: "P1", nombre: "Producto", cantidad: 3, precio: 2000 }] } })
