@@ -1362,11 +1362,16 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
       try { docs = JSON.parse(docs) } catch (_) { docs = [] }
     }
     if (!Array.isArray(docs)) docs = []
+    // Única regla: un recaudo sin documentos cruzados no existe (si no, se
+    // montaría sola la imagen sin cartera que respaldar)
+    if (docs.length === 0) {
+      return res.status(400).json({ success: false, message: "Selecciona al menos un documento de la cartera para cruzar el recaudo" })
+    }
 
     const num = (v) => { const n = Number.parseFloat(v); return Number.isNaN(n) ? 0 : n }
 
-    // BD intermedia: se guarda tal cual lo que recogió la app, sin reglas de
-    // negocio. La aprobación y la gestión contra SAP las hace otro proyecto.
+    // El resto es BD intermedia: se guarda tal cual lo que recogió la app, sin
+    // reglas de negocio. La aprobación y la gestión contra SAP las hace otro proyecto.
     const formaPago = (b.formaPago || "").toString().trim()
     const totalRecaudo = num(b.totalRecaudo)
     const totalAplicado = num(b.totalAplicado)

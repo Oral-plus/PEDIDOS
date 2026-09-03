@@ -578,8 +578,39 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
   }
 
   Future<void> _guardar() async {
-    // Envío plano: se guarda tal cual lo que está en pantalla. La aprobación
-    // la hace el otro proyecto sobre la base intermedia.
+    // Única excepción al envío plano: sin documentos cruzados no hay recaudo
+    // (si no, subiría solo la imagen). El resto se guarda tal cual.
+    if (_cruzados.isEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Row(children: [
+            Icon(Icons.error_outline_rounded, color: Color(0xFFDC2626)),
+            SizedBox(width: 10),
+            Expanded(child: Text('Falta cruzar documentos')),
+          ]),
+          content: const Text(
+            'Para guardar el recaudo debes cruzarlo con la cartera:\n\n'
+            '1. Toca "Cruzar" en la factura (o facturas) que el cliente está pagando.\n'
+            '2. Ajusta el abono de cada una si no es por el saldo completo.\n'
+            '3. Vuelve a tocar "Guardar recaudo".\n\n'
+            'Sin documentos cruzados el recaudo no se registra.',
+            style: TextStyle(fontSize: 14, height: 1.4),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: _ink, foregroundColor: Colors.white),
+              child: const Text('Entendido'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     setState(() => _guardando = true);
     HapticFeedback.mediumImpact();
     final documentos = _docs.where((d) => _cruzados.contains(_docEntry(d))).map((d) {

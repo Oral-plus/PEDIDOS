@@ -86,7 +86,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
     ["total aplicado en cero", { totalAplicado: "0.0", documentos: JSON.stringify([{ ...docOk, abono: 0 }]) }],
     ["documento con abono en cero", { documentos: JSON.stringify([{ ...docOk, abono: 0 }]) }],
     ["aplicado que no cuadra con los abonos", { totalAplicado: "999999.0" }],
-    ["sin documentos", { documentos: "[]" }],
   ]
   for (const [nombre, cambio] of casos) {
     const numero = `RV-${nombre.replace(/[^a-z]/gi, "").slice(0, 12)}-${ts}`
@@ -97,6 +96,13 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
     ok(`guarda tal cual, con su imagen: ${nombre}`, r.status === 200 && rec === 1 && evi === 1, `${r.status} rec=${rec} img=${evi} · ${r.json && r.json.message}`)
     await pedidos.request().input("n", sql.NVarChar, numero).query("DELETE FROM dbo.recaudos WHERE numero_recaudo=@n")
   }
+
+  // Única excepción: sin documentos cruzados el recaudo NO entra (ni la imagen)
+  const numSinDocs = `RV-sindocs-${ts}`
+  const rSin = await llamar("POST", "/api/recaudos", { token, mp: multipart({ ...base, numeroRecaudo: numSinDocs, documentos: "[]" }, archivos) })
+  const recSin = await cuenta("dbo.recaudos", "numero_recaudo", numSinDocs)
+  const eviSin = await cuenta("dbo.evidencias_archivos", "numero_recaudo", numSinDocs)
+  ok("rechaza el recaudo sin documentos cruzados y no sube la imagen", rSin.status === 400 && recSin === 0 && eviSin === 0, `${rSin.status} rec=${recSin} img=${eviSin} · ${rSin.json && rSin.json.message}`)
 
   // ── Recaudo valido: entra completo, con la imagen, en una sola operacion ──
   const NUM_OK = `RV-OK-${ts}`
