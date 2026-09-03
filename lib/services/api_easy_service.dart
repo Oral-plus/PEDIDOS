@@ -918,6 +918,7 @@ class ApiEasyService {
         'message': res['message']?.toString() ?? '',
         'numeroRecaudo': (res['data'] is Map) ? res['data']['numeroRecaudo'] : null,
         'evidencias': (res['data'] is Map) ? (res['data']['evidencias'] ?? 0) : 0,
+        'reciboCaja': (res['data'] is Map) ? res['data']['reciboCaja'] : null,
       };
     } catch (e) {
       if (_esSesionExpirada(e)) {
@@ -926,6 +927,24 @@ class ApiEasyService {
       }
       return {'success': false, 'message': e.toString().replaceFirst('Exception: ', '')};
     }
+  }
+
+  /// GET /api/talonarios/siguiente - recibo de caja que le sigue al usuario
+  /// (talonario cuyo prefijo es el usuario de inicio de sesión).
+  Future<Map<String, dynamic>?> getSiguienteReciboCaja() async {
+    if (_token == null || _token!.isEmpty) return null;
+    try {
+      final res = await ApiClient.get(
+        '/api/talonarios/siguiente',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 10),
+      );
+      if (res is Map && res['success'] == true) {
+        return Map<String, dynamic>.from(res);
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<Map<String, dynamic>?> getCarteraCliente(String codigo) {

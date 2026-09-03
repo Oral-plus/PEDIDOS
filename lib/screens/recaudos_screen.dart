@@ -514,7 +514,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     );
   }
 
-  Future<void> _confirmarRecaudo(String numero, int evidencias) {
+  Future<void> _confirmarRecaudo(String numero, int evidencias, {String? reciboCaja}) {
     return showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -543,6 +543,8 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
             _filaConfirm('Saldo', _pesos(_saldo)),
             _filaConfirm('Documentos cruzados', '${_cruzados.length}'),
             _filaConfirm('Evidencias guardadas', '$evidencias'),
+            if (reciboCaja != null && reciboCaja.isNotEmpty)
+              _filaConfirm('Recibo de caja', 'N° $reciboCaja', destacado: true),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity, height: 50,
@@ -646,12 +648,14 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
       HapticFeedback.heavyImpact();
       final numero = (res['numeroRecaudo'] ?? _numeroRecaudo).toString();
       final evidencias = (res['evidencias'] as num?)?.toInt() ?? 0;
-      await _confirmarRecaudo(numero, evidencias);
+      final reciboCaja = res['reciboCaja']?.toString();
+      await _confirmarRecaudo(numero, evidencias, reciboCaja: reciboCaja);
       if (!mounted) return;
       Navigator.of(context).pop({
         'numeroRecaudo': numero,
         'totalAplicado': _totalAplicado,
         'evidencias': evidencias,
+        'reciboCaja': reciboCaja,
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

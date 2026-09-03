@@ -85,9 +85,24 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   bool get _requiereRef => _metodoCfg?['ref'] == true;
   bool get _esCheque => _metodo == 'Cheque';
 
+  // Recibo de caja del talonario del usuario (prefijo = usuario de sesión)
+  Map<String, dynamic>? _talonario;
+  bool _talonarioCargando = true;
+  String? _reciboAsignado;
+
+  Future<void> _cargarTalonario() async {
+    final r = await ApiEasyService().getSiguienteReciboCaja();
+    if (!mounted) return;
+    setState(() {
+      _talonario = r;
+      _talonarioCargando = false;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _cargarTalonario();
     if (_tieneCartera) _pagoCartera.text = _miles(widget.dineroFaltante);
     if (_tienePedido) _pagoPedido.text = _miles(widget.totalPedido);
     _cargarPagoInicial();
@@ -336,6 +351,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
       'banco': _banco.text.trim(),
       'referencia': _referencia.text.trim(),
       'numeroRecaudo': _numeroRecaudo,
+      'reciboCaja': _reciboAsignado,
     });
   }
 
@@ -421,6 +437,8 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _reciboCajaCard(),
+                  const SizedBox(height: 10),
                   _seccionConceptos(),
                   const SizedBox(height: 10),
                   _seccionMetodoPago(),
@@ -832,6 +850,8 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
       if (mounted) {
         setState(() {
           _numeroRecaudo = numero;
+          final recibo = (resultado['reciboCaja'] ?? '').toString();
+          if (recibo.isNotEmpty && recibo != 'null') _reciboAsignado = recibo;
           if (_tieneCartera && aplicado > 0) _pagoCartera.text = _miles(aplicado);
           // Las fotos ya quedaron guardadas junto al recaudo: se contabilizan
           // como previas para no volver a subirlas al registrar el pago.
@@ -989,6 +1009,51 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
         ),
       ),
     ]);
+  }
+
+  // Muestra el recibo de caja que le corresponde a este pago: el consecutivo
+  // del talonario del usuario (rango inicial a final), que el servidor asigna
+  // al guardar el recaudo y no vuelve a repetir.
+  Widget _reciboCajaCard() {
+    final data = _talonario?['data'] is Map
+        ? Map<String, dynamic>.from(_talonario!['data'] as Map)
+        : null;
+    final sinTalonario = _talonario == null || _talonario?['sinTalonario'] == true;
+    final agotado = data?['agotado'] == true;
+    final String texto;
+    Color color = _ink;
+    if (_reciboAsignado != null && _reciboAsignado!.isNotEmpty) {
+      texto = 'N° $_reciboAsignado asignado';
+      color = const Color(0xFF15803D);
+    } else if (_talonarioCargando) {
+      texto = 'consultando…';
+      color = _gray;
+    } else if (sinTalonario) {
+      texto = 'sin talonario asignado';
+      color = const Color(0xFFB45309);
+    } else if (agotado) {
+      texto = 'talonario agotado (${data?['rangoInicial']}–${data?['rangoFinal']})';
+      color = const Color(0xFFDC2626);
+    } else {
+      texto = 'N° ${data?['siguiente']}  (rango ${data?['rangoInicial']}–${data?['rangoFinal']})';
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDeco,
+      child: Row(children: [
+        const Icon(Icons.receipt_long_rounded, color: _ink, size: 18),
+        const SizedBox(width: 8),
+        const Text('Recibo de caja',
+            style: TextStyle(color: _ink, fontSize: 15, fontWeight: FontWeight.w800)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(texto,
+              textAlign: TextAlign.right,
+              style: TextStyle(color: color, fontSize: 13.5, fontWeight: FontWeight.w800)),
+        ),
+      ]),
+    );
   }
 
   Widget _seccionValorSimple() {

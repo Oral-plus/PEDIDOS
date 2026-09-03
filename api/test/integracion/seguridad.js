@@ -92,6 +92,7 @@ const RUTAS = [
   ["PUT", "/api/productos/50360168/imagen"],
   ["DELETE", "/api/productos/50360168/imagen"],
   ["POST", "/api/productos/refrescar"],
+  ["GET", "/api/talonarios/siguiente"],
 ]
 
 ;(async () => {
