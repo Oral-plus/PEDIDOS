@@ -21,7 +21,7 @@ node test/integracion/seguridad.js   # una sola suite
 
 ## Qué verifica cada suite
 
-- `seguridad.js`: las 36 rutas de datos responden 401 sin sesión; `/api/test` y
+- `seguridad.js`: todas las rutas de datos (barrida completa) responden 401 sin sesión; `/api/test` y
   `/api/health` siguen abiertas; el login sin ID de servicio se rechaza; Soporte TI
   entra sin dispositivo y, por las rutas de la app, ve el dispositivo pendiente, lo
   activa, lo desactiva y lo elimina; un

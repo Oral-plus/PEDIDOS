@@ -1,40 +1,55 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:skypagos/main.dart';
+import 'package:skypagos/screens/login_screen.dart';
 
+// La pantalla real de entrada es LoginScreen (usuario y contraseña, sin
+// registro). Se prueba directa, sin pasar por el splash que consulta la red.
 void main() {
-  testWidgets('SkyPagos app smoke test', (WidgetTester tester) async {
-    await tester.pumpWidget(const SkyPagosApp());
+  Widget app({String? aviso}) => MaterialApp(home: LoginScreen(aviso: aviso));
 
-    await tester.pumpAndSettle(const Duration(seconds: 3));
+  testWidgets('login: muestra usuario, contraseña y el botón de entrar',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(app());
+    await tester.pump(const Duration(seconds: 2));
 
-    expect(find.text('Bienvenido'), findsOneWidget);
-    expect(find.text('Inicia sesión para continuar'), findsOneWidget);
-    
-    expect(find.byType(TextFormField), findsAtLeast(2));
-    expect(find.text('Iniciar Sesión'), findsOneWidget);
-    expect(find.text('¿No tienes cuenta? Regístrate'), findsOneWidget);
+    expect(find.text('Iniciar sesión'), findsOneWidget);
+    expect(find.text('Usuario y contraseña'), findsOneWidget);
+    expect(find.byType(TextField), findsNWidgets(2));
+    expect(find.widgetWithText(ElevatedButton, 'Ingresar'), findsOneWidget);
   });
 
-  testWidgets('Login form validation test', (WidgetTester tester) async {
-    await tester.pumpWidget(const SkyPagosApp());
-    await tester.pumpAndSettle(const Duration(seconds: 3));
+  testWidgets('login: con campos vacíos avisa que son requeridos',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(app());
+    await tester.pump(const Duration(seconds: 2));
 
-    await tester.tap(find.text('Iniciar Sesión'));
+    await tester.ensureVisible(find.widgetWithText(ElevatedButton, 'Ingresar'));
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Ingresar'));
     await tester.pump();
 
-    expect(find.text('Ingresa tu correo electrónico'), findsOneWidget);
-    expect(find.text('Ingresa tu contraseña'), findsOneWidget);
+    expect(find.text('Usuario y contraseña son requeridos'), findsOneWidget);
   });
 
-  testWidgets('Navigation to register screen test', (WidgetTester tester) async {
-    await tester.pumpWidget(const SkyPagosApp());
-    await tester.pumpAndSettle(const Duration(seconds: 3));
+  testWidgets('login: el aviso de llegada se muestra como ventana emergente',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(app(aviso: 'Tu sesión expiró. Inicia sesión de nuevo.'));
+    await tester.pump(const Duration(seconds: 2));
 
-    await tester.tap(find.text('¿No tienes cuenta? Regístrate'));
-    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.text('Sesión finalizada'), findsOneWidget);
+    // El aviso aparece en la ventana emergente (también queda como texto bajo
+    // el formulario, por eso se busca dentro del diálogo)
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('Tu sesión expiró. Inicia sesión de nuevo.'),
+      ),
+      findsOneWidget,
+    );
 
-    expect(find.text('Crear Cuenta'), findsOneWidget);
+    await tester.tap(find.text('Entendido'));
+    await tester.pump();
+    expect(find.byType(AlertDialog), findsNothing);
   });
 }

@@ -78,6 +78,20 @@ const RUTAS = [
   ["POST", "/api/evidencias", { origen: "recaudo" }],
   ["GET", "/api/evidencias?numeroRecaudo=REC-1"],
   ["GET", "/api/evidencias/1/foto"],
+  ["GET", "/api/orders"],
+  ["GET", "/api/beneficiaries"],
+  ["POST", "/api/beneficiaries", { nombre: "x" }],
+  ["GET", "/api/notifications"],
+  ["GET", "/api/transactions/history"],
+  ["POST", "/api/transactions/send", { monto: 1 }],
+  ["GET", "/api/user/balance"],
+  ["GET", "/api/user/profile"],
+  ["POST", "/api/dispositivos/SVC-X/estado", { estado: "ACTIVO" }],
+  ["DELETE", "/api/dispositivos/SVC-X"],
+  ["PUT", "/api/productos/50360168/config", { visible: true }],
+  ["PUT", "/api/productos/50360168/imagen"],
+  ["DELETE", "/api/productos/50360168/imagen"],
+  ["POST", "/api/productos/refrescar"],
 ]
 
 ;(async () => {

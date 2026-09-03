@@ -34,7 +34,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
 
   static const Color _primary = Color(0xFFFFFFFF);
   static const Color _accent = Color(0xFF1A56DB);
-  static const Color _surface = Color(0xFFF0F4F8);
   static const Color _surfaceLight = Color(0xFFEDF2F7);
   static const Color _textPrimary = Color(0xFF111827);
   static const Color _errorColor = Color(0xFFDC2626);
