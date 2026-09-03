@@ -261,6 +261,35 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   }
 
   Future<void> _realizar() async {
+    // Sin el cruce de documentos diligenciado no se puede realizar el pago
+    if (!_recaudoCruzado) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Row(children: [
+            Icon(Icons.error_outline_rounded, color: Color(0xFFDC2626)),
+            SizedBox(width: 10),
+            Expanded(child: Text('Falta cruzar los documentos')),
+          ]),
+          content: const Text(
+            'No puedes realizar el pago sin diligenciar el recaudo.\n\n'
+            '1. Toca "Cruzar documentos (Recaudos)".\n'
+            '2. Selecciona la(s) factura(s) de la cartera que el cliente está pagando y ajusta el abono.\n'
+            '3. Guarda el recaudo y vuelve aquí a realizar el pago.\n\n'
+            'Si el cliente no hace recaudo en esta visita, usa la opción "Sin recaudo".',
+            style: TextStyle(fontSize: 14, height: 1.4),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Entendido'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     if (_valorNum <= 0) {
       _aviso('Ingresa el valor del pago');
       return;
