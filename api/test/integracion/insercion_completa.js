@@ -101,19 +101,19 @@ const cfgDb = (db) => ({ server: process.env.DB_SERVER, database: db, user: proc
   ok("Gestión de pedido", "pedidos_gestion", "Pedidos", rGes.status === 200 && fGes && fGes.forma_pago === "Efectivo" && fGes.numero_recaudo === NUM_RECAUDO, fGes && `${fGes.forma_pago}/${fGes.numero_recaudo}`)
   if (gesId) limpieza.push(async () => { await pedidos.request().input("id", sql.Int, gesId).input("c", sql.NVarChar, CLIENTE).query("DELETE FROM dbo.pedidos_gestion WHERE id=@id AND cliente_id=@c") })
 
-  // 4) VISITA + ENCUESTA -> visitas_clientes + encuestas_visitas + encuestas_respuestas (BD Ruta)
+  // 4) VISITA (BD Ruta) + ENCUESTA plana (BD Pedidos)
   const rVis = await llamar("POST", `/api/clientes/${CLIENTE}/visita`, { token, body: { observacion: "prueba insercion", metodoPago: "Transferencia", bancoPago: "Bancolombia", referenciaPago: "REF-9", numeroRecaudo: NUM_RECAUDO, totalRecaudos: 5000, encuestaTipo: "Encuesta prueba", encuestaRespuestas: { tipo: "T1", nombre: "Encuesta prueba", respuestas: { p1: "si", p2: "no", p3: "tal vez" } } } })
   const visId = rVis.json && rVis.json.data && rVis.json.data.id
   const fVis = visId ? (await ruta.request().input("id", sql.Int, visId).query("SELECT metodo_pago, numero_recaudo FROM visitas_clientes WHERE id=@id")).recordset[0] : null
-  const fEnc = visId ? (await ruta.request().input("id", sql.Int, visId).query("SELECT id FROM dbo.encuestas_visitas WHERE visita_id=@id")).recordset[0] : null
+  const fEnc = visId ? (await pedidos.request().input("id", sql.Int, visId).query("SELECT id FROM dbo.encuestas_visitas WHERE visita_id=@id")).recordset[0] : null
   const encId = fEnc && fEnc.id
-  const nResp = encId ? (await ruta.request().input("id", sql.Int, encId).query("SELECT COUNT(*) n FROM dbo.encuestas_respuestas WHERE encuesta_id=@id")).recordset[0].n : 0
+  const nResp = encId ? (await pedidos.request().input("id", sql.Int, encId).query("SELECT COUNT(*) n FROM dbo.encuestas_respuestas WHERE encuesta_id=@id")).recordset[0].n : 0
   ok("Visita", "visitas_clientes", "Ruta", rVis.status === 200 && fVis && fVis.metodo_pago === "Transferencia" && fVis.numero_recaudo === NUM_RECAUDO, fVis && `${fVis.metodo_pago}/${fVis.numero_recaudo}`)
-  ok("Encuesta de visita", "encuestas_visitas + encuestas_respuestas", "Ruta", encId && nResp === 3, `enc=${encId} respuestas=${nResp}`)
+  ok("Encuesta de visita", "encuestas_visitas + encuestas_respuestas", "Pedidos", encId && nResp === 3, `enc=${encId} respuestas=${nResp}`)
   if (visId) limpieza.push(async () => {
     if (encId) {
-      await ruta.request().input("id", sql.Int, encId).query("DELETE FROM dbo.encuestas_respuestas WHERE encuesta_id=@id")
-      await ruta.request().input("id", sql.Int, encId).query("DELETE FROM dbo.encuestas_visitas WHERE id=@id")
+      await pedidos.request().input("id", sql.Int, encId).query("DELETE FROM dbo.encuestas_respuestas WHERE encuesta_id=@id")
+      await pedidos.request().input("id", sql.Int, encId).query("DELETE FROM dbo.encuestas_visitas WHERE id=@id")
     }
     await ruta.request().input("id", sql.Int, visId).input("c", sql.NVarChar, CLIENTE).query("DELETE FROM visitas_clientes WHERE id=@id AND cliente_id=@c")
   })

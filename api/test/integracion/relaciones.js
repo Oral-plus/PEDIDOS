@@ -82,19 +82,23 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const fVis = visId ? await unoR("SELECT recaudo_id FROM visitas_clientes WHERE id=@id", [["id", sql.Int, visId]]) : null
   ok("visita: recaudo_id = id del recaudo (referencia entre BD)", fVis && fVis.recaudo_id === recaudoId, `recaudo_id=${fVis && fVis.recaudo_id}`)
 
-  const fEnc = visId ? await unoR("SELECT id FROM dbo.encuestas_visitas WHERE visita_id=@id", [["id", sql.Int, visId]]) : null
+  // La encuesta es plana y vive en la BD Pedidos (intermedia); visita_id es
+  // solo referencia a la visita de la BD Ruta, sin FK cruzada
+  const fEnc = visId ? await uno("SELECT id FROM dbo.encuestas_visitas WHERE visita_id=@id", [["id", sql.Int, visId]]) : null
   const encId = fEnc && fEnc.id
-  const nResp = encId ? (await unoR("SELECT COUNT(*) n FROM dbo.encuestas_respuestas WHERE encuesta_id=@id", [["id", sql.Int, encId]])).n : 0
-  ok("encuesta: enlazada a la visita (visita_id) con 2 respuestas", encId && nResp === 2, `enc=${encId} resp=${nResp}`)
+  const nResp = encId ? (await uno("SELECT COUNT(*) n FROM dbo.encuestas_respuestas WHERE encuesta_id=@id", [["id", sql.Int, encId]])).n : 0
+  ok("encuesta: guardada en Pedidos con visita_id de referencia y 2 respuestas", encId && nResp === 2, `enc=${encId} resp=${nResp}`)
 
-  const fkRuta = (await ruta.request().query("SELECT name FROM sys.foreign_keys WHERE name IN ('FK_encvis_visita','FK_encresp_encuesta')")).recordset.map((r) => r.name)
-  ok("FK de encuestas declaradas: FK_encvis_visita, FK_encresp_encuesta", fkRuta.length === 2, fkRuta.join(","))
+  const fkEnc = (await pedidos.request().query("SELECT name FROM sys.foreign_keys WHERE name IN ('FK_encvis_visita','FK_encresp_encuesta')")).recordset.map((r) => r.name)
+  ok("FK de encuestas en Pedidos: solo respuestas->encuesta (sin FK a visitas de otra BD)", fkEnc.length === 1 && fkEnc[0] === "FK_encresp_encuesta", fkEnc.join(",") || "ninguna")
 
-  // Borrado en cascada: al borrar la visita se van encuesta y respuestas
+  // Plana: borrar la visita (BD Ruta) NO toca la encuesta; borrar la encuesta cae en cascada a sus respuestas
   if (visId) await ruta.request().input("id", sql.Int, visId).input("c", sql.NVarChar, CLIENTE).query("DELETE FROM visitas_clientes WHERE id=@id AND cliente_id=@c")
-  const encTras = encId ? (await unoR("SELECT COUNT(*) n FROM dbo.encuestas_visitas WHERE id=@id", [["id", sql.Int, encId]])).n : -1
-  const respTras = encId ? (await unoR("SELECT COUNT(*) n FROM dbo.encuestas_respuestas WHERE encuesta_id=@id", [["id", sql.Int, encId]])).n : -1
-  ok("cascada: borrar la visita elimina su encuesta y respuestas", encTras === 0 && respTras === 0, `enc=${encTras} resp=${respTras}`)
+  const encTras = encId ? (await uno("SELECT COUNT(*) n FROM dbo.encuestas_visitas WHERE id=@id", [["id", sql.Int, encId]])).n : -1
+  ok("plana: borrar la visita no elimina la encuesta guardada", encTras === 1, `enc=${encTras}`)
+  if (encId) await pedidos.request().input("id", sql.Int, encId).query("DELETE FROM dbo.encuestas_visitas WHERE id=@id")
+  const respTras = encId ? (await uno("SELECT COUNT(*) n FROM dbo.encuestas_respuestas WHERE encuesta_id=@id", [["id", sql.Int, encId]])).n : -1
+  ok("cascada: borrar la encuesta elimina sus respuestas", respTras === 0, `resp=${respTras}`)
 
   // Las FK existen en la BD Pedidos
   const fks = (await pedidos.request().query("SELECT name FROM sys.foreign_keys WHERE name IN ('FK_evid_recaudo','FK_pedgest_recaudo','FK_recdoc_recaudo')")).recordset.map((r) => r.name)

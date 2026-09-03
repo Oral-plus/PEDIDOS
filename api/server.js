@@ -1924,6 +1924,8 @@ async function ensureActualizacionesTabla(pool) {
 }
 
 let encuestasTablasListas = false
+// Encuestas planas en la BD Pedidos (intermedia): se guardan tal cual y el
+// visita_id es solo referencia (la visita vive en la BD Ruta, sin FK cruzada).
 async function ensureEncuestasTablas(pool) {
   if (encuestasTablasListas) return
   await pool.request().query(`
@@ -1951,11 +1953,6 @@ async function ensureEncuestasTablas(pool) {
       CREATE INDEX IX_encuestas_resp_encuesta ON dbo.encuestas_respuestas(encuesta_id);
     IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_encuestas_cliente' AND object_id = OBJECT_ID('dbo.encuestas_visitas'))
       CREATE INDEX IX_encuestas_cliente ON dbo.encuestas_visitas(cliente_id, id DESC);
-    IF OBJECT_ID('dbo.visitas_clientes') IS NOT NULL
-       AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_encvis_visita')
-       AND NOT EXISTS (SELECT 1 FROM dbo.encuestas_visitas ev WHERE ev.visita_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.visitas_clientes v WHERE v.id = ev.visita_id))
-      ALTER TABLE dbo.encuestas_visitas
-        ADD CONSTRAINT FK_encvis_visita FOREIGN KEY (visita_id) REFERENCES dbo.visitas_clientes(id) ON DELETE CASCADE;
     IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_encresp_encuesta')
        AND NOT EXISTS (SELECT 1 FROM dbo.encuestas_respuestas er WHERE NOT EXISTS (SELECT 1 FROM dbo.encuestas_visitas ev WHERE ev.id = er.encuesta_id))
       ALTER TABLE dbo.encuestas_respuestas
@@ -2445,7 +2442,7 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
 
     if (encuestaRespuestas) {
       try {
-        await ensureEncuestasTablas(ruta)
+        await ensureEncuestasTablas(pedidosPool)
         const encObj = typeof encuestaRespuestas === "string"
           ? JSON.parse(encuestaRespuestas)
           : encuestaRespuestas
@@ -2455,7 +2452,7 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
           ? encObj.respuestas
           : {}
 
-        const encIns = await ruta.request()
+        const encIns = await pedidosPool.request()
           .input("visitaId", sql.Int, row.id)
           .input("cliente", sql.NVarChar, codigo)
           .input("vendId", sql.Int, slpCode)
@@ -2472,7 +2469,7 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
         const encuestaId = encIns.recordset[0].id
 
         await insertarFilas(
-          () => ruta.request(),
+          () => pedidosPool.request(),
           "dbo.encuestas_respuestas",
           ["encuesta_id", "pregunta_id", "respuesta"],
           Object.entries(respuestas),
@@ -2619,10 +2616,9 @@ app.get("/api/encuestas", authenticateToken, async (req, res) => {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 50, 1), 500)
     const cliente = (req.query.cliente || "").toString().trim()
 
-    const ruta = await connectRuta()
-    await ensureEncuestasTablas(ruta)
+    await ensureEncuestasTablas(pedidosPool)
 
-    const reqEnc = ruta.request().input("limit", sql.Int, limit)
+    const reqEnc = pedidosPool.request().input("limit", sql.Int, limit)
     let filtro = ""
     if (cliente) {
       reqEnc.input("cliente", sql.NVarChar, cliente)
@@ -2639,7 +2635,7 @@ app.get("/api/encuestas", authenticateToken, async (req, res) => {
     const encuestas = cab.recordset
     if (encuestas.length > 0) {
       const ids = encuestas.map((e) => e.id)
-      const det = await ruta.request().query(`
+      const det = await pedidosPool.request().query(`
         SELECT encuesta_id, pregunta_id, respuesta
         FROM dbo.encuestas_respuestas
         WHERE encuesta_id IN (${ids.join(",")})
