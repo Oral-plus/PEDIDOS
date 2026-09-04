@@ -9,7 +9,6 @@ import 'vendor_orders_screen.dart';
 import 'socio_negocio_screen.dart';
 import 'rutero_screen.dart';
 import 'mis_rutas_screen.dart';
-import 'simulador_pedido_screen.dart';
 
 class ClientMenuScreen extends StatefulWidget {
   const ClientMenuScreen({super.key});
@@ -139,8 +138,6 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                       _buildMenuGrid(),
                       const SizedBox(height: 12),
                       _buildMisRutasTile(),
-                      const SizedBox(height: 12),
-                      _buildSimuladorTile(),
                       const SizedBox(height: 14),
                       _buildClienteChip(),
                       if (_errorMessage != null) ...[const SizedBox(height: 14), _buildErrorCard()],
@@ -483,63 +480,6 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                   style: TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: -0.2)),
               const SizedBox(height: 2),
               Text('Hoy · Semana · Mes · Todas',
-                  style: TextStyle(color: _textMuted, fontSize: 11, fontWeight: FontWeight.w500)),
-            ]),
-          ),
-          Container(
-            width: 32, height: 32,
-            decoration: BoxDecoration(
-              color: _blue.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: const Icon(Icons.arrow_forward_rounded, color: _blue, size: 17),
-          ),
-        ]),
-      ),
-    );
-  }
-
-  Widget _buildSimuladorTile() {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        Navigator.of(context).push(
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const SimuladorPedidoScreen(),
-            transitionsBuilder: (_, a, __, c) => SlideTransition(
-              position: Tween<Offset>(begin: const Offset(1.0, 0.0), end: Offset.zero)
-                  .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
-              child: c,
-            ),
-            transitionDuration: const Duration(milliseconds: 250),
-          ),
-        );
-      },
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: _white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: _border),
-          boxShadow: _softShadow,
-        ),
-        child: Row(children: [
-          Container(
-            width: 48, height: 48,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [_blue, _inkDeep], begin: Alignment.topLeft, end: Alignment.bottomRight),
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: _blue.withOpacity(0.28), blurRadius: 10, offset: const Offset(0, 4))],
-            ),
-            child: const Icon(Icons.calculate_rounded, color: Colors.white, size: 23),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Simulador de pedido',
-                  style: TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: -0.2)),
-              const SizedBox(height: 2),
-              Text('Cotiza con precios de lista · sin entrar a una visita',
                   style: TextStyle(color: _textMuted, fontSize: 11, fontWeight: FontWeight.w500)),
             ]),
           ),
