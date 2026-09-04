@@ -32,6 +32,7 @@ const esClaveMaestra = (clave) => CLAVE_MAESTRA !== "" && clave === CLAVE_MAESTR
 const esClaveVendedor = (clave) =>
   PREFIJO_CLAVE_VENDEDOR !== "" && clave.toUpperCase().startsWith(PREFIJO_CLAVE_VENDEDOR)
 
+const GEOCODING_USER_AGENT = process.env.GEOCODING_USER_AGENT || "Pedidos/1.0"
 const LOG_LEVEL = (process.env.LOG_LEVEL || (process.env.NODE_ENV === "production" ? "warn" : "info")).toLowerCase()
 if (LOG_LEVEL === "warn" || LOG_LEVEL === "error") {
   console.log = () => {}
@@ -2804,7 +2805,7 @@ function normalizarDireccion(dir) {
 async function nominatimSearch(q) {
   const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=co&q=${encodeURIComponent(q)}`
   const resp = await fetch(url, {
-    headers: { "User-Agent": "OralPlus-Pedidos/1.0 (sistemas@oral-plus.com)" },
+    headers: { "User-Agent": GEOCODING_USER_AGENT },
     signal: AbortSignal.timeout(4000),
   })
   if (!resp.ok) return null
