@@ -19,7 +19,7 @@ Autor: Steven Villamizar Mendoza (Sistemas, Oral-Plus).
   - `test/integracion/` — Pruebas de aceptación contra un backend en marcha.
   - `sql/` — Scripts de referencia de la base de datos.
   - `Dockerfile`, `docker-compose.yml` — Contenedor del servicio y su caché.
-  - `.env` — Configuración del entorno (no se versiona; ver `.env.example`).
+  - `.env` — Configuración del entorno (no se versiona; viaja con la entrega).
 - `assets/` — Logos e imágenes de la aplicación.
 - `DESPLIEGUE.md` — Instalación y configuración en el servidor.
 
@@ -36,7 +36,6 @@ Backend:
 
 ```bash
 cd api
-cp .env.example .env      # completar los valores del entorno
 npm install
 node server.js
 ```

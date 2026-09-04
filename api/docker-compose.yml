@@ -9,8 +9,6 @@ services:
       - .env
     environment:
       - PORT=3000
-      # Cache de lecturas. Si se quita este servicio, dejar REDIS_URL vacio en
-      # el .env: el backend sigue funcionando consultando la base.
       - REDIS_URL=redis://pedidos-redis:6379
     depends_on:
       - pedidos-redis
@@ -19,8 +17,6 @@ services:
     image: redis:7-alpine
     container_name: pedidos-redis
     restart: always
-    # Solo cache: memoria acotada y expulsion de lo menos usado. No se publica
-    # el puerto al exterior; solo lo alcanza el backend por la red interna.
     command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --save ""
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

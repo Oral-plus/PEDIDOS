@@ -12,7 +12,7 @@ node server.js            # en otra terminal, o el backend que ya esté arriba
 npm run test:integracion  # las tres suites, en orden
 ```
 
-Contra otro servidor (por ejemplo el túnel de pruebas o producción):
+Contra otro servidor:
 
 ```bash
 API_URL=https://mi-tunel.trycloudflare.com npm run test:integracion
