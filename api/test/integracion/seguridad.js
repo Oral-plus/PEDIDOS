@@ -93,6 +93,8 @@ const RUTAS = [
   ["DELETE", "/api/productos/50360168/imagen"],
   ["POST", "/api/productos/refrescar"],
   ["GET", "/api/talonarios/siguiente"],
+  ["GET", "/api/talonarios/causales"],
+  ["POST", "/api/talonarios/cancelar", { causal: "Deterioro" }],
 ]
 
 ;(async () => {

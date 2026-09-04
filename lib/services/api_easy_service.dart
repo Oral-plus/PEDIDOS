@@ -912,6 +912,8 @@ class ApiEasyService {
       if (res['success'] == true) {
         _cache.invalidar('documentos:$clienteId');
         _cache.invalidar('cartera:$clienteId');
+        // El recaudo consumió un recibo del talonario
+        _cache.invalidar('talonario:siguiente');
       }
       return {
         'success': res['success'] == true,
@@ -930,8 +932,18 @@ class ApiEasyService {
   }
 
   /// GET /api/talonarios/siguiente - recibo de caja que le sigue al usuario
-  /// (talonario cuyo prefijo es el usuario de inicio de sesión).
-  Future<Map<String, dynamic>?> getSiguienteReciboCaja() async {
+  /// (talonario cuyo prefijo es el usuario de inicio de sesión). En caché
+  /// corta: se invalida al guardar un recaudo o cancelar el talonario.
+  Future<Map<String, dynamic>?> getSiguienteReciboCaja({bool refrescar = false}) {
+    if (refrescar) _cache.invalidar('talonario:siguiente');
+    return _cache.obtener(
+      'talonario:siguiente',
+      const Duration(seconds: 45),
+      _getSiguienteReciboCajaRed,
+    );
+  }
+
+  Future<Map<String, dynamic>?> _getSiguienteReciboCajaRed() async {
     if (_token == null || _token!.isEmpty) return null;
     try {
       final res = await ApiClient.get(
@@ -945,6 +957,30 @@ class ApiEasyService {
       }
     } catch (_) {}
     return null;
+  }
+
+  /// POST /api/talonarios/cancelar - cancela el talonario del usuario con su
+  /// causal (obligatoria). Invalida la caché del talonario al lograrlo.
+  Future<Map<String, dynamic>> cancelarTalonario(String causal) async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'message': 'Sesión expirada'};
+    }
+    try {
+      final res = await ApiClient.post(
+        '/api/talonarios/cancelar',
+        body: {'causal': causal},
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 15),
+      );
+      if (res['success'] == true) _cache.invalidar('talonario:siguiente');
+      return {
+        'success': res['success'] == true,
+        'message': res['message']?.toString() ?? '',
+      };
+    } catch (e) {
+      return {'success': false, 'message': e.toString().replaceFirst('Exception: ', '')};
+    }
   }
 
   Future<Map<String, dynamic>?> getCarteraCliente(String codigo) {

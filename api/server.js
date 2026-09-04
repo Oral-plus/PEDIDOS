@@ -11,6 +11,8 @@ const dispositivos = require("./modules/dispositivos")
 const productos = require("./modules/productos")
 const sesiones = require("./modules/sesiones")
 const clientesExtra = require("./modules/clientes_extra")
+const talonarios = require("./modules/talonarios")
+const cache = require("./modules/cache")
 const evidencias = require("./modules/evidencias")
 const multer = require("multer")
 
@@ -1341,61 +1343,13 @@ async function resolverRecaudoIdPedidos(numeroRecaudo) {
   }
 }
 
-// Talonario de recibos de caja (dbo.TALONARIO): el prefijo es el usuario de
-// inicio de sesión (p. ej. SKV18). Cada pago consume el siguiente número del
-// rango [rango_inicial, rango_final] de su talonario ACTIVO, sin repetirse.
-function prefijoDeSesion(decoded) {
-  if (!decoded) return null
-  if (decoded.tipo === "vendedor" && decoded.userId != null) return `SKV${decoded.userId}`.toUpperCase()
-  const p = (decoded.documento || decoded.nombre || "").toString().trim().toUpperCase()
-  return p || null
-}
-
-// Siguiente número libre del talonario del prefijo. Con una request de
-// transacción, el UPDLOCK sobre la fila del talonario serializa dos pagos
-// simultáneos del mismo usuario (el segundo espera y ve el número ya usado).
-async function siguienteReciboCaja(hacerRequest, prefijo) {
-  const r = await hacerRequest()
-    .input("p", sql.NVarChar, prefijo)
-    .query(`
-      SELECT TOP 1 t.id, t.prefijo, t.tipo_recibo, t.rango_inicial, t.rango_final,
-        (SELECT MAX(recibo_caja) FROM dbo.recaudos WHERE UPPER(recibo_prefijo) = UPPER(t.prefijo)) AS ultimo
-      FROM dbo.TALONARIO t WITH (UPDLOCK, HOLDLOCK)
-      WHERE UPPER(t.prefijo) = @p AND t.estado = 'ACTIVO'
-      ORDER BY t.id DESC
-    `)
-  if (r.recordset.length === 0) return { sinTalonario: true }
-  const t = r.recordset[0]
-  const ini = Number(t.rango_inicial) || 0
-  const fin = Number(t.rango_final) || 0
-  const ultimo = t.ultimo == null ? null : Number(t.ultimo)
-  const siguiente = ultimo == null || ultimo < ini ? ini : ultimo + 1
-  const agotado = siguiente > fin
-  return {
-    talonarioId: t.id,
-    prefijo: (t.prefijo || "").toString().trim(),
-    tipoRecibo: (t.tipo_recibo || "RECIBO DE CAJA").toString().trim(),
-    rangoInicial: ini,
-    rangoFinal: fin,
-    siguiente: agotado ? null : siguiente,
-    agotado,
-    disponibles: agotado ? 0 : fin - siguiente + 1,
-  }
-}
-
-// GET /api/talonarios/siguiente - recibo de caja que le sigue al usuario de la sesión
-app.get("/api/talonarios/siguiente", authenticateToken, async (req, res) => {
-  try {
-    await ensureRecaudosTablas()
-    const prefijo = prefijoDeSesion(req.user)
-    if (!prefijo) return res.json({ success: true, sinTalonario: true })
-    const t = await siguienteReciboCaja(() => pedidosPool.request(), prefijo)
-    if (t.sinTalonario) return res.json({ success: true, sinTalonario: true, prefijo })
-    res.json({ success: true, data: t })
-  } catch (error) {
-    console.error("Error consultando talonario:", error.message)
-    res.status(500).json({ success: false, message: "No se pudo consultar el talonario" })
-  }
+// Talonarios de recibos de caja: la lógica vive en modules/talonarios.js
+// (asignación transaccional del consecutivo, cancelación con causal y caché).
+talonarios.registrarRutas(app, {
+  requireAuth: authenticateToken,
+  getPedidosPool: () => pedidosPool,
+  sql,
+  log: console,
 })
 
 app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10), async (req, res) => {
@@ -1450,24 +1404,27 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
       for (const f of fotos) imagenes.push(await evidencias.procesar(f.buffer))
     }
 
+    await talonarios.ensureEstructuras(pedidosPool)
+
     const transaction = pedidosPool.transaction()
     await transaction.begin()
     let recaudoId
-    let reciboCaja = null, reciboPrefijo = null
+    let reciboCaja = null, reciboPrefijo = null, reciboTalonarioId = null
     try {
     // Recibo de caja: consecutivo del talonario del usuario, asignado dentro
-    // de la transacción para que nunca se repita. Sin talonario o agotado,
-    // el recaudo entra igual (inserción plana) con el recibo en blanco.
+    // de la transacción para que nunca se repita. Un talonario CANCELADO
+    // bloquea el pago; sin talonario o agotado, el recaudo entra igual
+    // (inserción plana) con el recibo en blanco.
     try {
-      const prefijoRecibo = prefijoDeSesion(sesionToken)
-      if (prefijoRecibo) {
-        const tal = await siguienteReciboCaja(() => transaction.request(), prefijoRecibo)
-        if (!tal.sinTalonario && tal.siguiente != null) {
-          reciboCaja = tal.siguiente
-          reciboPrefijo = tal.prefijo
-        }
-      }
+      const tal = await talonarios.asignar(() => transaction.request(), sql, sesionToken)
+      reciboCaja = tal.reciboCaja
+      reciboPrefijo = tal.reciboPrefijo
+      reciboTalonarioId = tal.talonarioId
     } catch (e) {
+      if (e.pagoBloqueado) {
+        await transaction.rollback()
+        return res.status(409).json({ success: false, talonarioCancelado: true, causal: e.causal || null, message: e.message })
+      }
       console.error("No se pudo asignar recibo de caja:", e.message)
     }
     const cab = await transaction.request()
@@ -1486,15 +1443,16 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
       .input("notas", sql.NVarChar, (b.notas || "").toString().trim() || null)
       .input("reciboCaja", sql.BigInt, reciboCaja)
       .input("reciboPref", sql.NVarChar, reciboPrefijo)
+      .input("reciboTal", sql.Int, reciboTalonarioId != null && reciboCaja != null ? reciboTalonarioId : null)
       .query(`
         INSERT INTO dbo.recaudos
           (numero_recaudo, cliente_id, cliente_nombre, vendedor_id, vendedor_nombre,
            forma_pago, banco_pago, referencia_pago, total_documentos, total_aplicado, total_recaudo, saldo, notas,
-           recibo_caja, recibo_prefijo)
+           recibo_caja, recibo_prefijo, recibo_talonario_id)
         OUTPUT INSERTED.id
         VALUES (@numero, @clienteId, @clienteNombre, @vendId, @vendNom,
                 @formaPago, @bancoPago, @refPago, @totDocs, @totApl, @totRec, @saldo, @notas,
-                @reciboCaja, @reciboPref)
+                @reciboCaja, @reciboPref, @reciboTal)
       `)
     recaudoId = cab.recordset[0].id
 
@@ -1538,6 +1496,9 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
       await transaction.rollback()
       throw err
     }
+
+    // Se consumió un número del talonario: la caché del "siguiente" ya no vale
+    if (reciboPrefijo) await talonarios.invalidarCache(reciboPrefijo)
 
     console.log(`Recaudo ${numeroRecaudo} #${recaudoId} cliente ${clienteId}: ${docs.length} doc(s), ${imagenes.length} evidencia(s), aplicado ${num(b.totalAplicado)}`)
     res.json({
@@ -3410,6 +3371,9 @@ async function startServer() {
 
     connectSAP().catch(() => {})
     connectRuta().catch((e) => console.error("BD Ruta no disponible al arrancar:", e.message))
+    // Caché de lecturas (Redis). Si no está configurada o no responde, el
+    // servicio arranca igual y trabaja contra la base.
+    cache.iniciar()
 
     const server = app.listen(PORT, "0.0.0.0", () => {
       console.info(`API de pedidos escuchando en el puerto ${PORT}`)

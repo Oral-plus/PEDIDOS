@@ -90,13 +90,90 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   bool _talonarioCargando = true;
   String? _reciboAsignado;
 
-  Future<void> _cargarTalonario() async {
-    final r = await ApiEasyService().getSiguienteReciboCaja();
+  Future<void> _cargarTalonario({bool refrescar = false}) async {
+    final r = await ApiEasyService().getSiguienteReciboCaja(refrescar: refrescar);
     if (!mounted) return;
     setState(() {
       _talonario = r;
       _talonarioCargando = false;
     });
+  }
+
+  Map<String, dynamic>? get _talonarioData => _talonario?['data'] is Map
+      ? Map<String, dynamic>.from(_talonario!['data'] as Map)
+      : null;
+
+  bool get _talonarioCancelado => _talonarioData?['cancelado'] == true;
+
+  static const List<String> _causalesCancelacion = [
+    'Deterioro',
+    'Daño por mal manejo',
+  ];
+
+  // Cancelación del talonario: la causal es obligatoria (el botón Confirmar
+  // no se habilita sin seleccionarla; el servidor la vuelve a validar).
+  Future<void> _cancelarTalonario() async {
+    final data = _talonarioData;
+    if (data == null || _talonarioCancelado) {
+      _aviso(_talonarioCancelado
+          ? 'El talonario ya está cancelado'
+          : 'No tienes un talonario asignado para cancelar');
+      return;
+    }
+    String? causal;
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Text('Cancelar talonario',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Talonario ${data['prefijo']} (rango ${data['rangoInicial']}–${data['rangoFinal']}). '
+                'Quedará en estado "Cancelado" y no permitirá pagos.\n\nSelecciona la causal:',
+                style: const TextStyle(fontSize: 13.5, height: 1.4),
+              ),
+              const SizedBox(height: 8),
+              for (final c in _causalesCancelacion)
+                RadioListTile<String>(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(c, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  value: c,
+                  groupValue: causal,
+                  onChanged: (v) => setLocal(() => causal = v),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Volver'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+              onPressed: causal == null ? null : () => Navigator.of(ctx).pop(true),
+              child: const Text('Cancelar talonario',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmado != true || causal == null || !mounted) return;
+
+    final res = await ApiEasyService().cancelarTalonario(causal!);
+    if (!mounted) return;
+    if (res['success'] == true) {
+      _aviso('Talonario cancelado: $causal');
+      await _cargarTalonario(refrescar: true);
+    } else {
+      _aviso((res['message'] ?? 'No se pudo cancelar el talonario').toString());
+    }
   }
 
   @override
@@ -276,6 +353,35 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   }
 
   Future<void> _realizar() async {
+    // Un talonario cancelado no permite realizar pagos: se muestra el motivo
+    if (_talonarioCancelado) {
+      final causal = (_talonarioData?['causalCancelacion'] ?? '').toString();
+      final prefijo = (_talonarioData?['prefijo'] ?? '').toString();
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Row(children: [
+            Icon(Icons.block_rounded, color: Color(0xFFDC2626)),
+            SizedBox(width: 10),
+            Expanded(child: Text('Talonario cancelado')),
+          ]),
+          content: Text(
+            'No se pueden realizar pagos con el talonario $prefijo: está cancelado.\n\n'
+            'Motivo: ${causal.isNotEmpty ? causal : 'sin causal registrada'}.\n\n'
+            'Solicita a Sistemas la asignación de un talonario nuevo para continuar.',
+            style: const TextStyle(fontSize: 14, height: 1.4),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Entendido'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     // Sin el cruce de documentos diligenciado no se puede realizar el pago
     if (!_recaudoCruzado) {
       await showDialog<void>(
@@ -1015,14 +1121,17 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   // del talonario del usuario (rango inicial a final), que el servidor asigna
   // al guardar el recaudo y no vuelve a repetir.
   Widget _reciboCajaCard() {
-    final data = _talonario?['data'] is Map
-        ? Map<String, dynamic>.from(_talonario!['data'] as Map)
-        : null;
+    final data = _talonarioData;
     final sinTalonario = _talonario == null || _talonario?['sinTalonario'] == true;
     final agotado = data?['agotado'] == true;
+    final cancelado = _talonarioCancelado;
     final String texto;
     Color color = _ink;
-    if (_reciboAsignado != null && _reciboAsignado!.isNotEmpty) {
+    if (cancelado) {
+      final causal = (data?['causalCancelacion'] ?? '').toString();
+      texto = 'talonario cancelado${causal.isNotEmpty ? ' · $causal' : ''}';
+      color = const Color(0xFFDC2626);
+    } else if (_reciboAsignado != null && _reciboAsignado!.isNotEmpty) {
       texto = 'N° $_reciboAsignado asignado';
       color = const Color(0xFF15803D);
     } else if (_talonarioCargando) {
@@ -1039,7 +1148,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     }
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
       decoration: _cardDeco,
       child: Row(children: [
         const Icon(Icons.receipt_long_rounded, color: _ink, size: 18),
@@ -1051,6 +1160,25 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
           child: Text(texto,
               textAlign: TextAlign.right,
               style: TextStyle(color: color, fontSize: 13.5, fontWeight: FontWeight.w800)),
+        ),
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert_rounded, color: _gray, size: 20),
+          tooltip: 'Opciones del talonario',
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          onSelected: (v) {
+            if (v == 'cancelar') _cancelarTalonario();
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem<String>(
+              value: 'cancelar',
+              enabled: data != null && !cancelado,
+              child: const Row(children: [
+                Icon(Icons.block_rounded, size: 18, color: Color(0xFFDC2626)),
+                SizedBox(width: 8),
+                Text('Cancelar talonario', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              ]),
+            ),
+          ],
         ),
       ]),
     );
