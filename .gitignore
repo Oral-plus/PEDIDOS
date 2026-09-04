@@ -61,3 +61,13 @@ android/key.properties
 
 # PNG originales de producto (la app usa los WebP de assets/)
 assets_originales/
+
+# Proyectos y artefactos heredados (no forman parte del despliegue)
+frontend/
+sky/
+API-EASY/
+config/
+scripts/
+assets_originales/
+estructura.txt
+tree.txt

@@ -1,6 +1,3 @@
-// Prueba REST de un RECAUDO COMPLETO: cabecera con todos sus campos documentados,
-// sus documentos aplicados, sus imagenes de evidencia; verificacion campo por campo
-// en la BD; y borrado con verificacion de la cascada (no debe quedar nada).
 const http = require("http")
 const path = require("path")
 require(path.join(process.cwd(), "node_modules", "dotenv")).config({ path: path.join(process.cwd(), ".env") })
@@ -60,7 +57,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const token = jwt.sign({ userId: 0, nombre: "PRUEBA RECAUDO", tipo: "usuario", jti }, process.env.JWT_SECRET, { expiresIn: 900 })
   const uno = async (q, i) => { const r = pedidos.request(); for (const [k, t, v] of i) r.input(k, t, v); return (await r.query(q)).recordset[0] }
 
-  // ── 1) Recaudo con TODOS los campos documentados + 3 documentos aplicados ──
   const documentos = [
     { docEntry: 101, docNum: "FV-1001", numFactura: "FE1001", saldo: 500000, abono: 300000, dueDate: "2026-09-15" },
     { docEntry: 102, docNum: "FV-1002", numFactura: "FE1002", saldo: 250000, abono: 250000, dueDate: "2026-09-20" },
@@ -84,7 +80,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const recId = rRec.json && rRec.json.data && rRec.json.data.id
   ok("REST: recaudo creado (POST /api/recaudos)", rRec.status === 200 && rRec.json.success === true && recId, `id=${recId} num=${rRec.json && rRec.json.data && rRec.json.data.numeroRecaudo}`)
 
-  // ── 2) Cabecera: verificar CADA campo documentado ──
   const c = recId ? await uno(`SELECT numero_recaudo, cliente_id, cliente_nombre, vendedor_id, vendedor_nombre,
       forma_pago, banco_pago, referencia_pago, total_documentos, total_aplicado, total_recaudo, saldo, notas,
       CONVERT(VARCHAR(19), fecha, 120) fecha FROM dbo.recaudos WHERE id=@id`, [["id", sql.Int, recId]]) : null
@@ -108,7 +103,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const malos = Object.entries(campos).filter(([, v]) => !v).map(([k]) => k)
   ok(`cabecera: los ${Object.keys(campos).length} campos documentados guardados`, c && malos.length === 0, malos.length ? "fallan: " + malos.join(",") : "todos correctos")
 
-  // ── 3) Documentos aplicados: cantidad y cada campo ──
   const docs = recId ? (await pedidos.request().input("id", sql.Int, recId)
     .query("SELECT doc_entry, doc_num, num_factura, saldo, abono, due_date FROM dbo.recaudos_documentos WHERE recaudo_id=@id ORDER BY doc_entry")).recordset : []
   const docsOk = docs.length === 3 && docs.every((d, i) => {
@@ -121,7 +115,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const sumaAbonos = docs.reduce((s, d) => s + num(d.abono), 0)
   ok("documentos: la suma de abonos coincide con total_aplicado", sumaAbonos === 650000, `${sumaAbonos} vs 650000`)
 
-  // ── 4) Evidencias: 2 imagenes subidas por REST y ligadas al recaudo ──
   const imgs = []
   for (const [i, color] of [[1, { r: 200, g: 30, b: 30 }], [2, { r: 30, g: 140, b: 60 }]]) {
     const png = await sharp({ create: { width: 800 + i * 100, height: 600, channels: 3, background: color } }).png().toBuffer()
@@ -136,7 +129,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
     e.origen === "recaudo" && e.cliente_id === CLIENTE && e.mime === "image/webp" && e.tamano > 0 && e.ancho > 0 && e.alto > 0)
   ok("evidencias: 2 filas ligadas por recaudo_id, en webp y con dimensiones", evidOk, evid.map((e) => `${e.ancho}x${e.alto} ${e.tamano}b`).join(" | "))
 
-  // ── 5) Las imagenes se recuperan integras por REST ──
   let descOk = true, det = []
   for (const e of evid) {
     const f = await llamar("GET", `/api/evidencias/${e.id}/foto`, { token, raw: true })
@@ -146,11 +138,9 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   }
   ok("evidencias: se descargan integras por REST (bytes coinciden con la BD)", evid.length === 2 && descOk, det.join(" "))
 
-  // ── 6) El listado por REST devuelve las evidencias del recaudo ──
   const lista = await llamar("GET", `/api/evidencias?numeroRecaudo=${encodeURIComponent(NUM_RECAUDO)}`, { token })
   ok("REST: listado por numeroRecaudo devuelve las 2 evidencias", lista.status === 200 && lista.json.total === 2, `total=${lista.json && lista.json.total}`)
 
-  // ── 7) BORRADO: al borrar el recaudo, la cascada limpia documentos y evidencias ──
   await pedidos.request().input("id", sql.Int, recId).query("DELETE FROM dbo.recaudos WHERE id=@id")
   const qN = async (t, col) => (await uno(`SELECT COUNT(*) n FROM ${t} WHERE ${col}=@id`, [["id", sql.Int, recId]])).n
   const nRec = await qN("dbo.recaudos", "id")
@@ -158,7 +148,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const nEvi = await qN("dbo.evidencias_archivos", "recaudo_id")
   ok("borrado: el recaudo y en cascada sus documentos y evidencias quedan en cero", nRec === 0 && nDoc === 0 && nEvi === 0, `rec=${nRec} doc=${nDoc} evi=${nEvi}`)
 
-  // barrido por si quedara algo por numero
   await pedidos.request().input("n", sql.NVarChar, NUM_RECAUDO).query("DELETE FROM dbo.evidencias_archivos WHERE numero_recaudo=@n")
   try { await sesiones.cerrar(pedidos, sql, jti, "prueba") } catch (_) {}
   await pedidos.close()

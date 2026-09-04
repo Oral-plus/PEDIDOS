@@ -1,7 +1,3 @@
-// Valida la relacion por clave foranea (recaudo_id) entre recaudos y sus hijos.
-// recaudos, evidencias_archivos y pedidos_gestion viven en la BD Pedidos -> FK real.
-// visitas_clientes vive en la BD Ruta -> se guarda recaudo_id como referencia por id
-// (SQL Server no permite FK entre bases distintas).
 const http = require("http")
 const path = require("path")
 require(path.join(process.cwd(), "node_modules", "dotenv")).config({ path: path.join(process.cwd(), ".env") })
@@ -59,31 +55,25 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const uno = async (q, i) => { const r = pedidos.request(); for (const [k, t, v] of i) r.input(k, t, v); return (await r.query(q)).recordset[0] }
   const unoR = async (q, i) => { const r = ruta.request(); for (const [k, t, v] of i) r.input(k, t, v); return (await r.query(q)).recordset[0] }
 
-  // Recaudo padre
   const rRec = await llamar("POST", "/api/recaudos", { token, body: { numeroRecaudo: NUM_RECAUDO, clienteId: CLIENTE, clienteNombre: "PRUEBA", formaPago: "Efectivo", totalAplicado: 5000, totalRecaudo: 5000, documentos: [{ docEntry: 1, docNum: "F1", numFactura: "F1", saldo: 5000, abono: 5000, dueDate: "2026-09-30" }] } })
   const recaudoId = rRec.json && rRec.json.data && rRec.json.data.id
   ok("recaudo creado y devuelve id", rRec.status === 200 && recaudoId, `id=${recaudoId}`)
 
-  // Evidencia -> recaudo_id debe igualar el id del recaudo
   const rEvi = await llamar("POST", "/api/evidencias", { token, mp: multipart({ origen: "recaudo", numeroRecaudo: NUM_RECAUDO, clienteId: CLIENTE }, { campo: "foto", nombre: "e.png", mime: "image/png", contenido: png }) })
   const eviId = rEvi.json && rEvi.json.data && rEvi.json.data.id
   const fEvi = eviId ? await uno("SELECT recaudo_id, numero_recaudo FROM dbo.evidencias_archivos WHERE id=@id", [["id", sql.Int, eviId]]) : null
   ok("evidencia: recaudo_id = id del recaudo (FK)", fEvi && fEvi.recaudo_id === recaudoId, `recaudo_id=${fEvi && fEvi.recaudo_id} esperado ${recaudoId}`)
 
-  // Gestion -> recaudo_id
   const rGes = await llamar("POST", "/api/pedidos/gestion", { token, body: { clienteId: CLIENTE, clienteNombre: "PRUEBA", total: 1000, formaPago: "Efectivo", numeroRecaudo: NUM_RECAUDO, estado: "GUARDADO" } })
   const gesId = rGes.json && rGes.json.data && rGes.json.data.id
   const fGes = gesId ? await uno("SELECT recaudo_id FROM dbo.pedidos_gestion WHERE id=@id", [["id", sql.Int, gesId]]) : null
   ok("gestion: recaudo_id = id del recaudo (FK)", fGes && fGes.recaudo_id === recaudoId, `recaudo_id=${fGes && fGes.recaudo_id}`)
 
-  // Visita + encuesta -> recaudo_id (ref por id entre BD) y cadena encuesta->respuestas
   const rVis = await llamar("POST", `/api/clientes/${CLIENTE}/visita`, { token, body: { observacion: "prueba rel", metodoPago: "Transferencia", numeroRecaudo: NUM_RECAUDO, totalRecaudos: 5000, encuestaTipo: "Enc prueba", encuestaRespuestas: { tipo: "T1", nombre: "Enc prueba", respuestas: { p1: "si", p2: "no" } } } })
   const visId = rVis.json && rVis.json.data && rVis.json.data.id
   const fVis = visId ? await unoR("SELECT recaudo_id FROM visitas_clientes WHERE id=@id", [["id", sql.Int, visId]]) : null
   ok("visita: recaudo_id = id del recaudo (referencia entre BD)", fVis && fVis.recaudo_id === recaudoId, `recaudo_id=${fVis && fVis.recaudo_id}`)
 
-  // La encuesta es plana y vive en la BD Pedidos (intermedia); visita_id es
-  // solo referencia a la visita de la BD Ruta, sin FK cruzada
   const fEnc = visId ? await uno("SELECT id FROM dbo.encuestas_visitas WHERE visita_id=@id", [["id", sql.Int, visId]]) : null
   const encId = fEnc && fEnc.id
   const nResp = encId ? (await uno("SELECT COUNT(*) n FROM dbo.encuestas_respuestas WHERE encuesta_id=@id", [["id", sql.Int, encId]])).n : 0
@@ -92,7 +82,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const fkEnc = (await pedidos.request().query("SELECT name FROM sys.foreign_keys WHERE name IN ('FK_encvis_visita','FK_encresp_encuesta')")).recordset.map((r) => r.name)
   ok("FK de encuestas en Pedidos: solo respuestas->encuesta (sin FK a visitas de otra BD)", fkEnc.length === 1 && fkEnc[0] === "FK_encresp_encuesta", fkEnc.join(",") || "ninguna")
 
-  // Plana: borrar la visita (BD Ruta) NO toca la encuesta; borrar la encuesta cae en cascada a sus respuestas
   if (visId) await ruta.request().input("id", sql.Int, visId).input("c", sql.NVarChar, CLIENTE).query("DELETE FROM visitas_clientes WHERE id=@id AND cliente_id=@c")
   const encTras = encId ? (await uno("SELECT COUNT(*) n FROM dbo.encuestas_visitas WHERE id=@id", [["id", sql.Int, encId]])).n : -1
   ok("plana: borrar la visita no elimina la encuesta guardada", encTras === 1, `enc=${encTras}`)
@@ -100,11 +89,9 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const respTras = encId ? (await uno("SELECT COUNT(*) n FROM dbo.encuestas_respuestas WHERE encuesta_id=@id", [["id", sql.Int, encId]])).n : -1
   ok("cascada: borrar la encuesta elimina sus respuestas", respTras === 0, `resp=${respTras}`)
 
-  // Las FK existen en la BD Pedidos
   const fks = (await pedidos.request().query("SELECT name FROM sys.foreign_keys WHERE name IN ('FK_evid_recaudo','FK_pedgest_recaudo','FK_recdoc_recaudo')")).recordset.map((r) => r.name)
   ok("FK declaradas: FK_evid_recaudo, FK_pedgest_recaudo, FK_recdoc_recaudo", fks.length === 3, fks.join(","))
 
-  // La FK con ON DELETE CASCADE: borrar el recaudo elimina sus hijos (documentos, evidencia, gestion)
   await pedidos.request().input("id", sql.Int, recaudoId).query("DELETE FROM dbo.recaudos WHERE id=@id")
   const recTras = (await uno("SELECT COUNT(*) n FROM dbo.recaudos WHERE id=@id", [["id", sql.Int, recaudoId]])).n
   const eviTras = eviId ? (await uno("SELECT COUNT(*) n FROM dbo.evidencias_archivos WHERE id=@id", [["id", sql.Int, eviId]])).n : -1
@@ -112,7 +99,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const docTras = (await uno("SELECT COUNT(*) n FROM dbo.recaudos_documentos WHERE recaudo_id=@id", [["id", sql.Int, recaudoId]])).n
   ok("cascada: borrar el recaudo elimina documentos, evidencia y gestion", recTras === 0 && eviTras === 0 && gesTras === 0 && docTras === 0, `rec=${recTras} evi=${eviTras} ges=${gesTras} doc=${docTras}`)
 
-  // limpieza restante (la visita en BD Ruta ya se borro en la prueba de cascada de encuestas)
   try {
     await ruta.request().input("c", sql.NVarChar, CLIENTE).query("DELETE FROM visitas_clientes WHERE cliente_id=@c")
     await sesiones.cerrar(pedidos, sql, jti, "prueba")

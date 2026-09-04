@@ -16,8 +16,6 @@ const cache = require("./modules/cache")
 const evidencias = require("./modules/evidencias")
 const multer = require("multer")
 
-// Recibe las fotos del recaudo en la misma peticion, para guardarlas en la
-// misma transaccion. Si la peticion es JSON, multer la deja pasar sin tocarla.
 const subidaEvidencias = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 12 * 1024 * 1024, files: 10 },
@@ -403,7 +401,6 @@ async function hashPin(pin) {
   return await bcrypt.hash(pin, saltRounds)
 }
 
-
 async function finalizeLogin(req, res, payload, usuario) {
   const rolSoporte = esSoporte(
     usuario.documento,
@@ -698,7 +695,6 @@ app.post("/api/auth/register", authenticateToken, async (req, res) => {
   }
 })
 
-
 app.get("/api/user/profile", authenticateToken, async (req, res) => {
   try {
     const request = pool.request()
@@ -948,7 +944,6 @@ app.get("/api/notifications", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Error interno del servidor" })
   }
 })
-
 
 app.get("/api/clientes", authenticateToken, async (req, res) => {
   try {
@@ -1343,8 +1338,6 @@ async function resolverRecaudoIdPedidos(numeroRecaudo) {
   }
 }
 
-// Talonarios de recibos de caja: la lógica vive en modules/talonarios.js
-// (asignación transaccional del consecutivo, cancelación con causal y caché).
 talonarios.registrarRutas(app, {
   requireAuth: authenticateToken,
   getPedidosPool: () => pedidosPool,
@@ -1372,22 +1365,17 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
     const b = req.body || {}
     const clienteId = (b.clienteId || "").toString().trim()
     if (!clienteId) return res.status(400).json({ success: false, message: "Cliente requerido" })
-    // En multipart los documentos llegan como JSON en texto
     let docs = b.documentos
     if (typeof docs === "string") {
       try { docs = JSON.parse(docs) } catch (_) { docs = [] }
     }
     if (!Array.isArray(docs)) docs = []
-    // Única regla: un recaudo sin documentos cruzados no existe (si no, se
-    // montaría sola la imagen sin cartera que respaldar)
     if (docs.length === 0) {
       return res.status(400).json({ success: false, message: "Selecciona al menos un documento de la cartera para cruzar el recaudo" })
     }
 
     const num = (v) => { const n = Number.parseFloat(v); return Number.isNaN(n) ? 0 : n }
 
-    // El resto es BD intermedia: se guarda tal cual lo que recogió la app, sin
-    // reglas de negocio. La aprobación y la gestión contra SAP las hace otro proyecto.
     const formaPago = (b.formaPago || "").toString().trim()
     const totalRecaudo = num(b.totalRecaudo)
     const totalAplicado = num(b.totalAplicado)
@@ -1397,8 +1385,6 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
 
     await ensureRecaudosTablas()
 
-    // Las imagenes se procesan ANTES de abrir la transaccion (trabajo de CPU)
-    // y se insertan dentro de ella: el recaudo y sus evidencias son todo o nada.
     const fotos = Array.isArray(req.files) ? req.files.filter((f) => f && f.buffer && f.buffer.length > 0) : []
     const imagenes = []
     if (fotos.length > 0) {
@@ -1413,10 +1399,6 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
     let recaudoId
     let reciboCaja = null, reciboPrefijo = null, reciboTalonarioId = null
     try {
-    // Recibo de caja: cada pago de cartera consume en secuencia una unidad del
-    // talonario del gestor, asignada dentro de la transacción para que nunca
-    // se repita. Sin unidad disponible no hay pago (segunda excepción a la
-    // inserción plana, junto con el cruce de documentos).
     try {
       const tal = await talonarios.asignar(() => transaction.request(), sql, sesionToken)
       reciboCaja = tal.reciboCaja
@@ -1499,7 +1481,6 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
       throw err
     }
 
-    // Se consumió un número del talonario: la caché del "siguiente" ya no vale
     if (reciboPrefijo) await talonarios.invalidarCache(reciboPrefijo)
 
     console.log(`Recaudo ${numeroRecaudo} #${recaudoId} cliente ${clienteId}: ${docs.length} doc(s), ${imagenes.length} evidencia(s), aplicado ${num(b.totalAplicado)}`)
@@ -1528,8 +1509,6 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
   try {
     const { cedula, nombre, direccion, telefono, correo, productos, observaciones, codigoCliente, vendedor } = req.body
 
-    // BD intermedia: se guarda tal cual lo que recogió la app, sin reglas de
-    // negocio. La aprobación y la gestión contra SAP las hace otro proyecto.
     const numeroPedido = generatePedidoNumero()
     const aNumero = (v) => { const n = Number.parseFloat(v); return Number.isNaN(n) ? 0 : n }
 
@@ -1709,7 +1688,6 @@ app.get("/api/orders/detail/:numeroPedido", authenticateToken, async (req, res) 
     res.status(500).json({ success: false, message: error.message })
   }
 })
-
 
 app.get("/api/orders", authenticateToken, async (req, res) => {
   try {
@@ -1972,8 +1950,6 @@ async function ensureActualizacionesTabla(pool) {
 }
 
 let encuestasTablasListas = false
-// Encuestas planas en la BD Pedidos (intermedia): se guardan tal cual y el
-// visita_id es solo referencia (la visita vive en la BD Ruta, sin FK cruzada).
 async function ensureEncuestasTablas(pool) {
   if (encuestasTablasListas) return
   await pool.request().query(`
@@ -3373,8 +3349,6 @@ async function startServer() {
 
     connectSAP().catch(() => {})
     connectRuta().catch((e) => console.error("BD Ruta no disponible al arrancar:", e.message))
-    // Caché de lecturas (Redis). Si no está configurada o no responde, el
-    // servicio arranca igual y trabaja contra la base.
     cache.iniciar()
 
     const server = app.listen(PORT, "0.0.0.0", () => {

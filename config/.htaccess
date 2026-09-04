@@ -1,4 +1,0 @@
-# Bloquear el acceso web a los archivos de entorno (secretos)
-<Files ".env">
-    Require all denied
-</Files>

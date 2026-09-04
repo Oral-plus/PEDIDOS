@@ -1,7 +1,3 @@
-// Validacion del RECAUDO por la ruta que usa realmente el APK: multipart con
-// fotos y los numeros serializados como texto (tal como los manda Dart).
-// Comprueba que los importes en cero o nulos se rechacen SIN guardar nada, y
-// que el recaudo valido entre completo con todos sus datos e imagenes.
 const http = require("http")
 const path = require("path")
 require(path.join(process.cwd(), "node_modules", "dotenv")).config({ path: path.join(process.cwd(), ".env") })
@@ -67,7 +63,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const archivos = [{ nombre: "evidencia.png", contenido: img }]
 
   const docOk = { docEntry: 11, docNum: "FV-11", numFactura: "FE11", saldo: 200000, abono: 200000, dueDate: "2026-09-30" }
-  // Numeros como texto: asi los serializa la app (jsonEncode sobre double)
   const base = {
     clienteId: CLIENTE, clienteNombre: "CLIENTE RECAUDO", formaPago: "Transferencia",
     bancoPago: "Bancolombia", referenciaPago: "TRF-RV-1",
@@ -75,9 +70,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
     notas: "validacion de recaudo", documentos: JSON.stringify([docOk]),
   }
 
-  // ── Inserción plana: la BD es intermedia y se guarda tal cual lo que la app
-  //    recolecte (ceros, vacíos o sin documentos). La aprobación la hace otro
-  //    proyecto; aquí una simple inserción no debe fallar.
   const casos = [
     ["valor recaudado en cero", { totalRecaudo: "0.0" }],
     ["valor recaudado nulo", { totalRecaudo: "null" }],
@@ -97,14 +89,12 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
     await pedidos.request().input("n", sql.NVarChar, numero).query("DELETE FROM dbo.recaudos WHERE numero_recaudo=@n")
   }
 
-  // Única excepción: sin documentos cruzados el recaudo NO entra (ni la imagen)
   const numSinDocs = `RV-sindocs-${ts}`
   const rSin = await llamar("POST", "/api/recaudos", { token, mp: multipart({ ...base, numeroRecaudo: numSinDocs, documentos: "[]" }, archivos) })
   const recSin = await cuenta("dbo.recaudos", "numero_recaudo", numSinDocs)
   const eviSin = await cuenta("dbo.evidencias_archivos", "numero_recaudo", numSinDocs)
   ok("rechaza el recaudo sin documentos cruzados y no sube la imagen", rSin.status === 400 && recSin === 0 && eviSin === 0, `${rSin.status} rec=${recSin} img=${eviSin} · ${rSin.json && rSin.json.message}`)
 
-  // ── Recaudo valido: entra completo, con la imagen, en una sola operacion ──
   const NUM_OK = `RV-OK-${ts}`
   const camposOk = {
     ...base, numeroRecaudo: NUM_OK,
@@ -155,7 +145,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const foto = ev[0] ? await llamar("GET", `/api/evidencias/${ev[0].id}/foto`, { token, raw: true }) : { status: 0 }
   ok("la imagen se recupera integra", foto.status === 200 && foto.buf && foto.buf.length === (ev[0] && ev[0].tamano), `${foto.status} ${foto.buf && foto.buf.length}b`)
 
-  // limpieza
   try {
     if (recId) await pedidos.request().input("i", sql.Int, recId).query("DELETE FROM dbo.recaudos WHERE id=@i")
     await pedidos.request().input("c", sql.NVarChar, CLIENTE).query("DELETE FROM dbo.evidencias_archivos WHERE cliente_id=@c")

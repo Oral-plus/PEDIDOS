@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/app_config.dart';
 import 'shared_http.dart';
 
 class ApiException implements Exception {
@@ -19,9 +20,7 @@ class ApiException implements Exception {
 }
 
 class ApiClient {
-  static const List<String> _baseUrls = [
-    'https://pedidos.oral-plus.com/api',
-  ];
+  static List<String> get _baseUrls => AppConfig.apiUrls;
 
   static const Map<String, String> _defaultHeaders = {
     'Content-Type': 'application/json',
@@ -38,6 +37,9 @@ class ApiClient {
   static http.Client get _http => SharedHttp.client;
 
   static Future<String> getWorkingUrl() async {
+    if (!AppConfig.configurada) {
+      throw Exception(AppConfig.mensajeSinConfigurar);
+    }
     for (String baseUrl in _baseUrls) {
       try {
         final response = await _http.get(

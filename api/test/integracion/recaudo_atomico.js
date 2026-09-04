@@ -1,6 +1,3 @@
-// Recaudo ATOMICO: cabecera, documentos e imagenes en UNA sola peticion y una
-// sola transaccion. Verifica que todo entra junto, y que si algo falla no queda
-// nada (ni recaudo, ni documentos, ni imagenes).
 const http = require("http")
 const path = require("path")
 require(path.join(process.cwd(), "node_modules", "dotenv")).config({ path: path.join(process.cwd(), ".env") })
@@ -37,7 +34,6 @@ function llamar(metodo, ruta, { token, mp, body, raw } = {}) {
   })
 }
 
-// multipart con varios campos y varios archivos bajo el mismo nombre
 function multipart(campos, archivos) {
   const limite = "----atom" + Math.random().toString(16).slice(2)
   const partes = []
@@ -73,7 +69,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
     { docEntry: 202, docNum: "FV-2002", numFactura: "FE2002", saldo: 300000, abono: 200000, dueDate: "2026-10-10" },
   ]
 
-  // ── 1) CAMINO FELIZ: una sola peticion con recaudo + documentos + 2 imagenes ──
   const NUM_OK = `REC-ATOM-OK-${ts}`
   const campos = {
     numeroRecaudo: NUM_OK, clienteId: CLIENTE, clienteNombre: "CLIENTE ATOMICO",
@@ -94,9 +89,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
     .query("SELECT mime, tamano, ancho, alto, recaudo_id, numero_recaudo FROM dbo.evidencias_archivos WHERE recaudo_id=@v ORDER BY id")).recordset : []
   ok("misma transaccion: 2 documentos y 2 imagenes ligadas por recaudo_id", nDocs === 2 && evs.length === 2 && evs.every((e) => e.recaudo_id === recId && e.numero_recaudo === NUM_OK && e.mime === "image/webp" && e.tamano > 0), `docs=${nDocs} imgs=${evs.length} ${evs.map((e) => e.ancho + "x" + e.alto).join(",")}`)
 
-  // ── 2) FALLO A MITAD: importes coherentes (pasan validacion) pero un
-  // due_date mas largo que la columna, para que reviente DENTRO de la
-  // transaccion y se compruebe el rollback real, no el rechazo previo.
   const NUM_MAL = `REC-ATOM-MAL-${ts}`
   const docsMal = [{ docEntry: 301, docNum: "FV-3001", numFactura: "FE3001", saldo: 100000, abono: 100000, dueDate: "X".repeat(50) }]
   const camposMal = {
@@ -112,14 +104,11 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const eviMal = await cuenta("dbo.evidencias_archivos", "numero_recaudo", NUM_MAL)
   ok("fallo a mitad: no queda recaudo NI imagenes (rollback total)", r2.status !== 200 && recMal === 0 && eviMal === 0, `status=${r2.status} recaudos=${recMal} imagenes=${eviMal}`)
 
-  // ── 3) Compatibilidad: sigue funcionando el envio JSON sin fotos ──
   const NUM_JSON = `REC-ATOM-JSON-${ts}`
-  // los importes deben cuadrar con los abonos (400000 + 200000)
   const r3 = await llamar("POST", "/api/recaudos", { token, body: { numeroRecaudo: NUM_JSON, clienteId: CLIENTE, clienteNombre: "SIN FOTOS", formaPago: "Efectivo", totalDocumentos: 700000, totalAplicado: 600000, totalRecaudo: 600000, saldo: 0, documentos: docsOk } })
   const recJson = r3.json && r3.json.data && r3.json.data.id
   ok("compatibilidad: el envio JSON sin fotos sigue funcionando", r3.status === 200 && recJson && r3.json.data.evidencias === 0, `id=${recJson} evidencias=${r3.json && r3.json.data && r3.json.data.evidencias}`)
 
-  // limpieza (la cascada se lleva documentos y evidencias)
   try {
     for (const id of [recId, recJson]) if (id) await pedidos.request().input("id", sql.Int, id).query("DELETE FROM dbo.recaudos WHERE id=@id")
     await pedidos.request().input("c", sql.NVarChar, CLIENTE).query("DELETE FROM dbo.evidencias_archivos WHERE cliente_id=@c")

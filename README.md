@@ -1,49 +1,64 @@
 # PEDIDOS - Oral-Plus
 
-Aplicación móvil para la fuerza de ventas de Oral-Plus: rutero, visitas a clientes,
-toma de pedidos, recaudos y catálogo de productos. Incluye el backend que la soporta.
+Aplicación móvil para la fuerza de ventas: rutero, visitas a clientes, toma de
+pedidos, recaudos de cartera y catálogo de productos. Incluye el backend que la
+soporta.
 
 Autor: Steven Villamizar Mendoza (Sistemas, Oral-Plus).
 
 ## Estructura
 
-- `lib/` - Aplicación Flutter (pantallas, servicios, modelos, widgets).
-- `api/` - Backend Node.js (Express + SQL Server) de la app de pedidos.
-  - `server.js` y `modules/` - Código del servidor.
-  - `deploy/` - Dockerfile, docker-compose e instrucciones de despliegue.
-  - `sql/` - Scripts de creación de las bases de datos.
-  - `.env` - Configuración con credenciales (no se versiona).
-- `assets/` - Imágenes del catálogo, logos y video de inicio.
+- `lib/` — Aplicación Flutter.
+  - `config/` — Configuración que llega al compilar (`--dart-define`).
+  - `screens/`, `widgets/` — Interfaz.
+  - `services/` — Cliente del backend, sesión y caché.
+  - `models/`, `providers/`, `utils/` — Dominio y utilidades.
+- `api/` — Backend Node.js (Express + SQL Server).
+  - `server.js` — Rutas de clientes, pedidos, recaudos, visitas y evidencias.
+  - `modules/` — Talonarios, dispositivos, sesiones, catálogo, evidencias y caché.
+  - `test/integracion/` — Pruebas de aceptación contra un backend en marcha.
+  - `sql/` — Scripts de referencia de la base de datos.
+  - `Dockerfile`, `docker-compose.yml` — Contenedor del servicio y su caché.
+  - `.env` — Configuración del entorno (no se versiona; ver `.env.example`).
+- `assets/` — Logos e imágenes de la aplicación.
+- `DESPLIEGUE.md` — Instalación y configuración en el servidor.
 
 ## Requisitos
 
 - Flutter 3.x / Dart 3.x
-- Node.js 18 o superior (backend)
-- SQL Server con las bases SkyPagos, Pedidos, RBOSKY3 (SAP) y Ruta
+- Node.js 18 o superior
+- SQL Server con las bases de pagos, pedidos, rutas y lectura de SAP
+- Redis (opcional; sin él el backend funciona igual)
 
-## Ejecutar la app
+## Desarrollo
 
-```bash
-flutter pub get
-flutter run
-```
-
-APK de producción:
-
-```bash
-flutter build apk --release
-```
-
-## Ejecutar el backend
+Backend:
 
 ```bash
 cd api
+cp .env.example .env      # completar los valores del entorno
 npm install
 node server.js
 ```
 
-El servidor escucha en el puerto 3000. Prueba: `http://localhost:3000/api/test`.
-En producción se publica en `https://gestores-api.oral-plus.com` (ver `api/deploy/README-DESPLIEGUE.md`).
+Aplicación:
+
+```bash
+flutter pub get
+flutter run --dart-define=API_URLS=http://ip-del-backend:3000
+```
+
+## Pruebas
+
+```bash
+cd api && npm run test:integracion   # backend, contra el servicio en marcha
+flutter test                         # aplicación
+```
+
+## Despliegue
+
+Ver [DESPLIEGUE.md](DESPLIEGUE.md). Ningún valor de entorno está en el código:
+el backend se configura con variables de entorno y la app con `--dart-define`.
 
 ## Licencia
 

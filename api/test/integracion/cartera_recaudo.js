@@ -1,7 +1,3 @@
-// Recaudo contra CARTERA REAL: toma las facturas abiertas que devuelve SAP para
-// un cliente de verdad, arma el recaudo con esos documentos (como hace el APK),
-// lo envia con imagen y comprueba que lo guardado coincide exactamente con la
-// cartera de origen. Tambien verifica que la cartera de SAP no se altera.
 const http = require("http")
 const path = require("path")
 require(path.join(process.cwd(), "node_modules", "dotenv")).config({ path: path.join(process.cwd(), ".env") })
@@ -57,7 +53,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const token = jwt.sign({ userId: 0, nombre: "PRUEBA CARTERA", tipo: "usuario", jti }, process.env.JWT_SECRET, { expiresIn: 900 })
   const n = (v) => Number(v)
 
-  // ── 1) Cartera real: buscar un cliente con facturas abiertas ──
   let cliente = null, docsCartera = [], saldoCartera = 0
   for (const c of CANDIDATOS) {
     const r = await llamar("GET", `/api/clientes/${c}/documentos`, { token })
@@ -71,7 +66,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const camposClave = usados.every((d) => d.docEntry != null && d.docNum != null && n(d.saldo) > 0 && d.dueDate)
   ok("las facturas traen docEntry, docNum, saldo y vencimiento", camposClave, usados.map((d) => `${d.docNum}:${n(d.saldo)}`).join(" "))
 
-  // ── 2) Recaudo con abono parcial sobre esas facturas reales (como el APK) ──
   const documentos = usados.map((d) => ({
     docEntry: d.docEntry,
     docNum: `${d.docNum}`,
@@ -95,7 +89,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const recId = r.json && r.json.data && r.json.data.id
   ok("se registra el recaudo sobre la cartera real, con su soporte", r.status === 200 && recId && r.json.data.evidencias === 1, `id=${recId} aplicado=${totalAplicado}`)
 
-  // ── 3) Lo guardado coincide con la cartera de origen ──
   const filas = recId ? (await pedidos.request().input("i", sql.Int, recId)
     .query("SELECT doc_entry, doc_num, num_factura, saldo, abono, due_date FROM dbo.recaudos_documentos WHERE recaudo_id=@i ORDER BY doc_entry")).recordset : []
   const esperados = [...documentos].sort((a, b) => a.docEntry - b.docEntry)
@@ -113,12 +106,10 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const ev = recId ? (await pedidos.request().input("i", sql.Int, recId).query("SELECT id, recaudo_id, tamano FROM dbo.evidencias_archivos WHERE recaudo_id=@i")).recordset : []
   ok("el soporte quedo ligado al recaudo", ev.length === 1 && ev[0].recaudo_id === recId && ev[0].tamano > 0, ev[0] && `${ev[0].tamano}b`)
 
-  // ── 4) La cartera de SAP no se altera: el recaudo vive en la BD intermedia ──
   const rCar = await llamar("GET", `/api/clientes/${cliente}/documentos`, { token })
   const saldoDespues = n(rCar.json && rCar.json.totalSaldo)
   ok("la cartera de SAP queda intacta (el recaudo no la modifica)", saldoDespues === saldoCartera, `antes ${saldoCartera} · despues ${saldoDespues}`)
 
-  // ── 5) Borrado: la cascada limpia documentos y soporte ──
   if (recId) await pedidos.request().input("i", sql.Int, recId).query("DELETE FROM dbo.recaudos WHERE id=@i")
   const quedan = recId ? (await pedidos.request().input("i", sql.Int, recId)
     .query("SELECT (SELECT COUNT(*) FROM dbo.recaudos WHERE id=@i) r, (SELECT COUNT(*) FROM dbo.recaudos_documentos WHERE recaudo_id=@i) d, (SELECT COUNT(*) FROM dbo.evidencias_archivos WHERE recaudo_id=@i) e")).recordset[0] : null

@@ -1,7 +1,3 @@
-// Pruebas atomicas: las inserciones multi-tabla deben ser todo-o-nada.
-// Se fuerza un fallo a mitad de la transaccion (valor que excede el tamano de
-// una columna) y se verifica que NO queden filas huerfanas (rollback), y que
-// el camino feliz confirme todas las tablas de la transaccion.
 const http = require("http")
 const path = require("path")
 require(path.join(process.cwd(), "node_modules", "dotenv")).config({ path: path.join(process.cwd(), ".env") })
@@ -45,12 +41,9 @@ const cfgDb = (db) => ({ server: process.env.DB_SERVER, database: db, user: proc
   const token = jwt.sign({ userId: 0, nombre: "PRUEBA ATOMICA", tipo: "usuario", jti }, process.env.JWT_SECRET, { expiresIn: 900 })
 
   const ts = Date.now()
-  // id corto: cedula_cliente/codigo_cliente son NVARCHAR(20). Asi la cabecera
-  // inserta bien y el fallo forzado ocurre de verdad en la tabla hija.
   const CLIENTE_ATOM = `ATOM${ts % 100000000}`
   const cont = async (q, inp) => { const r = pedidos.request(); for (const [k, t, v] of inp) r.input(k, t, v); return (await r.query(q)).recordset[0].n }
 
-  // ── PEDIDO: fallo en pedidos_detalle (nombre_producto > 200) debe hacer rollback de la cabecera ──
   const nombreLargo = "X".repeat(300)
   const antesPed = await cont("SELECT COUNT(*) n FROM pedidos WHERE codigo_cliente=@c", [["c", sql.NVarChar, CLIENTE_ATOM]])
   const rPedMal = await llamar("POST", "/api/orders", { token, body: { cedula: CLIENTE_ATOM, nombre: "PRUEBA", correo: "a@oral-plus.com", codigoCliente: CLIENTE_ATOM, vendedor: "PRUEBA", productos: [
@@ -62,7 +55,6 @@ const cfgDb = (db) => ({ server: process.env.DB_SERVER, database: db, user: proc
   ok("pedido: el detalle invalido NO deja cabecera (rollback)", rPedMal.status !== 200 && despuesPed === antesPed, `status=${rPedMal.status} pedidos ${antesPed}->${despuesPed}`)
   ok("pedido: no quedaron lineas de detalle huerfanas", huerfDet === 0, `detalle=${huerfDet}`)
 
-  // ── PEDIDO camino feliz: confirma las 3 tablas atomicamente ──
   const rPedOk = await llamar("POST", "/api/orders", { token, body: { cedula: CLIENTE_ATOM, nombre: "PRUEBA", correo: "a@oral-plus.com", codigoCliente: CLIENTE_ATOM, vendedor: "PRUEBA", productos: [
     { codigo: "OK1", nombre: "Producto A", cantidad: 2, precio: 1500 },
     { codigo: "OK2", nombre: "Producto B", cantidad: 1, precio: 3000 },
@@ -78,7 +70,6 @@ const cfgDb = (db) => ({ server: process.env.DB_SERVER, database: db, user: proc
     await pedidos.request().input("id", sql.Int, pid).query("DELETE FROM pedidos WHERE id=@id")
   }
 
-  // ── RECAUDO: fallo en recaudos_documentos (due_date > 20) debe hacer rollback de la cabecera ──
   const RECMAL = `REC-ATOM-MAL-${ts}`
   const antesRec = await cont("SELECT COUNT(*) n FROM dbo.recaudos WHERE numero_recaudo=@r", [["r", sql.NVarChar, RECMAL]])
   const rRecMal = await llamar("POST", "/api/recaudos", { token, body: { numeroRecaudo: RECMAL, clienteId: CLIENTE_ATOM, clienteNombre: "PRUEBA", formaPago: "Efectivo", totalAplicado: 1000, totalRecaudo: 1000, documentos: [
@@ -87,7 +78,6 @@ const cfgDb = (db) => ({ server: process.env.DB_SERVER, database: db, user: proc
   const despuesRec = await cont("SELECT COUNT(*) n FROM dbo.recaudos WHERE numero_recaudo=@r", [["r", sql.NVarChar, RECMAL]])
   ok("recaudo: el documento invalido NO deja cabecera (rollback)", rRecMal.status !== 200 && despuesRec === antesRec, `status=${rRecMal.status} recaudos ${antesRec}->${despuesRec}`)
 
-  // ── RECAUDO camino feliz: confirma cabecera + documentos ──
   const RECOK = `REC-ATOM-OK-${ts}`
   const rRecOk = await llamar("POST", "/api/recaudos", { token, body: { numeroRecaudo: RECOK, clienteId: CLIENTE_ATOM, clienteNombre: "PRUEBA", formaPago: "Efectivo", totalAplicado: 2000, totalRecaudo: 2000, documentos: [
     { docEntry: 1, docNum: "F1", numFactura: "F1", saldo: 1000, abono: 1000, dueDate: "2026-09-30" },
@@ -101,7 +91,6 @@ const cfgDb = (db) => ({ server: process.env.DB_SERVER, database: db, user: proc
     await pedidos.request().input("id", sql.Int, rid).query("DELETE FROM dbo.recaudos WHERE id=@id")
   }
 
-  // barrido de seguridad por si algo quedo
   await pedidos.request().input("c", sql.NVarChar, CLIENTE_ATOM).query("DELETE d FROM pedidos_detalle d JOIN pedidos p ON p.id=d.pedido_id WHERE p.codigo_cliente=@c")
   await pedidos.request().input("c", sql.NVarChar, CLIENTE_ATOM).query("DELETE h FROM pedidos_historial h JOIN pedidos p ON p.id=h.pedido_id WHERE p.codigo_cliente=@c")
   await pedidos.request().input("c", sql.NVarChar, CLIENTE_ATOM).query("DELETE FROM pedidos WHERE codigo_cliente=@c")

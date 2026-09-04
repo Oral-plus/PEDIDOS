@@ -1,6 +1,3 @@
-// Los datos que se insertan deben ser los recogidos en la app: ni nulos ni en cero.
-// Verifica que el servidor RECHACE recaudos y pedidos vacios o en cero, que no
-// quede nada en la base cuando rechaza, y que los datos validos si entren enteros.
 const http = require("http")
 const path = require("path")
 require(path.join(process.cwd(), "node_modules", "dotenv")).config({ path: path.join(process.cwd(), ".env") })
@@ -44,8 +41,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const docOk = { docEntry: 1, docNum: "F1", numFactura: "FE1", saldo: 100000, abono: 100000, dueDate: "2026-09-30" }
   const baseRec = { clienteId: CLIENTE, clienteNombre: "VALIDACION", formaPago: "Efectivo", totalDocumentos: 100000, totalAplicado: 100000, totalRecaudo: 100000, saldo: 0, documentos: [docOk] }
 
-  // ── RECAUDO: inserción plana, se guarda tal cual lo que llega del front
-  //    (la BD es intermedia; la aprobación la hace otro proyecto) ──
   const casos = [
     ["recaudo con valor recaudado en cero", { ...baseRec, numeroRecaudo: `V0-${ts}`, totalRecaudo: 0 }],
     ["recaudo con valor recaudado nulo", { ...baseRec, numeroRecaudo: `VN-${ts}`, totalRecaudo: null }],
@@ -61,7 +56,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
     await pedidos.request().input("n", sql.NVarChar, cuerpo.numeroRecaudo).query("DELETE FROM dbo.recaudos WHERE numero_recaudo=@n")
   }
 
-  // ── RECAUDO valido: entra con sus importes intactos ──
   const NUM_OK = `VOK-${ts}`
   const rOk = await llamar("POST", "/api/recaudos", { token, body: { ...baseRec, numeroRecaudo: NUM_OK, totalRecaudo: 150000, saldo: 50000 } })
   const recId = rOk.json && rOk.json.data && rOk.json.data.id
@@ -69,7 +63,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   ok("acepta el recaudo valido con sus importes reales", rOk.status === 200 && fila && Number(fila.total_recaudo) === 150000 && Number(fila.total_aplicado) === 100000 && fila.forma_pago === "Efectivo", fila && `recaudo=${Number(fila.total_recaudo)} aplicado=${Number(fila.total_aplicado)}`)
   if (recId) await pedidos.request().input("i", sql.Int, recId).query("DELETE FROM dbo.recaudos WHERE id=@i")
 
-  // ── PEDIDO: inserción plana, se guarda tal cual lo que llega del front ──
   const basePed = { cedula: CLIENTE, nombre: "VALIDACION", correo: "v@oral-plus.com", codigoCliente: CLIENTE, vendedor: "PRUEBA" }
   const casosPed = [
     ["pedido con producto sin código", { ...basePed, productos: [{ codigo: "", nombre: "X", cantidad: 1, precio: 1000 }] }],
@@ -85,7 +78,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const despues = await cuenta("pedidos", "codigo_cliente", CLIENTE)
   ok("todos los pedidos planos quedaron guardados", despues === antes + casosPed.length, `${antes} -> ${despues}`)
 
-  // ── PEDIDO valido: entra con sus importes ──
   const rPedOk = await llamar("POST", "/api/orders", { token, body: { ...basePed, productos: [{ codigo: "P1", nombre: "Producto", cantidad: 3, precio: 2000 }] } })
   const docNum = rPedOk.json && rPedOk.json.docNum
   const fPed = docNum ? (await pedidos.request().input("n", sql.NVarChar, docNum).query("SELECT id, total FROM pedidos WHERE numero_pedido=@n")).recordset[0] : null
@@ -96,7 +88,6 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
     await pedidos.request().input("i", sql.Int, fPed.id).query("DELETE FROM pedidos WHERE id=@i")
   }
 
-  // barrido: no debe quedar ningun pedido del cliente de prueba
   try {
     await pedidos.request().input("c", sql.NVarChar, CLIENTE).query("DELETE h FROM pedidos_historial h JOIN pedidos p ON p.id=h.pedido_id WHERE p.codigo_cliente=@c")
     await pedidos.request().input("c", sql.NVarChar, CLIENTE).query("DELETE d FROM pedidos_detalle d JOIN pedidos p ON p.id=d.pedido_id WHERE p.codigo_cliente=@c")

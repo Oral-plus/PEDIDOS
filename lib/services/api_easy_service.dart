@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/app_config.dart';
 import 'api_client.dart';
 import 'cache_service.dart';
 import 'device_service.dart';
@@ -14,13 +15,7 @@ class ApiEasyService {
   static final ApiEasyService _instance = ApiEasyService._();
   factory ApiEasyService() => _instance;
 
-  static const List<String> _baseUrls = [
-    'http://192.168.2.73:3000', // PRUEBAS LOCAL (temporal, no commitear)
-    'https://gestores-api.oral-plus.com',
-    'http://192.168.2.249:3000',
-    'http://10.0.2.2:3000',
-    'http://localhost:3000',
-  ];
+  static List<String> get _baseUrls => AppConfig.apiUrls;
 
   static const _tokenKey = 'auth_token';
   static const _usuarioKey = 'auth_usuario';
@@ -170,8 +165,8 @@ class ApiEasyService {
   Future<String> baseUrl() => _resolveBaseUrl();
 
   static const _baseUrlKey = 'api_base_url';
-  static const _sondaLan = Duration(milliseconds: 1500);
-  static const _sondaPublica = Duration(seconds: 6);
+  static Duration get _sondaLan => AppConfig.sondaLan;
+  static Duration get _sondaPublica => AppConfig.sondaPublica;
   Future<String>? _resolviendo;
   DateTime? _ultimaBusquedaFallida;
 
@@ -183,6 +178,9 @@ class ApiEasyService {
   }
 
   Future<String> _buscarBaseUrl() async {
+    if (!AppConfig.configurada) {
+      throw Exception(AppConfig.mensajeSinConfigurar);
+    }
     final fallo = _ultimaBusquedaFallida;
     if (fallo != null &&
         DateTime.now().difference(fallo) < const Duration(seconds: 30)) {
