@@ -15,9 +15,9 @@ class ApiEasyService {
   factory ApiEasyService() => _instance;
 
   static const List<String> _baseUrls = [
+    'http://192.168.2.73:3000', // PRUEBAS LOCAL (temporal, no commitear)
     'https://gestores-api.oral-plus.com',
     'http://192.168.2.249:3000',
-    'http://192.168.2.73:3000',
     'http://10.0.2.2:3000',
     'http://localhost:3000',
   ];
@@ -348,7 +348,6 @@ class ApiEasyService {
     return _resolvedBaseUrl ?? await _resolveBaseUrl();
   }
 
-
   Future<Map<String, dynamic>> getDispositivos({String? buscar}) async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada', 'data': <dynamic>[]};
@@ -469,7 +468,6 @@ class ApiEasyService {
       };
     }
   }
-
 
   Future<Map<String, dynamic>> getProductosAdmin() async {
     if (_token == null || _token!.isEmpty) {
@@ -898,8 +896,6 @@ class ApiEasyService {
       'documentos': documentos,
     };
     try {
-      // Con fotos se envia todo en una sola peticion para que el servidor
-      // guarde recaudo, documentos y evidencias en la misma transaccion.
       final res = fotos.isEmpty
           ? await ApiClient.post(
               '/api/recaudos',
@@ -912,7 +908,6 @@ class ApiEasyService {
       if (res['success'] == true) {
         _cache.invalidar('documentos:$clienteId');
         _cache.invalidar('cartera:$clienteId');
-        // El recaudo consumió un recibo del talonario
         _cache.invalidar('talonario:siguiente');
       }
       return {
@@ -931,9 +926,6 @@ class ApiEasyService {
     }
   }
 
-  /// GET /api/talonarios/siguiente - recibo de caja que le sigue al usuario
-  /// (talonario cuyo prefijo es el usuario de inicio de sesión). En caché
-  /// corta: se invalida al guardar un recaudo o cancelar el talonario.
   Future<Map<String, dynamic>?> getSiguienteReciboCaja({bool refrescar = false}) {
     if (refrescar) _cache.invalidar('talonario:siguiente');
     return _cache.obtener(
@@ -959,24 +951,38 @@ class ApiEasyService {
     return null;
   }
 
-  /// POST /api/talonarios/cancelar - cancela el talonario del usuario con su
-  /// causal (obligatoria). Invalida la caché del talonario al lograrlo.
-  Future<Map<String, dynamic>> cancelarTalonario(String causal) async {
+  Future<Map<String, dynamic>> cancelarTalonario(
+    String causal, {
+    String observaciones = '',
+    String? fotoRuta,
+  }) async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'message': 'Sesión expirada'};
     }
     try {
-      final res = await ApiClient.post(
-        '/api/talonarios/cancelar',
-        body: {'causal': causal},
-        customBaseUrl: await _baseUrlForRequest(),
-        headers: _headers,
-        timeout: const Duration(seconds: 15),
-      );
-      if (res['success'] == true) _cache.invalidar('talonario:siguiente');
+      final base = await _baseUrlForRequest();
+      final req = http.MultipartRequest('POST', Uri.parse('$base/api/talonarios/cancelar'));
+      req.headers['Authorization'] = 'Bearer $_token';
+      req.headers['Accept'] = 'application/json';
+      req.fields['causal'] = causal;
+      if (observaciones.trim().isNotEmpty) req.fields['observaciones'] = observaciones.trim();
+      if (fotoRuta != null && fotoRuta.isNotEmpty) {
+        req.files.add(await http.MultipartFile.fromPath('foto', fotoRuta));
+      }
+      final streamed = await SharedHttp.client.send(req).timeout(const Duration(seconds: 45));
+      final res = await http.Response.fromStream(streamed);
+      final tipo = res.headers['content-type'] ?? '';
+      if (!tipo.contains('application/json')) {
+        return {'success': false, 'message': 'No se pudo cancelar el talonario (${res.statusCode})'};
+      }
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      final ok = res.statusCode == 200 && data is Map && data['success'] == true;
+      if (ok) _cache.invalidar('talonario:siguiente');
       return {
-        'success': res['success'] == true,
-        'message': res['message']?.toString() ?? '',
+        'success': ok,
+        'message': (data is Map ? data['message']?.toString() : null) ??
+            (ok ? 'Talonario cancelado' : 'No se pudo cancelar el talonario'),
+        'data': (data is Map && data['data'] is Map) ? Map<String, dynamic>.from(data['data'] as Map) : null,
       };
     } catch (e) {
       return {'success': false, 'message': e.toString().replaceFirst('Exception: ', '')};

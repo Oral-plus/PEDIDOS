@@ -70,6 +70,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   String? _metodo;
   final TextEditingController _banco = TextEditingController();
   final TextEditingController _referencia = TextEditingController();
+  final TextEditingController _observacionPago = TextEditingController();
 
   String? _numeroRecaudo;
   bool get _recaudoCruzado => _numeroRecaudo != null && _numeroRecaudo!.isNotEmpty;
@@ -85,7 +86,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   bool get _requiereRef => _metodoCfg?['ref'] == true;
   bool get _esCheque => _metodo == 'Cheque';
 
-  // Recibo de caja del talonario del usuario (prefijo = usuario de sesión)
   Map<String, dynamic>? _talonario;
   bool _talonarioCargando = true;
   String? _reciboAsignado;
@@ -103,51 +103,135 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
       ? Map<String, dynamic>.from(_talonario!['data'] as Map)
       : null;
 
-  bool get _talonarioCancelado => _talonarioData?['cancelado'] == true;
+  bool get _sinUnidadTalonario {
+    if (_reciboAsignado != null && _reciboAsignado!.isNotEmpty) return false;
+    if (_talonarioCargando) return false;
+    return _talonarioData?['siguiente'] == null;
+  }
+
+  Future<void> _avisoSinTalonario() async {
+    final data = _talonarioData;
+    final rango = data == null ? '' : '${data['rangoInicial']}–${data['rangoFinal']}';
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Row(children: [
+          Icon(Icons.receipt_long_rounded, color: Color(0xFFDC2626)),
+          SizedBox(width: 10),
+          Expanded(child: Text('Sin talonario asignado')),
+        ]),
+        content: Text(
+          data != null
+              ? 'No se puede realizar el pago: el talonario $rango '
+                  'ya no tiene recibos disponibles.\n\nSolicita un talonario nuevo a Sistemas para continuar.'
+              : 'No se puede realizar el pago sin talonario asignado.\n\n'
+                  'Cada pago de cartera debe quedar con un recibo del talonario. '
+                  'Solicita a Sistemas la asignación de tu talonario.',
+          style: const TextStyle(fontSize: 14, height: 1.4),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
 
   static const List<String> _causalesCancelacion = [
     'Deterioro',
     'Daño por mal manejo',
   ];
 
-  // Cancelación del talonario: la causal es obligatoria (el botón Confirmar
-  // no se habilita sin seleccionarla; el servidor la vuelve a validar).
   Future<void> _cancelarTalonario() async {
     final data = _talonarioData;
-    if (data == null || _talonarioCancelado) {
-      _aviso(_talonarioCancelado
-          ? 'El talonario ya está cancelado'
-          : 'No tienes un talonario asignado para cancelar');
+    if (data == null || data['siguiente'] == null) {
+      await _avisoSinTalonario();
       return;
     }
+    final numero = data['siguiente'];
     String? causal;
+    XFile? evidencia;
+    final obsCtrl = TextEditingController();
+
     final confirmado = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: const Text('Cancelar talonario',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Talonario ${data['prefijo']} (rango ${data['rangoInicial']}–${data['rangoFinal']}). '
-                'Quedará en estado "Cancelado" y no permitirá pagos.\n\nSelecciona la causal:',
-                style: const TextStyle(fontSize: 13.5, height: 1.4),
-              ),
-              const SizedBox(height: 8),
-              for (final c in _causalesCancelacion)
-                RadioListTile<String>(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(c, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                  value: c,
-                  groupValue: causal,
-                  onChanged: (v) => setLocal(() => causal = v),
+          title: Text('Cancelar recibo N° $numero',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Recibo N° $numero del talonario ${data['rangoInicial']}–${data['rangoFinal']}. '
+                  'Queda registrado como cancelado y el pago continúa con el recibo siguiente.',
+                  style: const TextStyle(fontSize: 13.5, height: 1.4),
                 ),
-            ],
+                const SizedBox(height: 12),
+                const SizedBox(height: 12),
+                const Text('Motivo de la cancelación *',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _ink)),
+                for (final c in _causalesCancelacion)
+                  RadioListTile<String>(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(c, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    value: c,
+                    groupValue: causal,
+                    onChanged: (v) => setLocal(() => causal = v),
+                  ),
+                const SizedBox(height: 8),
+                const Text('Observaciones',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _ink)),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: obsCtrl,
+                  minLines: 2,
+                  maxLines: 4,
+                  maxLength: 1000,
+                  style: const TextStyle(fontSize: 13.5),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: 'Describe qué pasó con el recibo',
+                    counterText: '',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(11)),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text('Evidencia',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _ink)),
+                const SizedBox(height: 6),
+                Row(children: [
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final foto = await _tomarFoto();
+                      if (foto != null) setLocal(() => evidencia = foto);
+                    },
+                    icon: const Icon(Icons.photo_camera_rounded, size: 18),
+                    label: Text(evidencia == null ? 'Adjuntar foto' : 'Cambiar foto',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                  ),
+                  const SizedBox(width: 10),
+                  if (evidencia != null)
+                    const Expanded(
+                      child: Row(children: [
+                        Icon(Icons.check_circle_rounded, color: Color(0xFF15803D), size: 18),
+                        SizedBox(width: 4),
+                        Expanded(
+                          child: Text('Foto adjunta',
+                              style: TextStyle(color: Color(0xFF15803D), fontSize: 12.5, fontWeight: FontWeight.w700)),
+                        ),
+                      ]),
+                    ),
+                ]),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -157,22 +241,73 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
               onPressed: causal == null ? null : () => Navigator.of(ctx).pop(true),
-              child: const Text('Cancelar talonario',
+              child: const Text('Cancelar recibo',
                   style: TextStyle(fontWeight: FontWeight.w700)),
             ),
           ],
         ),
       ),
     );
+    final observaciones = obsCtrl.text;
+    obsCtrl.dispose();
     if (confirmado != true || causal == null || !mounted) return;
 
-    final res = await ApiEasyService().cancelarTalonario(causal!);
+    final res = await ApiEasyService().cancelarTalonario(
+      causal!,
+      observaciones: observaciones,
+      fotoRuta: evidencia?.path,
+    );
     if (!mounted) return;
-    if (res['success'] == true) {
-      _aviso('Talonario cancelado: $causal');
-      await _cargarTalonario(refrescar: true);
-    } else {
-      _aviso((res['message'] ?? 'No se pudo cancelar el talonario').toString());
+    await _cargarTalonario(refrescar: true);
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Row(children: [
+          Icon(res['success'] == true ? Icons.info_outline_rounded : Icons.error_outline_rounded,
+              color: res['success'] == true ? _ink : const Color(0xFFDC2626)),
+          const SizedBox(width: 10),
+          Expanded(child: Text(res['success'] == true ? 'Recibo cancelado' : 'No se pudo cancelar')),
+        ]),
+        content: Text((res['message'] ?? '').toString(),
+            style: const TextStyle(fontSize: 14, height: 1.4)),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<XFile?> _tomarFoto() async {
+    final fuente = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 12),
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: _line, borderRadius: BorderRadius.circular(3))),
+          const SizedBox(height: 12),
+          _opcionFuente(ctx, Icons.photo_camera_rounded, 'Tomar foto', 'Usa la cámara', ImageSource.camera),
+          _opcionFuente(ctx, Icons.photo_library_rounded, 'Elegir de galería', 'Selecciona una imagen', ImageSource.gallery),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+    if (fuente == null) return null;
+    try {
+      return await _picker.pickImage(source: fuente, imageQuality: 70, maxWidth: 1600);
+    } catch (_) {
+      if (mounted) {
+        _aviso('No se pudo abrir ${fuente == ImageSource.camera ? 'la cámara' : 'la galería'}');
+      }
+      return null;
     }
   }
 
@@ -227,6 +362,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     _valorCtrl.dispose();
     _banco.dispose();
     _referencia.dispose();
+    _observacionPago.dispose();
     super.dispose();
   }
 
@@ -353,36 +489,10 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   }
 
   Future<void> _realizar() async {
-    // Un talonario cancelado no permite realizar pagos: se muestra el motivo
-    if (_talonarioCancelado) {
-      final causal = (_talonarioData?['causalCancelacion'] ?? '').toString();
-      final prefijo = (_talonarioData?['prefijo'] ?? '').toString();
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: const Row(children: [
-            Icon(Icons.block_rounded, color: Color(0xFFDC2626)),
-            SizedBox(width: 10),
-            Expanded(child: Text('Talonario cancelado')),
-          ]),
-          content: Text(
-            'No se pueden realizar pagos con el talonario $prefijo: está cancelado.\n\n'
-            'Motivo: ${causal.isNotEmpty ? causal : 'sin causal registrada'}.\n\n'
-            'Solicita a Sistemas la asignación de un talonario nuevo para continuar.',
-            style: const TextStyle(fontSize: 14, height: 1.4),
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Entendido'),
-            ),
-          ],
-        ),
-      );
+    if (_sinUnidadTalonario) {
+      await _avisoSinTalonario();
       return;
     }
-    // Sin el cruce de documentos diligenciado no se puede realizar el pago
     if (!_recaudoCruzado) {
       await showDialog<void>(
         context: context,
@@ -456,6 +566,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
       'metodo': _metodo,
       'banco': _banco.text.trim(),
       'referencia': _referencia.text.trim(),
+      'observacion': _observacionPago.text.trim(),
       'numeroRecaudo': _numeroRecaudo,
       'reciboCaja': _reciboAsignado,
     });
@@ -833,6 +944,16 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
             keyboardType: TextInputType.text,
           ),
         ],
+        if (_metodo != null) ...[
+          const SizedBox(height: 12),
+          _inputPago(
+            controller: _observacionPago,
+            label: 'Observación del pago',
+            hint: 'Opcional: alguna anotación sobre este pago',
+            icon: Icons.notes_rounded,
+            capitalize: true,
+          ),
+        ],
       ]),
     );
   }
@@ -940,6 +1061,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
             'metodo': _metodo,
             'banco': _banco.text.trim(),
             'referencia': _referencia.text.trim(),
+            'observacion': _observacionPago.text.trim(),
             'valorCartera': _montoCartera,
             'valor': _valorNum,
           },
@@ -959,8 +1081,6 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
           final recibo = (resultado['reciboCaja'] ?? '').toString();
           if (recibo.isNotEmpty && recibo != 'null') _reciboAsignado = recibo;
           if (_tieneCartera && aplicado > 0) _pagoCartera.text = _miles(aplicado);
-          // Las fotos ya quedaron guardadas junto al recaudo: se contabilizan
-          // como previas para no volver a subirlas al registrar el pago.
           if (guardadas > 0) {
             _evidenciasPrevias += guardadas;
             _evidenciasFotos.removeRange(0, guardadas.clamp(0, _evidenciasFotos.length));
@@ -1117,21 +1237,13 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     ]);
   }
 
-  // Muestra el recibo de caja que le corresponde a este pago: el consecutivo
-  // del talonario del usuario (rango inicial a final), que el servidor asigna
-  // al guardar el recaudo y no vuelve a repetir.
   Widget _reciboCajaCard() {
     final data = _talonarioData;
     final sinTalonario = _talonario == null || _talonario?['sinTalonario'] == true;
     final agotado = data?['agotado'] == true;
-    final cancelado = _talonarioCancelado;
     final String texto;
     Color color = _ink;
-    if (cancelado) {
-      final causal = (data?['causalCancelacion'] ?? '').toString();
-      texto = 'talonario cancelado${causal.isNotEmpty ? ' · $causal' : ''}';
-      color = const Color(0xFFDC2626);
-    } else if (_reciboAsignado != null && _reciboAsignado!.isNotEmpty) {
+    if (_reciboAsignado != null && _reciboAsignado!.isNotEmpty) {
       texto = 'N° $_reciboAsignado asignado';
       color = const Color(0xFF15803D);
     } else if (_talonarioCargando) {
@@ -1144,7 +1256,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
       texto = 'talonario agotado (${data?['rangoInicial']}–${data?['rangoFinal']})';
       color = const Color(0xFFDC2626);
     } else {
-      texto = 'N° ${data?['siguiente']}  (rango ${data?['rangoInicial']}–${data?['rangoFinal']})';
+      texto = 'N° ${data?['siguiente']}  de ${data?['rangoInicial']}–${data?['rangoFinal']}';
     }
     return Container(
       width: double.infinity,
@@ -1171,11 +1283,16 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
           itemBuilder: (_) => [
             PopupMenuItem<String>(
               value: 'cancelar',
-              enabled: data != null && !cancelado,
-              child: const Row(children: [
-                Icon(Icons.block_rounded, size: 18, color: Color(0xFFDC2626)),
-                SizedBox(width: 8),
-                Text('Cancelar talonario', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              enabled: data != null && data['siguiente'] != null,
+              child: Row(children: [
+                const Icon(Icons.block_rounded, size: 18, color: Color(0xFFDC2626)),
+                const SizedBox(width: 8),
+                Text(
+                  data != null && data['siguiente'] != null
+                      ? 'Cancelar recibo N° ${data['siguiente']}'
+                      : 'Cancelar recibo',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
               ]),
             ),
           ],

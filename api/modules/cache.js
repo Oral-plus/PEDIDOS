@@ -1,16 +1,4 @@
-// Caché compartida del backend sobre Redis.
-//
-// Se usa SOLO para lecturas repetidas y caras cuyo dato tolera unos segundos de
-// desfase (hoy: el estado del talonario, que la app consulta cada vez que abre
-// la pantalla de pago). Nunca se cachean importes, documentos ni el consecutivo
-// que se asigna: eso va siempre a la base dentro de la transacción.
-//
-// Degradación elegante: si Redis no está configurado o no responde, el backend
-// sigue trabajando contra la base (la caché simplemente no acierta). Así el
-// despliegue del proveedor no depende de Redis para funcionar.
 
-// La configuración se lee al iniciar, no al cargar el módulo: server.js hace
-// dotenv.config() después de sus require, así que aquí aún no estaría cargada.
 const url = () => (process.env.REDIS_URL || "").trim()
 const prefijo = () => (process.env.REDIS_PREFIJO || "pedidos:").trim()
 
@@ -32,8 +20,6 @@ function iniciar() {
       url: REDIS_URL,
       socket: {
         connectTimeout: 3000,
-        // Tres reintentos con espera creciente; después se deja de insistir
-        // para no llenar el log ni gastar recursos si Redis no está.
         reconnectStrategy: (intentos) => (intentos > 3 ? false : Math.min(intentos * 500, 2000)),
       },
     })
@@ -61,7 +47,6 @@ function iniciar() {
 const listo = () => Boolean(cliente && cliente.isReady)
 const clave = (k) => `${prefijo()}${k}`
 
-// Devuelve el valor cacheado o null. Un fallo de Redis nunca rompe la petición.
 async function obtener(k) {
   if (!listo()) return null
   try {
@@ -72,7 +57,6 @@ async function obtener(k) {
   }
 }
 
-// Guarda con TTL en segundos (obligatorio: nada se queda para siempre).
 async function guardar(k, valor, ttlSegundos) {
   if (!listo() || !(ttlSegundos > 0)) return false
   try {

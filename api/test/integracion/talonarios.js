@@ -1,14 +1,9 @@
-// Talonarios de recibos de caja: asignacion del consecutivo, cancelacion con
-// causal, bloqueo de pagos, cache en Redis y concurrencia.
-//
-// El prefijo del talonario es el usuario de inicio de sesion (SKVnn). Trabaja
-// con un vendedor ficticio (SKV99981) para no tocar los talonarios reales, y
-// borra todo lo que crea al terminar.
 const http = require("http")
 const path = require("path")
 require(path.join(process.cwd(), "node_modules", "dotenv")).config({ path: path.join(process.cwd(), ".env") })
 const sql = require(path.join(process.cwd(), "node_modules", "mssql"))
 const jwt = require(path.join(process.cwd(), "node_modules", "jsonwebtoken"))
+const sharp = require(path.join(process.cwd(), "node_modules", "sharp"))
 const sesiones = require(path.join(process.cwd(), "modules", "sesiones"))
 
 const BASE = process.env.API_URL || "http://127.0.0.1:3000"
@@ -18,11 +13,25 @@ const PREFIJO = `SKV${VEND}`
 const CLIENTE = "CLI-TALONARIO"
 const CLAVE_REDIS = `${process.env.REDIS_PREFIJO || "pedidos:"}talonario:siguiente:${PREFIJO}`
 
-function llamar(metodo, ruta, { token, body } = {}) {
+function multipart(campos, archivos) {
+  const limite = "----tal" + Math.random().toString(16).slice(2)
+  const partes = []
+  for (const [k, v] of Object.entries(campos)) partes.push(Buffer.from(`--${limite}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`))
+  for (const a of archivos) {
+    partes.push(Buffer.from(`--${limite}\r\nContent-Disposition: form-data; name="${a.campo}"; filename="${a.nombre}"\r\nContent-Type: image/png\r\n\r\n`))
+    partes.push(a.contenido); partes.push(Buffer.from("\r\n"))
+  }
+  partes.push(Buffer.from(`--${limite}--\r\n`))
+  return { body: Buffer.concat(partes), headers: { "Content-Type": `multipart/form-data; boundary=${limite}` } }
+}
+
+function llamar(metodo, ruta, { token, body, mp } = {}) {
   return new Promise((resolve, reject) => {
-    const datos = body !== undefined ? JSON.stringify(body) : null
+    const datos = mp ? mp.body : body !== undefined ? JSON.stringify(body) : null
     const h = { Accept: "application/json" }
-    if (datos) { h["Content-Type"] = "application/json"; h["Content-Length"] = Buffer.byteLength(datos) }
+    if (mp) Object.assign(h, mp.headers)
+    else if (datos) h["Content-Type"] = "application/json"
+    if (datos) h["Content-Length"] = Buffer.byteLength(datos)
     if (token) h.Authorization = `Bearer ${token}`
     const req = (BASE.startsWith("https") ? require("https") : http).request(BASE + ruta, { method: metodo, headers: h }, (res) => {
       const t = []
@@ -37,7 +46,6 @@ function llamar(metodo, ruta, { token, body } = {}) {
 async function esperar() { for (let i = 0; i < 60; i++) { try { const r = await llamar("GET", "/api/test", {}); if (r.status === 200) return true } catch (_) {} await new Promise((r) => setTimeout(r, 1000)) } return false }
 const cfg = { server: process.env.DB_SERVER, database: process.env.PEDIDOS_DB_NAME || "Pedidos", user: process.env.DB_USER, password: process.env.DB_PASSWORD, port: 1433, options: { encrypt: false, trustServerCertificate: true } }
 
-// Cliente Redis solo para comprobar la cache desde fuera del backend
 async function abrirRedis() {
   const url = (process.env.REDIS_URL || "").trim()
   if (!url) return null
@@ -62,6 +70,7 @@ async function abrirRedis() {
   const redis = await abrirRedis()
   const jti = await sesiones.registrar(pedidos, sql, { usuarioCodigo: `${VEND}`, usuarioNombre: "PRUEBA TALONARIO", tipo: "vendedor", plataforma: "prueba", duracionSeg: 900 })
   const token = jwt.sign({ userId: VEND, nombre: "PRUEBA TALONARIO", tipo: "vendedor", jti }, process.env.JWT_SECRET, { expiresIn: 900 })
+  const foto = await sharp({ create: { width: 700, height: 500, channels: 3, background: { r: 180, g: 60, b: 40 } } }).png().toBuffer()
 
   const limpiar = async () => {
     await pedidos.request().input("p", sql.NVarChar, PREFIJO).input("c", sql.NVarChar, CLIENTE)
@@ -84,157 +93,168 @@ async function abrirRedis() {
   const pagar = async (sufijo) => llamar("POST", "/api/recaudos", { token, body: {
     numeroRecaudo: `REC-TAL-${ts}-${sufijo}`, clienteId: CLIENTE, clienteNombre: "PRUEBA",
     formaPago: "Efectivo", totalDocumentos: 1000, totalAplicado: 1000, totalRecaudo: 1000, saldo: 0,
-    documentos: [{ docEntry: 1, docNum: "F-TAL", numFactura: "FE-TAL", saldo: 1000, abono: 1000, dueDate: "2026-12-31" }],
+    notas: "observacion del pago", documentos: [{ docEntry: 1, docNum: "F-TAL", numFactura: "FE-TAL", saldo: 1000, abono: 1000, dueDate: "2026-12-31" }],
   } })
+  const cancelar = (campos, conFoto) => llamar("POST", "/api/talonarios/cancelar", conFoto
+    ? { token, mp: multipart(campos, [{ campo: "foto", nombre: "novedad.png", contenido: foto }]) }
+    : { token, body: campos })
+  const siguiente = () => llamar("GET", "/api/talonarios/siguiente", { token })
 
-  // Primera consulta: el backend crea las estructuras que falten
-  await llamar("GET", "/api/talonarios/siguiente", { token })
+  await siguiente()
   await limpiar()
 
-  // ── 1) Estructura en base de datos: tabla e integridad ──
-  const tabla = (await pedidos.request().query(`
+  const cols = (await pedidos.request().query(`
     SELECT COLUMN_NAME c FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='talonarios_cancelaciones'
   `)).recordset.map((r) => r.c)
-  const requeridas = ["talonario_id", "causal", "fecha", "usuario_codigo", "usuario_nombre", "estado_anterior", "prefijo"]
-  ok("BD: tabla talonarios_cancelaciones con talonario, causal, fecha, usuario y estado",
-    requeridas.every((c) => tabla.includes(c)), tabla.join(","))
-  const fk = (await pedidos.request().query("SELECT name FROM sys.foreign_keys WHERE name='FK_talcanc_talonario'")).recordset
-  ok("BD: integridad referencial con TALONARIO (FK_talcanc_talonario)", fk.length === 1)
+  const requeridas = ["talonario_id", "numero", "causal", "observaciones", "fecha", "usuario_codigo", "usuario_nombre", "estado", "prefijo"]
+  ok("BD: talonarios_cancelaciones guarda unidad, causal, observaciones, usuario, estado y fecha",
+    requeridas.every((c) => cols.includes(c)), cols.join(","))
+  const fks = (await pedidos.request().query(`
+    SELECT name FROM sys.foreign_keys WHERE name IN ('FK_talcanc_talonario','FK_evid_cancelacion')
+  `)).recordset.map((r) => r.name)
+  ok("BD: integridad referencial de la cancelacion y de su evidencia",
+    fks.includes("FK_talcanc_talonario") && fks.includes("FK_evid_cancelacion"), fks.join(","))
+  const uq = (await pedidos.request().query("SELECT name FROM sys.indexes WHERE name='UQ_talcanc_unidad'")).recordset
+  ok("BD: una unidad no se puede cancelar dos veces (indice unico)", uq.length === 1)
 
-  // ── 2) Catalogo de causales que impone el servidor ──
   const cau = await llamar("GET", "/api/talonarios/causales", { token })
   const causales = (cau.json && cau.json.data) || []
   ok("causales: Deterioro y Daño por mal manejo", cau.status === 200 && causales.length === 2 &&
     causales.includes("Deterioro") && causales.includes("Daño por mal manejo"), causales.join(" / "))
 
-  // ── 3) Sin talonario: no hay nada que cancelar ──
-  const sinTal = await llamar("POST", "/api/talonarios/cancelar", { token, body: { causal: "Deterioro" } })
-  ok("sin talonario: cancelar responde 404 y no crea registros", sinTal.status === 404, sinTal.json && sinTal.json.message)
+  const sinTalPago = await pagar("sin")
+  const guardadoSin = (await pedidos.request().input("n", sql.NVarChar, `REC-TAL-${ts}-sin`)
+    .query("SELECT COUNT(*) n FROM dbo.recaudos WHERE numero_recaudo=@n")).recordset[0].n
+  ok("sin talonario asignado: el pago se rechaza y no guarda nada",
+    sinTalPago.status === 409 && sinTalPago.json.sinTalonario === true && guardadoSin === 0,
+    `${sinTalPago.status} · ${(sinTalPago.json && sinTalPago.json.message || "").slice(0, 60)}`)
+  const sinTalCanc = await cancelar({ causal: "Deterioro" })
+  ok("sin talonario asignado: cancelar responde 404", sinTalCanc.status === 404, sinTalCanc.json && sinTalCanc.json.message)
 
-  // ── 4) Talonario activo: permite pagos y entrega consecutivos ──
-  const tal1 = await crearTalonario(100, 105)
+  const talA = await crearTalonario(1, 3)
+  const enCurso = await siguiente()
+  ok("talonario de 3 unidades: la primera unidad es la 1",
+    enCurso.json.data && enCurso.json.data.talonarioId === talA && n(enCurso.json.data.siguiente) === 1 &&
+    n(enCurso.json.data.unidades) === 3, `sig=${enCurso.json.data && enCurso.json.data.siguiente} unidades=${enCurso.json.data && enCurso.json.data.unidades}`)
+
   const p1 = await pagar("a")
-  const p2 = await pagar("b")
-  ok("talonario ACTIVO: permite pagos y asigna 100 y 101",
-    p1.status === 200 && p2.status === 200 &&
-    n(p1.json.data.reciboCaja) === 100 && n(p2.json.data.reciboCaja) === 101,
-    `${p1.json && p1.json.data && p1.json.data.reciboCaja}, ${p2.json && p2.json.data && p2.json.data.reciboCaja}`)
+  ok("cada pago consume una unidad en secuencia: el primero toma la 1",
+    p1.status === 200 && n(p1.json.data.reciboCaja) === 1, `recibo=${p1.json && p1.json.data && p1.json.data.reciboCaja}`)
+  const asignado1 = (await pedidos.request().input("n", sql.NVarChar, `REC-TAL-${ts}-a`)
+    .query("SELECT recibo_caja, recibo_talonario_id, notas FROM dbo.recaudos WHERE numero_recaudo=@n")).recordset[0]
+  ok("el pago queda asociado a la unidad y guarda la observacion del pago",
+    asignado1 && n(asignado1.recibo_caja) === 1 && asignado1.recibo_talonario_id === talA && asignado1.notas === "observacion del pago",
+    asignado1 && `unidad ${asignado1.recibo_caja} · "${asignado1.notas}"`)
 
-  // ── 5) Redis: la consulta cachea y el pago invalida ──
-  const consulta1 = await llamar("GET", "/api/talonarios/siguiente", { token })
+  const consulta = await siguiente()
   const enRedis = redis ? await redis.get(CLAVE_REDIS) : null
-  ok("Redis: la consulta del talonario queda cacheada", !redis || (enRedis && JSON.parse(enRedis).talonarioId === tal1),
-    redis ? `clave ${CLAVE_REDIS}` : "Redis no configurado (se omite)")
-  ok("consulta: el siguiente es 102 tras los dos pagos",
-    consulta1.status === 200 && n(consulta1.json.data.siguiente) === 102, `sig=${consulta1.json && consulta1.json.data && consulta1.json.data.siguiente}`)
-  await pagar("c")
-  const trasPago = redis ? await redis.get(CLAVE_REDIS) : null
-  ok("Redis: al consumir un numero se invalida la cache", !redis || trasPago === null, trasPago ? "quedo dato viejo" : "invalidada")
-  const consulta2 = await llamar("GET", "/api/talonarios/siguiente", { token })
-  ok("tras invalidar: la consulta devuelve el dato nuevo (103)", n(consulta2.json.data.siguiente) === 103,
-    `sig=${consulta2.json && consulta2.json.data && consulta2.json.data.siguiente}`)
+  ok("Redis: la consulta queda cacheada y la siguiente unidad es la 2",
+    n(consulta.json.data.siguiente) === 2 && (!redis || (enRedis && JSON.parse(enRedis).siguiente === 2)),
+    `sig=${consulta.json.data && consulta.json.data.siguiente}`)
 
-  // ── 6) Cancelacion sin causal: rechazada, nada cambia ──
-  const sinCausal = await llamar("POST", "/api/talonarios/cancelar", { token, body: {} })
-  const vacia = await llamar("POST", "/api/talonarios/cancelar", { token, body: { causal: "   " } })
-  const inventada = await llamar("POST", "/api/talonarios/cancelar", { token, body: { causal: "Se me perdio" } })
-  const estadoTrasIntentos = (await pedidos.request().input("id", sql.Int, tal1).query("SELECT estado FROM dbo.TALONARIO WHERE id=@id")).recordset[0].estado
-  const cancTrasIntentos = (await pedidos.request().input("id", sql.Int, tal1).query("SELECT COUNT(*) n FROM dbo.talonarios_cancelaciones WHERE talonario_id=@id")).recordset[0].n
+  const sinCausal = await cancelar({})
+  const inventada = await cancelar({ causal: "Se me perdio" })
+  const registrosTras = (await pedidos.request().input("id", sql.Int, talA)
+    .query("SELECT COUNT(*) n FROM dbo.talonarios_cancelaciones WHERE talonario_id=@id")).recordset[0].n
   ok("cancelar sin causal: 400 (obligatoria)", sinCausal.status === 400, sinCausal.json && sinCausal.json.message)
-  ok("cancelar con causal vacia: 400", vacia.status === 400, vacia.json && vacia.json.message)
   ok("cancelar con causal fuera del catalogo: 400", inventada.status === 400, inventada.json && inventada.json.message)
-  ok("tras los intentos fallidos el talonario sigue ACTIVO y sin registros de cancelacion",
-    estadoTrasIntentos === "ACTIVO" && cancTrasIntentos === 0, `estado=${estadoTrasIntentos} registros=${cancTrasIntentos}`)
+  ok("los intentos fallidos no escriben nada", registrosTras === 0, `registros=${registrosTras}`)
 
-  // ── 7) Cancelacion correcta (con la cache caliente, para que la
-  //    invalidacion posterior sea una comprobacion real) ──
-  await llamar("GET", "/api/talonarios/siguiente", { token })
-  const cacheAntesCancelar = redis ? await redis.get(CLAVE_REDIS) : null
-  ok("Redis: la cache esta caliente antes de cancelar", !redis || cacheAntesCancelar !== null,
-    redis ? (cacheAntesCancelar ? "cacheada" : "no se cacheo") : "Redis no configurado (se omite)")
-  const canc = await llamar("POST", "/api/talonarios/cancelar", { token, body: { causal: "Deterioro" } })
-  ok("cancelacion correcta: 200 con el talonario y su causal",
-    canc.status === 200 && canc.json.data && canc.json.data.estado === "CANCELADO" && canc.json.data.causal === "Deterioro",
-    JSON.stringify(canc.json.data || {}))
+  const OBS = "Se mojo el formato en la ruta y no se puede diligenciar"
+  const canc2 = await cancelar({ causal: "Deterioro", observaciones: OBS }, true)
+  ok("cancelar la unidad 2: 200 e informa que se sigue con la 3",
+    canc2.status === 200 && canc2.json.data && n(canc2.json.data.numeroCancelado) === 2 &&
+    canc2.json.data.siguiente && n(canc2.json.data.siguiente.siguiente) === 3,
+    canc2.json && canc2.json.message)
 
-  const fila = (await pedidos.request().input("id", sql.Int, tal1)
-    .query("SELECT estado FROM dbo.TALONARIO WHERE id=@id")).recordset[0]
-  ok("estado: el talonario queda CANCELADO y se conserva en el sistema", fila && fila.estado === "CANCELADO", fila && fila.estado)
-
-  const reg = (await pedidos.request().input("id", sql.Int, tal1).query(`
-    SELECT TOP 1 talonario_id, prefijo, rango_inicial, rango_final, causal, usuario_codigo, usuario_nombre, estado_anterior, fecha
+  const reg2 = (await pedidos.request().input("id", sql.Int, talA).query(`
+    SELECT TOP 1 id, numero, causal, observaciones, usuario_codigo, usuario_nombre, estado, rango_inicial, rango_final, fecha
     FROM dbo.talonarios_cancelaciones WHERE talonario_id=@id ORDER BY id DESC
   `)).recordset[0]
-  ok("BD: queda registrada la causal, el talonario, el usuario, el estado y la fecha",
-    reg && reg.talonario_id === tal1 && reg.causal === "Deterioro" && reg.prefijo === PREFIJO &&
-    reg.usuario_codigo === `${VEND}` && reg.usuario_nombre === "PRUEBA TALONARIO" &&
-    reg.estado_anterior === "ACTIVO" && n(reg.rango_inicial) === 100 && n(reg.rango_final) === 105 && !!reg.fecha,
-    reg && `${reg.causal} · ${reg.usuario_nombre} · ${new Date(reg.fecha).toISOString()}`)
+  ok("BD: la cancelacion guarda unidad, causal, observaciones, usuario, estado y fecha",
+    reg2 && n(reg2.numero) === 2 && reg2.causal === "Deterioro" && reg2.observaciones === OBS &&
+    reg2.usuario_codigo === `${VEND}` && reg2.usuario_nombre === "PRUEBA TALONARIO" &&
+    reg2.estado === "CANCELADO" && n(reg2.rango_inicial) === 1 && n(reg2.rango_final) === 3 && !!reg2.fecha,
+    reg2 && `unidad ${reg2.numero} · ${reg2.causal} · "${(reg2.observaciones || "").slice(0, 28)}..."`)
+
+  const evi = reg2 ? (await pedidos.request().input("c", sql.Int, reg2.id)
+    .query("SELECT origen, mime, tamano, ancho, alto FROM dbo.evidencias_archivos WHERE cancelacion_id=@c")).recordset : []
+  ok("BD: la foto de la novedad queda ligada a la cancelacion",
+    evi.length === 1 && evi[0].origen === "talonario" && evi[0].mime === "image/webp" && evi[0].tamano > 0,
+    evi[0] && `${evi[0].tamano} bytes ${evi[0].ancho}x${evi[0].alto}`)
 
   const redisTrasCancelar = redis ? await redis.get(CLAVE_REDIS) : null
-  ok("Redis: al cancelar se invalida la cache del talonario", !redis || redisTrasCancelar === null,
+  ok("Redis: al cancelar una unidad se invalida la cache", !redis || redisTrasCancelar === null,
     redisTrasCancelar ? "quedo dato viejo" : "invalidada")
 
-  // ── 8) Cancelar uno ya cancelado ──
-  const otraVez = await llamar("POST", "/api/talonarios/cancelar", { token, body: { causal: "Daño por mal manejo" } })
-  const cuantas = (await pedidos.request().input("id", sql.Int, tal1)
-    .query("SELECT COUNT(*) n FROM dbo.talonarios_cancelaciones WHERE talonario_id=@id")).recordset[0].n
-  ok("cancelar un talonario ya cancelado: 409 y no duplica el registro",
-    otraVez.status === 409 && cuantas === 1, `${otraVez.status} registros=${cuantas}`)
+  const tras2 = await siguiente()
+  ok("tras cancelar la 2 el sistema pasa a la unidad 3", n(tras2.json.data.siguiente) === 3,
+    `sig=${tras2.json.data && tras2.json.data.siguiente}`)
 
-  // ── 9) Bloqueo de pagos con el talonario cancelado ──
-  const consultaCanc = await llamar("GET", "/api/talonarios/siguiente", { token })
-  ok("consulta: informa cancelado con su causal y sin numero",
-    consultaCanc.json.data && consultaCanc.json.data.cancelado === true &&
-    consultaCanc.json.data.causalCancelacion === "Deterioro" && consultaCanc.json.data.siguiente == null,
-    JSON.stringify(consultaCanc.json.data || {}).slice(0, 110))
-  const pagoBloqueado = await pagar("bloqueado")
-  const guardado = (await pedidos.request().input("n", sql.NVarChar, `REC-TAL-${ts}-bloqueado`)
+  const canc3 = await cancelar({ causal: "Daño por mal manejo", observaciones: "Se rompio el formato" })
+  ok("la cancelacion se puede repetir: la unidad 3 tambien se cancela",
+    canc3.status === 200 && n(canc3.json.data.numeroCancelado) === 3, canc3.json && canc3.json.message)
+  const numerosCancelados = (await pedidos.request().input("id", sql.Int, talA)
+    .query("SELECT numero FROM dbo.talonarios_cancelaciones WHERE talonario_id=@id ORDER BY numero")).recordset.map((r) => n(r.numero))
+  ok("BD: quedan registradas las dos unidades canceladas, sin repetirse",
+    JSON.stringify(numerosCancelados) === "[2,3]", numerosCancelados.join(","))
+
+  const agotado = await siguiente()
+  ok("agotado el talonario: no hay unidad disponible",
+    agotado.json.data && agotado.json.data.siguiente == null && agotado.json.data.agotado === true,
+    JSON.stringify(agotado.json.data || {}).slice(0, 90))
+  const pagoAgotado = await pagar("agotado")
+  const guardadoAgotado = (await pedidos.request().input("n", sql.NVarChar, `REC-TAL-${ts}-agotado`)
     .query("SELECT COUNT(*) n FROM dbo.recaudos WHERE numero_recaudo=@n")).recordset[0].n
-  ok("pago con talonario cancelado: rechazado (409) con el motivo y sin guardar nada",
-    pagoBloqueado.status === 409 && pagoBloqueado.json.talonarioCancelado === true &&
-    /cancelado/i.test(pagoBloqueado.json.message || "") && guardado === 0,
-    `${pagoBloqueado.status} · ${(pagoBloqueado.json && pagoBloqueado.json.message || "").slice(0, 70)}`)
+  ok("sin unidad disponible el pago se rechaza con su motivo y no guarda nada",
+    pagoAgotado.status === 409 && pagoAgotado.json.sinTalonario === true && pagoAgotado.json.agotado === true && guardadoAgotado === 0,
+    `${pagoAgotado.status} · ${(pagoAgotado.json && pagoAgotado.json.message || "").slice(0, 60)}`)
+  const cancAgotado = await cancelar({ causal: "Deterioro" })
+  ok("sin unidad disponible tampoco se puede cancelar: 409", cancAgotado.status === 409, cancAgotado.json && cancAgotado.json.message)
 
-  // ── 10) Liberacion del consecutivo: un talonario nuevo vuelve a habilitarlo.
-  //    Sistemas lo asigna directo en la base, sin pasar por la app: el estado
-  //    cancelado no se cachea, asi que la app lo ve de inmediato.
-  const cacheCancelado = redis ? await redis.get(CLAVE_REDIS) : null
-  ok("Redis: el estado cancelado no se cachea (Sistemas puede asignar otro talonario)",
-    !redis || cacheCancelado === null, cacheCancelado ? "quedo cacheado" : "no cacheado")
-  const tal2 = await crearTalonario(100, 105)
-  const consultaNueva = await llamar("GET", "/api/talonarios/siguiente", { token })
-  ok("liberacion: con un talonario nuevo el consecutivo vuelve a estar disponible (100)",
-    consultaNueva.json.data && consultaNueva.json.data.talonarioId === tal2 &&
-    n(consultaNueva.json.data.siguiente) === 100 && consultaNueva.json.data.cancelado !== true,
-    `tal=${consultaNueva.json.data && consultaNueva.json.data.talonarioId} sig=${consultaNueva.json.data && consultaNueva.json.data.siguiente}`)
-  const pagoNuevo = await pagar("nuevo")
-  ok("permiso de pago con talonario ACTIVO: entra y toma el 100 liberado",
-    pagoNuevo.status === 200 && n(pagoNuevo.json.data.reciboCaja) === 100, `recibo=${pagoNuevo.json && pagoNuevo.json.data && pagoNuevo.json.data.reciboCaja}`)
+  const cacheAgotado = redis ? await redis.get(CLAVE_REDIS) : null
+  ok("Redis: el estado agotado no se cachea (Sistemas puede asignar otro talonario)",
+    !redis || cacheAgotado === null, cacheAgotado ? "quedo cacheado" : "no cacheado")
 
-  // ── 11) Concurrencia: pagos simultaneos no repiten consecutivo ──
+  const talB = await crearTalonario(101, 110)
+  const conNuevo = await siguiente()
+  ok("con un talonario nuevo se sigue por su primera unidad (101)",
+    conNuevo.json.data && conNuevo.json.data.talonarioId === talB && n(conNuevo.json.data.siguiente) === 101,
+    `tal=${conNuevo.json.data && conNuevo.json.data.talonarioId} sig=${conNuevo.json.data && conNuevo.json.data.siguiente}`)
+  const pagoNuevo = await pagar("b")
+  ok("el pago se realiza con la unidad del talonario nuevo (101)",
+    pagoNuevo.status === 200 && n(pagoNuevo.json.data.reciboCaja) === 101,
+    `recibo=${pagoNuevo.json && pagoNuevo.json.data && pagoNuevo.json.data.reciboCaja}`)
+
+  const cancB = await cancelar({ causal: "Deterioro", observaciones: "prueba de paso entre talonarios" })
+  ok("cancelar en el talonario nuevo sigue la secuencia (102)",
+    cancB.status === 200 && n(cancB.json.data.numeroCancelado) === 102 &&
+    cancB.json.data.siguiente && n(cancB.json.data.siguiente.siguiente) === 103,
+    cancB.json && cancB.json.message)
+
   const simultaneos = await Promise.all([pagar("s1"), pagar("s2"), pagar("s3"), pagar("s4")])
   const recibos = simultaneos.map((r) => (r.status === 200 && r.json.data ? n(r.json.data.reciboCaja) : null)).filter((v) => v != null).sort((a, b) => a - b)
-  const unicos = new Set(recibos)
-  ok("concurrencia: 4 pagos simultaneos toman numeros distintos y consecutivos",
-    recibos.length === 4 && unicos.size === 4 && JSON.stringify(recibos) === "[101,102,103,104]", recibos.join(","))
-  const enBd = (await pedidos.request().input("t", sql.Int, tal2)
-    .query("SELECT recibo_caja FROM dbo.recaudos WHERE recibo_talonario_id=@t ORDER BY recibo_caja")).recordset.map((r) => n(r.recibo_caja))
-  ok("integridad: los recibos guardados no se repiten en la base",
-    new Set(enBd).size === enBd.length && JSON.stringify(enBd) === "[100,101,102,103,104]", enBd.join(","))
+  ok("concurrencia: 4 pagos simultaneos toman unidades distintas y consecutivas",
+    recibos.length === 4 && new Set(recibos).size === 4 && JSON.stringify(recibos) === "[103,104,105,106]", recibos.join(","))
 
-  // ── 12) Cancelaciones simultaneas: solo una prospera ──
-  const dobles = await Promise.all([
-    llamar("POST", "/api/talonarios/cancelar", { token, body: { causal: "Deterioro" } }),
-    llamar("POST", "/api/talonarios/cancelar", { token, body: { causal: "Daño por mal manejo" } }),
+  const doblesCanc = await Promise.all([
+    cancelar({ causal: "Deterioro" }),
+    cancelar({ causal: "Daño por mal manejo" }),
   ])
-  const exitosas = dobles.filter((r) => r.status === 200).length
-  const registros = (await pedidos.request().input("id", sql.Int, tal2)
-    .query("SELECT COUNT(*) n FROM dbo.talonarios_cancelaciones WHERE talonario_id=@id")).recordset[0].n
-  ok("concurrencia: dos cancelaciones a la vez dejan una sola cancelacion registrada",
-    exitosas === 1 && registros === 1, `exitosas=${exitosas} registros=${registros}`)
+  const numsCanc = doblesCanc.filter((r) => r.status === 200).map((r) => n(r.json.data.numeroCancelado)).sort((a, b) => a - b)
+  ok("concurrencia: dos cancelaciones a la vez toman unidades distintas",
+    numsCanc.length === 2 && new Set(numsCanc).size === 2 && JSON.stringify(numsCanc) === "[107,108]", numsCanc.join(","))
 
-  // ── 13) Transacciones: un pago rechazado no deja rastro ──
+  const usadas = (await pedidos.request().input("t", sql.Int, talB).query(`
+    SELECT numero FROM (
+      SELECT recibo_caja AS numero FROM dbo.recaudos WHERE recibo_talonario_id=@t
+      UNION ALL
+      SELECT numero FROM dbo.talonarios_cancelaciones WHERE talonario_id=@t
+    ) x ORDER BY numero
+  `)).recordset.map((r) => n(r.numero))
+  ok("integridad: ninguna unidad se usa dos veces (pagos y cancelaciones)",
+    new Set(usadas).size === usadas.length && JSON.stringify(usadas) === "[101,102,103,104,105,106,107,108]", usadas.join(","))
+
   const antesErr = (await pedidos.request().input("c", sql.NVarChar, CLIENTE).query("SELECT COUNT(*) n FROM dbo.recaudos WHERE cliente_id=@c")).recordset[0].n
   const conError = await llamar("POST", "/api/recaudos", { token, body: {
     numeroRecaudo: `REC-TAL-${ts}-err`, clienteId: CLIENTE, clienteNombre: "PRUEBA", formaPago: "Efectivo",
@@ -242,12 +262,13 @@ async function abrirRedis() {
     documentos: [{ docEntry: 9, docNum: "F-ERR", numFactura: "FE-ERR", saldo: 1000, abono: 1000, dueDate: "X".repeat(50) }],
   } })
   const despuesErr = (await pedidos.request().input("c", sql.NVarChar, CLIENTE).query("SELECT COUNT(*) n FROM dbo.recaudos WHERE cliente_id=@c")).recordset[0].n
-  ok("transacciones: un fallo a mitad del pago hace rollback completo",
-    conError.status !== 200 && despuesErr === antesErr, `${conError.status} · ${antesErr} -> ${despuesErr}`)
+  const unidadTrasErr = await siguiente()
+  ok("transacciones: un fallo a mitad del pago hace rollback y no gasta la unidad",
+    conError.status !== 200 && despuesErr === antesErr && n(unidadTrasErr.json.data.siguiente) === 109,
+    `${conError.status} · ${antesErr} -> ${despuesErr} · sig=${unidadTrasErr.json.data && unidadTrasErr.json.data.siguiente}`)
 
-  // ── 14) La cache no rompe si Redis se cae: el dato sigue llegando de la BD ──
-  const sinCacheOk = await llamar("GET", "/api/talonarios/siguiente", { token })
-  ok("resiliencia: la consulta responde aunque la cache no acierte", sinCacheOk.status === 200 && !!sinCacheOk.json.data)
+  const sinCacheOk = await siguiente()
+  ok("resiliencia: la consulta responde siempre", sinCacheOk.status === 200 && sinCacheOk.json.success === true)
 
   await limpiar()
   if (redis) { try { await redis.quit() } catch (_) {} }

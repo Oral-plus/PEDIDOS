@@ -1349,6 +1349,8 @@ talonarios.registrarRutas(app, {
   requireAuth: authenticateToken,
   getPedidosPool: () => pedidosPool,
   sql,
+  subida: subidaEvidencias,
+  procesarImagen: evidencias.procesar,
   log: console,
 })
 
@@ -1411,19 +1413,19 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
     let recaudoId
     let reciboCaja = null, reciboPrefijo = null, reciboTalonarioId = null
     try {
-    // Recibo de caja: consecutivo del talonario del usuario, asignado dentro
-    // de la transacción para que nunca se repita. Un talonario CANCELADO
-    // bloquea el pago; sin talonario o agotado, el recaudo entra igual
-    // (inserción plana) con el recibo en blanco.
+    // Recibo de caja: cada pago de cartera consume en secuencia una unidad del
+    // talonario del gestor, asignada dentro de la transacción para que nunca
+    // se repita. Sin unidad disponible no hay pago (segunda excepción a la
+    // inserción plana, junto con el cruce de documentos).
     try {
       const tal = await talonarios.asignar(() => transaction.request(), sql, sesionToken)
       reciboCaja = tal.reciboCaja
       reciboPrefijo = tal.reciboPrefijo
       reciboTalonarioId = tal.talonarioId
     } catch (e) {
-      if (e.pagoBloqueado) {
+      if (e.sinTalonario) {
         await transaction.rollback()
-        return res.status(409).json({ success: false, talonarioCancelado: true, causal: e.causal || null, message: e.message })
+        return res.status(409).json({ success: false, sinTalonario: true, agotado: e.agotado === true, message: e.message })
       }
       console.error("No se pudo asignar recibo de caja:", e.message)
     }

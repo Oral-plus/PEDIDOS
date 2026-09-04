@@ -8,8 +8,6 @@ class RecaudosScreen extends StatefulWidget {
   final String codigoCliente;
   final String nombreCliente;
   final Map<String, dynamic>? pago;
-  /// Rutas de las fotos de evidencia. Viajan con el recaudo en la misma
-  /// peticion para que se guarden en la misma transaccion.
   final List<String> fotos;
 
   const RecaudosScreen({
@@ -54,6 +52,8 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
         'REC-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-${now.millisecondsSinceEpoch.toString().substring(9)}';
     final v = (widget.pago?['valorCartera'] ?? widget.pago?['valor']);
     if (v is num && v > 0) _recaudoCtrl.text = _miles(v);
+    final obs = (widget.pago?['observacion'] ?? '').toString().trim();
+    if (obs.isNotEmpty) _notas.text = obs;
     _recaudoCtrl.addListener(() => setState(() {}));
     _cargar();
   }
@@ -580,8 +580,6 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
   }
 
   Future<void> _guardar() async {
-    // Única excepción al envío plano: sin documentos cruzados no hay recaudo
-    // (si no, subiría solo la imagen). El resto se guarda tal cual.
     if (_cruzados.isEmpty) {
       await showDialog<void>(
         context: context,
