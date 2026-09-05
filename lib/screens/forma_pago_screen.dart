@@ -71,6 +71,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   final TextEditingController _banco = TextEditingController();
   final TextEditingController _referencia = TextEditingController();
   final TextEditingController _observacionPago = TextEditingController();
+  final TextEditingController _obsCancelacion = TextEditingController();
 
   String? _numeroRecaudo;
   bool get _recaudoCruzado => _numeroRecaudo != null && _numeroRecaudo!.isNotEmpty;
@@ -154,7 +155,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     final numero = data['siguiente'];
     String? causal;
     XFile? evidencia;
-    final obsCtrl = TextEditingController();
+    _obsCancelacion.clear();
 
     final confirmado = await showDialog<bool>(
       context: context,
@@ -191,7 +192,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _ink)),
                 const SizedBox(height: 6),
                 TextField(
-                  controller: obsCtrl,
+                  controller: _obsCancelacion,
                   minLines: 2,
                   maxLines: 4,
                   maxLength: 1000,
@@ -248,8 +249,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
         ),
       ),
     );
-    final observaciones = obsCtrl.text;
-    obsCtrl.dispose();
+    final observaciones = _obsCancelacion.text;
     if (confirmado != true || causal == null || !mounted) return;
 
     final res = await ApiEasyService().cancelarTalonario(
@@ -363,6 +363,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     _banco.dispose();
     _referencia.dispose();
     _observacionPago.dispose();
+    _obsCancelacion.dispose();
     super.dispose();
   }
 
