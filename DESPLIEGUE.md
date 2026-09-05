@@ -118,10 +118,21 @@ Debe terminar en `TODAS LAS SUITES OK`. Crean y borran sus propios registros.
 
 ### Compilación
 
-La app toma la dirección del backend al compilar:
+Para la entrega normal basta con:
 
 ```bash
-flutter build apk --release --dart-define=API_URLS=https://DOMINIO_PUBLICO
+flutter build apk --release
+```
+
+La app apunta al servidor de producción definido en `lib/config/app_config.dart`
+(`apiUrlProduccion`). Ese es el único lugar donde cambiarlo si el dominio del
+backend cambia.
+
+Para apuntar a otro servidor sin tocar el código, se pasa la dirección al
+compilar:
+
+```bash
+flutter build apk --release --dart-define=API_URLS=https://OTRO_DOMINIO
 ```
 
 `API_URLS` admite varias direcciones separadas por coma; la app usa la primera

@@ -44,7 +44,8 @@ Aplicación:
 
 ```bash
 flutter pub get
-flutter run --dart-define=API_URLS=http://ip-del-backend:3000
+flutter run                                          # servidor de produccion
+flutter run --dart-define=API_URLS=http://IP_BACKEND:3000   # otro servidor
 ```
 
 ## Pruebas
@@ -56,8 +57,10 @@ flutter test                         # aplicación
 
 ## Despliegue
 
-Ver [DESPLIEGUE.md](DESPLIEGUE.md). Ningún valor de entorno está en el código:
-el backend se configura con variables de entorno y la app con `--dart-define`.
+Ver [DESPLIEGUE.md](DESPLIEGUE.md). El backend se configura con variables de
+entorno (`api/.env`) y la app apunta al servidor de producción definido en
+`lib/config/app_config.dart`, que se puede sustituir al compilar con
+`--dart-define=API_URLS=...`.
 
 ## Licencia
 

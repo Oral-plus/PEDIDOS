@@ -37,9 +37,6 @@ class ApiClient {
   static http.Client get _http => SharedHttp.client;
 
   static Future<String> getWorkingUrl() async {
-    if (!AppConfig.configurada) {
-      throw Exception(AppConfig.mensajeSinConfigurar);
-    }
     for (String baseUrl in _baseUrls) {
       try {
         final response = await _http.get(

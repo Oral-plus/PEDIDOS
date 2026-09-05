@@ -178,9 +178,6 @@ class ApiEasyService {
   }
 
   Future<String> _buscarBaseUrl() async {
-    if (!AppConfig.configurada) {
-      throw Exception(AppConfig.mensajeSinConfigurar);
-    }
     final fallo = _ultimaBusquedaFallida;
     if (fallo != null &&
         DateTime.now().difference(fallo) < const Duration(seconds: 30)) {
