@@ -18,7 +18,7 @@ val hasKeystoreConfig = keystorePropertiesFile.exists().also {
     keystoreProperties["storePassword"] != null
 
 android {
-    namespace = "com.example.skypagos"
+    namespace = "com.oralplus.pedidos"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
@@ -33,7 +33,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.skypagos"
+        applicationId = "com.oralplus.pedidos"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

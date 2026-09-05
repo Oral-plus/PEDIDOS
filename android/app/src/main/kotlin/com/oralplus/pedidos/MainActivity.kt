@@ -1,4 +1,4 @@
-package com.example.skypagos
+package com.oralplus.pedidos
 
 import io.flutter.embedding.android.FlutterActivity
 
