@@ -148,6 +148,14 @@ pero no para distribución.
 Subir el número de compilación en cada entrega para que el dispositivo la
 reconozca como actualización.
 
+### Identificador de la aplicación
+
+La aplicación se publica como `com.oralplus.pedidos`. Las versiones anteriores
+al cambio de identificador se instalaban como `com.example.skypagos`, así que
+Android las trata como aplicaciones distintas: en la primera entrega con el
+identificador nuevo, cada gestor debe **desinstalar la versión anterior**,
+iniciar sesión de nuevo y pedir a Soporte TI la activación de su dispositivo.
+
 ## 3. Operación
 
 - **Talonarios**: cada pago de cartera consume una unidad del talonario del
