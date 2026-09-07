@@ -147,10 +147,6 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                       _buildMenuTitle(),
                       const SizedBox(height: 18),
                       _buildMenuGrid(),
-                      const SizedBox(height: 12),
-                      _buildMisRutasTile(),
-                      const SizedBox(height: 12),
-                      _buildCuadreCajaTile(),
                       const SizedBox(height: 14),
                       _buildClienteChip(),
                       if (_errorMessage != null) ...[const SizedBox(height: 14), _buildErrorCard()],
@@ -306,8 +302,9 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                     ],
                   ),
                   const SizedBox(height: 16),
-                  GestureDetector(
+                  _Pulsable(
                     onTap: _verMisPedidos,
+                    radio: 13,
                     child: Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 13),
@@ -339,8 +336,9 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
   }
 
   Widget _headerBtn(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
+    return _Pulsable(
       onTap: onTap,
+      radio: 13,
       child: Container(
         width: 42, height: 42,
         decoration: BoxDecoration(color: _bg, borderRadius: BorderRadius.circular(13), border: Border.all(color: _border)),
@@ -367,26 +365,47 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
 
   Widget _buildMenuGrid() {
     final hayCliente = _clienteSeleccionado != null;
-    return Row(children: [
-      Expanded(child: _menuTile(
-        icon: Icons.business_center_rounded,
-        title: 'Socio de Negocio',
-        subtitle: hayCliente ? 'Cliente activo' : 'Elige un cliente',
-        color: _blue,
-        active: true,
-        onTap: _showSocioNegocio,
-      )),
-      if (hayCliente) ...[
+    return Column(children: [
+      Row(children: [
+        Expanded(child: _menuTile(
+          icon: Icons.storefront_rounded,
+          title: 'Socio de Negocio',
+          subtitle: hayCliente ? 'Cliente activo' : 'Elige un cliente',
+          color: _blue,
+          active: true,
+          onTap: _showSocioNegocio,
+        )),
         const SizedBox(width: 12),
         Expanded(child: _menuTile(
-          icon: Icons.alt_route_rounded,
+          icon: Icons.inventory_2_rounded,
           title: 'Rutero',
-          subtitle: 'Ver Catálogo',
+          subtitle: hayCliente ? 'Ver catálogo' : 'Requiere cliente',
+          color: _blueLight,
+          active: hayCliente,
+          onTap: hayCliente ? _abrirRutero : _avisoElegirCliente,
+        )),
+      ]),
+      const SizedBox(height: 12),
+      Row(children: [
+        Expanded(child: _menuTile(
+          icon: Icons.route_rounded,
+          title: 'Mis Rutas',
+          subtitle: 'Hoy · Semana · Mes',
           color: _blueLight,
           active: true,
-          onTap: _abrirRutero,
+          onTap: _abrirMisRutas,
         )),
-      ],
+        const SizedBox(width: 12),
+        Expanded(child: _menuTile(
+          icon: Icons.point_of_sale_rounded,
+          title: 'Cuadre de Caja',
+          subtitle: _cuadresPendientes > 0 ? 'Por cuadrar' : 'Recaudos en efectivo',
+          color: _inkDeep,
+          active: true,
+          onTap: _abrirCuadreCaja,
+          contador: _cuadresPendientes > 0 ? _cuadresPendientes : null,
+        )),
+      ]),
     ]);
   }
 
@@ -397,191 +416,131 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     required Color color,
     required bool active,
     required VoidCallback onTap,
+    int? contador,
   }) {
-    return GestureDetector(
+    return _Pulsable(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(16),
+      radio: 20,
+      child: Container(
+        height: 134,
+        padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
           color: _white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: active ? color.withOpacity(0.12) : _border),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: active ? color.withOpacity(0.14) : _border),
           boxShadow: _softShadow,
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Container(
-              width: 46, height: 46,
-              decoration: BoxDecoration(
-                gradient: active
-                    ? LinearGradient(colors: [color, color.withOpacity(0.78)], begin: Alignment.topLeft, end: Alignment.bottomRight)
-                    : null,
-                color: active ? null : _bg,
-                borderRadius: BorderRadius.circular(13),
-                boxShadow: active
-                    ? [BoxShadow(color: color.withOpacity(0.28), blurRadius: 10, offset: const Offset(0, 4))]
-                    : null,
-              ),
-              child: Icon(icon, color: active ? Colors.white : _textMuted, size: 22),
-            ),
+            _iconoMenu(icon, color, active),
             const Spacer(),
-            Container(
-              width: 28, height: 28,
-              decoration: BoxDecoration(
-                color: active ? color.withOpacity(0.08) : _bg,
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: Icon(
-                active ? Icons.arrow_forward_rounded : Icons.lock_outline_rounded,
-                color: active ? color : _textMuted.withOpacity(0.6),
-                size: 15,
-              ),
-            ),
+            if (contador != null) _pastillaContador(contador) else _remateMenu(color, active),
           ]),
-          const SizedBox(height: 16),
+          const Spacer(),
           Text(title,
-              style: TextStyle(color: _textDark, fontSize: 14.5, fontWeight: FontWeight.w800, letterSpacing: -0.3),
+              style: TextStyle(color: active ? _textDark : _textMuted, fontSize: 14.5, fontWeight: FontWeight.w800, letterSpacing: -0.3),
               maxLines: 1, overflow: TextOverflow.ellipsis),
           const SizedBox(height: 3),
           Text(subtitle,
-              style: TextStyle(color: _textMuted, fontSize: 11.5, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                  color: contador != null ? _danger : _textMuted,
+                  fontSize: 11.5,
+                  fontWeight: contador != null ? FontWeight.w700 : FontWeight.w500),
               maxLines: 1, overflow: TextOverflow.ellipsis),
         ]),
       ),
     );
   }
 
-  Widget _buildMisRutasTile() {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        Navigator.of(context).push(
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const MisRutasScreen(),
-            transitionsBuilder: (_, a, __, c) => SlideTransition(
-              position: Tween<Offset>(begin: const Offset(1.0, 0.0), end: Offset.zero)
-                  .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
-              child: c,
-            ),
-            transitionDuration: const Duration(milliseconds: 250),
-          ),
-        );
-      },
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: _white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: _border),
-          boxShadow: _softShadow,
-        ),
-        child: Row(children: [
-          Container(
-            width: 48, height: 48,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [_blueLight, _blue], begin: Alignment.topLeft, end: Alignment.bottomRight),
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: _blue.withOpacity(0.28), blurRadius: 10, offset: const Offset(0, 4))],
-            ),
-            child: const Icon(Icons.route_rounded, color: Colors.white, size: 23),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Mis Rutas',
-                  style: TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: -0.2)),
-              const SizedBox(height: 2),
-              Text('Hoy · Semana · Mes · Todas',
-                  style: TextStyle(color: _textMuted, fontSize: 11, fontWeight: FontWeight.w500)),
-            ]),
-          ),
-          Container(
-            width: 32, height: 32,
-            decoration: BoxDecoration(
-              color: _blue.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: const Icon(Icons.arrow_forward_rounded, color: _blue, size: 17),
-          ),
-        ]),
+  Widget _iconoMenu(IconData icon, Color color, bool active) {
+    return Container(
+      width: 48, height: 48,
+      decoration: BoxDecoration(
+        gradient: active
+            ? LinearGradient(colors: [color, color.withOpacity(0.72)], begin: Alignment.topLeft, end: Alignment.bottomRight)
+            : null,
+        color: active ? null : _bg,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: active ? Colors.white.withOpacity(0.22) : _border),
+        boxShadow: active
+            ? [BoxShadow(color: color.withOpacity(0.30), blurRadius: 14, offset: const Offset(0, 7))]
+            : null,
+      ),
+      child: Icon(icon, color: active ? _white : _textMuted.withOpacity(0.7), size: 23),
+    );
+  }
+
+  Widget _remateMenu(Color color, bool active) {
+    return Container(
+      width: 28, height: 28,
+      decoration: BoxDecoration(
+        color: active ? color.withOpacity(0.08) : _bg,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Icon(
+        active ? Icons.arrow_forward_rounded : Icons.lock_outline_rounded,
+        color: active ? color : _textMuted.withOpacity(0.6),
+        size: 15,
       ),
     );
   }
 
-  Widget _buildCuadreCajaTile() {
-    final hayPendientes = _cuadresPendientes > 0;
-    return GestureDetector(
-      onTap: () async {
-        HapticFeedback.selectionClick();
-        await Navigator.of(context).push(
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const CuadreCajaScreen(),
-            transitionsBuilder: (_, a, __, c) => SlideTransition(
-              position: Tween<Offset>(begin: const Offset(1.0, 0.0), end: Offset.zero)
-                  .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
-              child: c,
-            ),
-            transitionDuration: const Duration(milliseconds: 250),
-          ),
-        );
-        _cargarCuadresPendientes();
-      },
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: _white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: _border),
-          boxShadow: _softShadow,
+  Widget _pastillaContador(int valor) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 28),
+      height: 28,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        color: _danger,
+        borderRadius: BorderRadius.circular(9),
+        boxShadow: [BoxShadow(color: _danger.withOpacity(0.32), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Text('$valor',
+          style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w900)),
+    );
+  }
+
+  void _avisoElegirCliente() {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: _inkDeep,
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: const Text('Elige primero un cliente en Socio de Negocio',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+      ));
+  }
+
+  void _abrirMisRutas() {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const MisRutasScreen(),
+        transitionsBuilder: (_, a, __, c) => SlideTransition(
+          position: Tween<Offset>(begin: const Offset(1.0, 0.0), end: Offset.zero)
+              .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
+          child: c,
         ),
-        child: Row(children: [
-          Container(
-            width: 48, height: 48,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [_blue, _inkDeep], begin: Alignment.topLeft, end: Alignment.bottomRight),
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: _inkDeep.withOpacity(0.28), blurRadius: 10, offset: const Offset(0, 4))],
-            ),
-            child: const Icon(Icons.account_balance_wallet_rounded, color: Colors.white, size: 23),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Cuadre de Caja',
-                  style: TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: -0.2)),
-              const SizedBox(height: 2),
-              Text(
-                hayPendientes
-                    ? '$_cuadresPendientes recaudo${_cuadresPendientes == 1 ? '' : 's'} en efectivo por cuadrar'
-                    : 'Recaudos en efectivo · cliente a cliente',
-                style: TextStyle(
-                    color: hayPendientes ? _danger : _textMuted,
-                    fontSize: 11,
-                    fontWeight: hayPendientes ? FontWeight.w700 : FontWeight.w500),
-                maxLines: 1, overflow: TextOverflow.ellipsis,
-              ),
-            ]),
-          ),
-          if (hayPendientes)
-            Container(
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-              decoration: BoxDecoration(color: _danger.withOpacity(0.10), borderRadius: BorderRadius.circular(9)),
-              child: Text('$_cuadresPendientes',
-                  style: TextStyle(color: _danger, fontSize: 12, fontWeight: FontWeight.w900)),
-            ),
-          Container(
-            width: 32, height: 32,
-            decoration: BoxDecoration(
-              color: _blue.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: const Icon(Icons.arrow_forward_rounded, color: _blue, size: 17),
-          ),
-        ]),
+        transitionDuration: const Duration(milliseconds: 250),
       ),
     );
+  }
+
+  Future<void> _abrirCuadreCaja() async {
+    await Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const CuadreCajaScreen(),
+        transitionsBuilder: (_, a, __, c) => SlideTransition(
+          position: Tween<Offset>(begin: const Offset(1.0, 0.0), end: Offset.zero)
+              .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
+          child: c,
+        ),
+        transitionDuration: const Duration(milliseconds: 250),
+      ),
+    );
+    _cargarCuadresPendientes();
   }
 
   Widget _buildClienteChip() {
@@ -595,8 +554,9 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
         : 'Ningún cliente seleccionado';
     final codigo = hay ? (_clienteSeleccionado!['id']?.toString() ?? '') : '';
 
-    return GestureDetector(
+    return _Pulsable(
       onTap: _showSocioNegocio,
+      radio: 16,
       child: Container(
         padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
@@ -648,7 +608,6 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
   }
 
   void _abrirRutero() {
-    HapticFeedback.selectionClick();
     if (_clienteSeleccionado == null) return;
     Navigator.of(context).push(
       PageRouteBuilder(
@@ -675,8 +634,9 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
           child: Icon(Icons.error_outline_rounded, color: _danger, size: 19)),
         const SizedBox(width: 12),
         Expanded(child: Text(_errorMessage!, style: TextStyle(color: _danger, fontSize: 13, fontWeight: FontWeight.w500))),
-        GestureDetector(
+        _Pulsable(
           onTap: _cargarClientes,
+          radio: 8,
           child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), decoration: BoxDecoration(color: _blue, borderRadius: BorderRadius.circular(8)),
             child: const Text('Reintentar', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))),
         ),
@@ -708,5 +668,59 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
       _clienteSeleccionado = cliente;
       _clienteDetalleSAP = detalle;
     });
+  }
+}
+
+class _Pulsable extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  final double radio;
+
+  const _Pulsable({required this.child, required this.onTap, this.radio = 18});
+
+  @override
+  State<_Pulsable> createState() => _PulsableState();
+}
+
+class _PulsableState extends State<_Pulsable> {
+  bool _presionado = false;
+
+  void _marcar(bool v) {
+    if (_presionado == v) return;
+    setState(() => _presionado = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final radio = BorderRadius.circular(widget.radio);
+    return AnimatedScale(
+      scale: _presionado ? 0.965 : 1,
+      duration: const Duration(milliseconds: 130),
+      curve: Curves.easeOut,
+      child: Stack(children: [
+        widget.child,
+        Positioned.fill(
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: radio,
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              borderRadius: radio,
+              splashColor: Colors.black.withOpacity(0.06),
+              highlightColor: Colors.black.withOpacity(0.03),
+              onTapDown: (_) => _marcar(true),
+              onTapUp: (_) => _marcar(false),
+              onTapCancel: () => _marcar(false),
+              onTap: () {
+                _marcar(false);
+                HapticFeedback.selectionClick();
+                widget.onTap();
+              },
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ),
+      ]),
+    );
   }
 }
