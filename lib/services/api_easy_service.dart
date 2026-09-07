@@ -1058,7 +1058,7 @@ class ApiEasyService {
       final res = await http.Response.fromStream(streamed);
       final tipo = res.headers['content-type'] ?? '';
       if (!tipo.contains('application/json')) {
-        return {'success': false, 'message': 'No se pudo registrar el cuadre (${res.statusCode})'};
+        return {'success': false, 'message': _motivoCuadre(res.statusCode)};
       }
       final data = jsonDecode(utf8.decode(res.bodyBytes));
       final ok = res.statusCode == 200 && data is Map && data['success'] == true;
@@ -1072,6 +1072,23 @@ class ApiEasyService {
       };
     } catch (e) {
       return {'success': false, 'message': e.toString().replaceFirst('Exception: ', '')};
+    }
+  }
+
+  String _motivoCuadre(int codigo) {
+    switch (codigo) {
+      case 400:
+        return 'Faltan datos: revisa el banco, el número del recibo y el comprobante';
+      case 401:
+        return 'Sesión expirada. Inicia sesión de nuevo';
+      case 404:
+        return 'El recaudo no existe o no es tuyo';
+      case 409:
+        return 'Este recaudo ya fue cuadrado o no es un recaudo en efectivo';
+      case 413:
+        return 'La imagen del comprobante es demasiado pesada';
+      default:
+        return 'No se pudo registrar el cuadre ($codigo)';
     }
   }
 
