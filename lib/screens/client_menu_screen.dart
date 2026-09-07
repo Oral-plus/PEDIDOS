@@ -9,6 +9,7 @@ import 'vendor_orders_screen.dart';
 import 'socio_negocio_screen.dart';
 import 'rutero_screen.dart';
 import 'mis_rutas_screen.dart';
+import 'cuadre_caja_screen.dart';
 
 class ClientMenuScreen extends StatefulWidget {
   const ClientMenuScreen({super.key});
@@ -25,6 +26,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
   Map<String, dynamic>? _clienteDetalleSAP;
   bool _isLoadingClientes = true;
   String? _errorMessage;
+  int _cuadresPendientes = 0;
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -67,6 +69,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     _fadeController.forward();
     _slideController.forward();
     _cargarClientes();
+    _cargarCuadresPendientes();
   }
 
   @override
@@ -90,6 +93,14 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
           _errorMessage!.toLowerCase().contains('expirada')) {
         _redirectToLogin();
       }
+    });
+  }
+
+  Future<void> _cargarCuadresPendientes() async {
+    final res = await _api.getRecaudosCuadre(estado: 'pendiente');
+    if (!mounted) return;
+    setState(() {
+      _cuadresPendientes = (res['data'] as List?)?.length ?? 0;
     });
   }
 
@@ -138,6 +149,8 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                       _buildMenuGrid(),
                       const SizedBox(height: 12),
                       _buildMisRutasTile(),
+                      const SizedBox(height: 12),
+                      _buildCuadreCajaTile(),
                       const SizedBox(height: 14),
                       _buildClienteChip(),
                       if (_errorMessage != null) ...[const SizedBox(height: 14), _buildErrorCard()],
@@ -483,6 +496,81 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
                   style: TextStyle(color: _textMuted, fontSize: 11, fontWeight: FontWeight.w500)),
             ]),
           ),
+          Container(
+            width: 32, height: 32,
+            decoration: BoxDecoration(
+              color: _blue.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: const Icon(Icons.arrow_forward_rounded, color: _blue, size: 17),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildCuadreCajaTile() {
+    final hayPendientes = _cuadresPendientes > 0;
+    return GestureDetector(
+      onTap: () async {
+        HapticFeedback.selectionClick();
+        await Navigator.of(context).push(
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const CuadreCajaScreen(),
+            transitionsBuilder: (_, a, __, c) => SlideTransition(
+              position: Tween<Offset>(begin: const Offset(1.0, 0.0), end: Offset.zero)
+                  .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
+              child: c,
+            ),
+            transitionDuration: const Duration(milliseconds: 250),
+          ),
+        );
+        _cargarCuadresPendientes();
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: _white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _border),
+          boxShadow: _softShadow,
+        ),
+        child: Row(children: [
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [_blue, _inkDeep], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(color: _inkDeep.withOpacity(0.28), blurRadius: 10, offset: const Offset(0, 4))],
+            ),
+            child: const Icon(Icons.account_balance_wallet_rounded, color: Colors.white, size: 23),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Cuadre de Caja',
+                  style: TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: -0.2)),
+              const SizedBox(height: 2),
+              Text(
+                hayPendientes
+                    ? '$_cuadresPendientes recaudo${_cuadresPendientes == 1 ? '' : 's'} en efectivo por cuadrar'
+                    : 'Recaudos en efectivo · cliente a cliente',
+                style: TextStyle(
+                    color: hayPendientes ? _danger : _textMuted,
+                    fontSize: 11,
+                    fontWeight: hayPendientes ? FontWeight.w700 : FontWeight.w500),
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+              ),
+            ]),
+          ),
+          if (hayPendientes)
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              decoration: BoxDecoration(color: _danger.withOpacity(0.10), borderRadius: BorderRadius.circular(9)),
+              child: Text('$_cuadresPendientes',
+                  style: TextStyle(color: _danger, fontSize: 12, fontWeight: FontWeight.w900)),
+            ),
           Container(
             width: 32, height: 32,
             decoration: BoxDecoration(

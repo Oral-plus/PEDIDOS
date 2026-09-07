@@ -984,6 +984,97 @@ class ApiEasyService {
     }
   }
 
+  Future<Map<String, dynamic>> getRecaudosCuadre({String estado = 'pendiente'}) async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'data': <Map<String, dynamic>>[], 'message': 'Sesión expirada'};
+    }
+    try {
+      final res = await ApiClient.get(
+        '/api/cuadres/recaudos?estado=$estado',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 20),
+      );
+      if (res is Map && res['success'] == true) {
+        final lista = (res['data'] as List<dynamic>? ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        return {
+          'success': true,
+          'data': lista,
+          'total': res['total'] ?? lista.length,
+          'valorTotal': (res['valorTotal'] as num?)?.toDouble() ?? 0,
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'data': <Map<String, dynamic>>[],
+        'message': e.toString().replaceFirst('Exception: ', ''),
+      };
+    }
+    return {'success': false, 'data': <Map<String, dynamic>>[]};
+  }
+
+  Future<Map<String, dynamic>?> getRecaudoCuadre(int recaudoId) async {
+    if (_token == null || _token!.isEmpty) return null;
+    try {
+      final res = await ApiClient.get(
+        '/api/cuadres/recaudos/$recaudoId',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 20),
+      );
+      if (res is Map && res['success'] == true && res['data'] is Map) {
+        return Map<String, dynamic>.from(res['data'] as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<Map<String, dynamic>> registrarCuadre({
+    required int recaudoId,
+    required String banco,
+    required String numeroRecibo,
+    required String fotoRuta,
+    String observaciones = '',
+  }) async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'message': 'Sesión expirada'};
+    }
+    try {
+      final base = await _baseUrlForRequest();
+      final req = http.MultipartRequest('POST', Uri.parse('$base/api/cuadres'));
+      req.headers['Authorization'] = 'Bearer $_token';
+      req.headers['Accept'] = 'application/json';
+      req.fields['recaudoId'] = '$recaudoId';
+      req.fields['banco'] = banco.trim();
+      req.fields['numeroRecibo'] = numeroRecibo.trim();
+      if (observaciones.trim().isNotEmpty) {
+        req.fields['observaciones'] = observaciones.trim();
+      }
+      req.files.add(await http.MultipartFile.fromPath('foto', fotoRuta));
+      final streamed = await SharedHttp.client.send(req).timeout(const Duration(seconds: 45));
+      final res = await http.Response.fromStream(streamed);
+      final tipo = res.headers['content-type'] ?? '';
+      if (!tipo.contains('application/json')) {
+        return {'success': false, 'message': 'No se pudo registrar el cuadre (${res.statusCode})'};
+      }
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      final ok = res.statusCode == 200 && data is Map && data['success'] == true;
+      return {
+        'success': ok,
+        'message': (data is Map ? data['message']?.toString() : null) ??
+            (ok ? 'Cuadre registrado' : 'No se pudo registrar el cuadre'),
+        'data': (data is Map && data['data'] is Map)
+            ? Map<String, dynamic>.from(data['data'] as Map)
+            : null,
+      };
+    } catch (e) {
+      return {'success': false, 'message': e.toString().replaceFirst('Exception: ', '')};
+    }
+  }
+
   Future<Map<String, dynamic>?> getCarteraCliente(String codigo) {
     return _cache.obtener(
       'cartera:$codigo',

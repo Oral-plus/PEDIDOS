@@ -12,6 +12,7 @@ const productos = require("./modules/productos")
 const sesiones = require("./modules/sesiones")
 const clientesExtra = require("./modules/clientes_extra")
 const talonarios = require("./modules/talonarios")
+const cuadres = require("./modules/cuadres")
 const cache = require("./modules/cache")
 const evidencias = require("./modules/evidencias")
 const multer = require("multer")
@@ -3215,6 +3216,15 @@ evidencias.registrarRutas(app, {
   requireAuth: authenticateToken,
   getPedidosPool: () => pedidosPool,
   sql,
+  log: console,
+})
+
+cuadres.registrarRutas(app, {
+  requireAuth: authenticateToken,
+  getPedidosPool: () => pedidosPool,
+  sql,
+  subida: subidaEvidencias,
+  procesarImagen: evidencias.procesar,
   log: console,
 })
 

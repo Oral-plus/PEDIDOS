@@ -173,6 +173,12 @@ iniciar sesión de nuevo y pedir a Soporte TI la activación de su dispositivo.
   gestor. Sistemas asigna los talonarios en la tabla `TALONARIO` con el prefijo
   del usuario del gestor y el rango de números. Sin unidades disponibles la app
   no permite registrar pagos.
+- **Cuadre de caja**: el gestor cuadra cliente a cliente los recaudos que
+  recibió en efectivo. Por cada recaudo registra el banco al que consignó, el
+  número del recibo de consignación y la foto del comprobante —los tres
+  obligatorios— y, si quiere, una observación. La fecha la pone el servidor y no
+  se puede modificar. Un recaudo solo se cuadra una vez y queda en la tabla
+  `cuadres_caja` con su comprobante en `evidencias_archivos`.
 - **Dispositivos**: con `REQUIRE_DEVICE_ID=true` cada equipo nuevo queda
   pendiente hasta que Soporte TI lo activa desde la app.
 - **Sesiones**: duran como máximo 12 horas y se pueden cerrar desde el servidor.

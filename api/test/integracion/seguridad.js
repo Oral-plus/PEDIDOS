@@ -95,6 +95,9 @@ const RUTAS = [
   ["GET", "/api/talonarios/siguiente"],
   ["GET", "/api/talonarios/causales"],
   ["POST", "/api/talonarios/cancelar", { causal: "Deterioro" }],
+  ["GET", "/api/cuadres/recaudos"],
+  ["GET", "/api/cuadres/recaudos/1"],
+  ["POST", "/api/cuadres", { recaudoId: 1 }],
 ]
 
 ;(async () => {

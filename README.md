@@ -15,7 +15,8 @@ Autor: Steven Villamizar Mendoza (Sistemas, Oral-Plus).
   - `models/`, `providers/`, `utils/` — Dominio y utilidades.
 - `api/` — Backend Node.js (Express + SQL Server).
   - `server.js` — Rutas de clientes, pedidos, recaudos, visitas y evidencias.
-  - `modules/` — Talonarios, dispositivos, sesiones, catálogo, evidencias y caché.
+  - `modules/` — Talonarios, cuadre de caja, dispositivos, sesiones, catálogo,
+    evidencias y caché.
   - `test/integracion/` — Pruebas de aceptación contra un backend en marcha.
   - `sql/` — Scripts de referencia de la base de datos.
   - `Dockerfile`, `docker-compose.yml` — Contenedor del servicio y su caché.
