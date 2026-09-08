@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_easy_service.dart';
+import '../utils/filtro_cliente.dart';
 import '../utils/theme.dart';
 
 Future<bool> showRutaExtraSheet(BuildContext context) async {
@@ -91,15 +92,8 @@ class _RutaExtraSheetState extends State<_RutaExtraSheet> {
     });
   }
 
-  List<Map<String, dynamic>> _calcularFiltrados() {
-    final q = _buscar.text.trim().toLowerCase();
-    if (q.isEmpty) return _clientes;
-    return _clientes.where((c) {
-      final nombre = (c['nombre'] ?? '').toString().toLowerCase();
-      final id = (c['id'] ?? '').toString().toLowerCase();
-      return nombre.contains(q) || id.contains(q);
-    }).toList();
-  }
+  List<Map<String, dynamic>> _calcularFiltrados() =>
+      FiltroCliente.aplicar(_buscar.text, _clientes, FiltroCliente.camposCliente);
 
   bool get _valido =>
       _clienteSel != null &&
@@ -114,7 +108,7 @@ class _RutaExtraSheetState extends State<_RutaExtraSheet> {
 
     final res = await _api.crearRutaExtra(
       clienteId: (_clienteSel!['id'] ?? '').toString(),
-      clienteNombre: (_clienteSel!['nombre'] ?? '').toString(),
+      clienteNombre: FiltroCliente.nombreParaMostrar(_clienteSel),
       ciudad: (_clienteSel!['ciudad'] ?? '').toString(),
       motivo: _motivoSel!,
       observacion: _obs.text.trim(),
@@ -255,7 +249,7 @@ class _RutaExtraSheetState extends State<_RutaExtraSheet> {
           ),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text((c['nombre'] ?? '').toString(),
+            Text(FiltroCliente.nombreParaMostrar(c),
                 style: TextStyle(color: _textDark, fontSize: 13, fontWeight: FontWeight.w800),
                 maxLines: 1, overflow: TextOverflow.ellipsis),
             Text('${c['id']}${(c['ciudad'] ?? '').toString().isNotEmpty ? ' · ${c['ciudad']}' : ''}',
@@ -274,7 +268,7 @@ class _RutaExtraSheetState extends State<_RutaExtraSheet> {
         controller: _buscar,
         style: TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w600),
         decoration: InputDecoration(
-          hintText: 'Buscar cliente por nombre o código…',
+          hintText: 'Código, nombre del cliente o del negocio…',
           hintStyle: TextStyle(color: _textMuted, fontSize: 13.5),
           prefixIcon: Icon(Icons.search_rounded, color: _textMuted, size: 20),
           filled: true,
@@ -314,7 +308,7 @@ class _RutaExtraSheetState extends State<_RutaExtraSheet> {
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           child: Row(children: [
                             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text((c['nombre'] ?? '').toString(),
+                              Text(FiltroCliente.nombreParaMostrar(c),
                                   style: TextStyle(color: _textDark, fontSize: 12.5, fontWeight: FontWeight.w700),
                                   maxLines: 1, overflow: TextOverflow.ellipsis),
                               Text('${c['id']}${(c['ciudad'] ?? '').toString().isNotEmpty ? ' · ${c['ciudad']}' : ''}',

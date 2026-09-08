@@ -801,7 +801,7 @@ class ApiEasyService {
     }
   }
 
-  Future<Map<String, dynamic>> getDocumentosCliente(String codigo) async {
+  Future<Map<String, dynamic>> getDocumentosCliente(String codigo, {bool forzar = false}) async {
     if (_token == null || _token!.isEmpty) {
       return {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0};
     }
@@ -809,6 +809,7 @@ class ApiEasyService {
       'documentos:$codigo',
       const Duration(minutes: 2),
       () => _getDocumentosClienteRed(codigo),
+      forzar: forzar,
     );
     return datos ?? {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0};
   }
@@ -1092,11 +1093,12 @@ class ApiEasyService {
     }
   }
 
-  Future<Map<String, dynamic>?> getCarteraCliente(String codigo) {
+  Future<Map<String, dynamic>?> getCarteraCliente(String codigo, {bool forzar = false}) {
     return _cache.obtener(
       'cartera:$codigo',
       const Duration(minutes: 2),
       () => _getCarteraClienteRed(codigo),
+      forzar: forzar,
     );
   }
 

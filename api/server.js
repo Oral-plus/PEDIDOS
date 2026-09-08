@@ -986,6 +986,7 @@ app.get("/api/clientes", authenticateToken, async (req, res) => {
         SELECT TOP (@limite)
           T0.CardCode  AS id,
           T0.CardName  AS nombre,
+          T0.CardFName AS nombreComercial,
           T0.Address   AS direccion,
           T0.Phone1    AS telefono,
           T0.E_Mail    AS correo,
@@ -999,6 +1000,7 @@ app.get("/api/clientes", authenticateToken, async (req, res) => {
     const clientes = result.recordset.map((c) => ({
       id: c.id || "",
       nombre: c.nombre || "",
+      nombreComercial: c.nombreComercial || "",
       direccion: c.direccion || "",
       telefono: c.telefono || "",
       correo: c.correo || "",
@@ -1024,6 +1026,7 @@ app.get("/api/clientes/:codigo", authenticateToken, async (req, res) => {
         SELECT 
           T0.CardCode   AS id,
           T0.CardName   AS nombre,
+          T0.CardFName  AS nombreComercial,
           T0.Address    AS direccion,
           T0.Phone1     AS telefono,
           T0.E_Mail     AS correo,
@@ -1043,6 +1046,7 @@ app.get("/api/clientes/:codigo", authenticateToken, async (req, res) => {
       data: {
         id: c.id || "",
         nombre: c.nombre || "",
+        nombreComercial: c.nombreComercial || "",
         direccion: c.direccion || "",
         telefono: c.telefono || "",
         correo: c.correo || "",
@@ -1150,7 +1154,7 @@ app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => 
         .input("cardCode", sql.VarChar, cardCode)
         .query(`
           SELECT
-            T0.CardCode, T0.CardName, T0.Address, T0.Phone1, T0.E_Mail,
+            T0.CardCode, T0.CardName, T0.CardFName, T0.Address, T0.Phone1, T0.E_Mail,
             T0.Balance, T0.City, T0.SlpCode,
             T0.GroupCode, T0.U_CANAL_DISTRIBUCION, T0.ListNum,
             T0.CreditLine, T0.Discount,
@@ -1213,6 +1217,7 @@ app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => 
       success: true,
       data: {
         nombre: client.CardName || "",
+        nombreComercial: client.CardFName || "",
         direccion: client.Address || "",
         telefono: client.Phone1 || "",
         correo: client.E_Mail || "",

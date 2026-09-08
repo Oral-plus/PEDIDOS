@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_easy_service.dart';
 import '../utils/app_assets.dart';
+import '../utils/filtro_cliente.dart';
 import '../utils/price_utils.dart';
 
 class RecaudosScreen extends StatefulWidget {
   final String codigoCliente;
   final String nombreCliente;
+  final String nombreComercial;
   final Map<String, dynamic>? pago;
   final List<String> fotos;
 
@@ -14,6 +16,7 @@ class RecaudosScreen extends StatefulWidget {
     super.key,
     required this.codigoCliente,
     this.nombreCliente = '',
+    this.nombreComercial = '',
     this.pago,
     this.fotos = const [],
   });
@@ -41,6 +44,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
   final Map<int, double> _abonos = {};
   final TextEditingController _recaudoCtrl = TextEditingController();
   final TextEditingController _notas = TextEditingController();
+  final TextEditingController _filtroDocs = TextEditingController();
 
   late final String _numeroRecaudo;
 
@@ -55,6 +59,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     final obs = (widget.pago?['observacion'] ?? '').toString().trim();
     if (obs.isNotEmpty) _notas.text = obs;
     _recaudoCtrl.addListener(() => setState(() {}));
+    _filtroDocs.addListener(_onFiltroDocs);
     _cargar();
   }
 
@@ -62,7 +67,13 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
   void dispose() {
     _recaudoCtrl.dispose();
     _notas.dispose();
+    _filtroDocs.removeListener(_onFiltroDocs);
+    _filtroDocs.dispose();
     super.dispose();
+  }
+
+  void _onFiltroDocs() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _cargar() async {
@@ -191,15 +202,74 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     ]);
   }
 
+  List<Map<String, dynamic>> get _docsFiltrados => FiltroCliente.aplicar(
+        _filtroDocs.text,
+        _docs,
+        (d) => FiltroCliente.camposDocumento(d, cliente: {
+          'id': widget.codigoCliente,
+          'nombre': widget.nombreCliente,
+          'nombreComercial': widget.nombreComercial,
+        }),
+      );
+
   Widget _tabDocumentos() {
     if (_docs.isEmpty) {
       return _vacio(Icons.description_outlined, 'Sin documentos abiertos');
     }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      itemCount: _docs.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (_, i) => _docCard(_docs[i]),
+    final docs = _docsFiltrados;
+    return Column(children: [
+      _filtroDocumentos(docs.length),
+      Expanded(
+        child: docs.isEmpty
+            ? _vacio(Icons.search_off_rounded, 'Ningún documento coincide con el filtro')
+            : ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                itemCount: docs.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (_, i) => _docCard(docs[i]),
+              ),
+      ),
+    ]);
+  }
+
+  Widget _filtroDocumentos(int visibles) {
+    final filtrando = FiltroCliente.terminos(_filtroDocs.text).isNotEmpty;
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        TextField(
+          controller: _filtroDocs,
+          textInputAction: TextInputAction.search,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _ink),
+          decoration: InputDecoration(
+            hintText: 'Código, nombre del cliente o del negocio',
+            hintStyle: const TextStyle(color: _gray, fontWeight: FontWeight.w500, fontSize: 13.5),
+            prefixIcon: const Icon(Icons.search_rounded, color: _gray, size: 20),
+            suffixIcon: filtrando
+                ? IconButton(
+                    icon: const Icon(Icons.close_rounded, color: _gray, size: 18),
+                    onPressed: () => _filtroDocs.clear(),
+                  )
+                : null,
+            isDense: true,
+            filled: true,
+            fillColor: _surface,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        if (filtrando) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Mostrando $visibles de ${_docs.length} documentos · los cruzados siguen contando en el total',
+            style: const TextStyle(color: _gray, fontSize: 11.5, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ]),
     );
   }
 
@@ -237,7 +307,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text('Factura ${d['numFactura'] ?? d['docNum']}',
+                  child: Text('Factura ${d['docNum'] ?? '—'}',
                       style: const TextStyle(color: _ink, fontSize: 13.5, fontWeight: FontWeight.w800),
                       maxLines: 1, overflow: TextOverflow.ellipsis),
                 ),
@@ -332,9 +402,10 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Text('Factura ${d['numFactura'] ?? d['docNum']}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+        title: Text('Factura ${d['docNum'] ?? '—'}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           _detRow('N° documento', '${d['docNum'] ?? '—'}'),
+          _detRow('Referencia', '${d['numFactura'] ?? '—'}'),
           _detRow('Fecha documento', '${d['docDate'] ?? '—'}'),
           _detRow('Fecha vencimiento', '${d['dueDate'] ?? '—'}'),
           _detRow('Total factura', _pesos(_n(d['total']))),

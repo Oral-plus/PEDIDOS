@@ -9,6 +9,7 @@ import '../providers/visita_activa_provider.dart';
 import '../services/api_easy_service.dart';
 import '../utils/theme.dart';
 import '../widgets/app_header.dart';
+import 'cartera_screen.dart';
 import 'encuesta_visita_screen.dart';
 import 'forma_pago_screen.dart';
 import 'gestion_pedido_screen.dart';
@@ -404,12 +405,25 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     }
   }
 
+  Future<void> _abrirCartera() async {
+    HapticFeedback.selectionClick();
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CarteraScreen(
+          codigoInicial: _codigo.isEmpty ? null : _codigo,
+          nombreInicial: _nombreCliente,
+        ),
+      ),
+    );
+  }
+
   Future<Map<String, dynamic>?> _abrirFormaPago() async {
     if (_guardando) return null;
     final pago = await Navigator.of(context).push<Map<String, dynamic>>(
       MaterialPageRoute(
         builder: (_) => FormaPagoScreen(
           nombreCliente: _nombreCliente,
+          nombreComercial: (_cartera?['nombreComercial'] ?? '').toString(),
           numeroCuenta: _codigo,
           totalDocumentos: (_cartera?['totalFacturasAbiertas'] as num?)?.toInt() ?? 0,
           documentosPorCruzar: (_cartera?['facturasVencidas'] as num?)?.toInt() ?? 0,
@@ -647,8 +661,11 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
                 case 'pedido':
                   _irAPedido();
                   break;
-                case 'cartera':
+                case 'pagos':
                   _abrirFormaPago();
+                  break;
+                case 'cartera':
+                  _abrirCartera();
                   break;
                 case 'finalizar':
                   _finalizarVisita();
@@ -657,7 +674,8 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
             },
             itemBuilder: (_) => [
               _menuItem('pedido', Icons.shopping_cart_rounded, 'Pedido', _primary),
-              _menuItem('cartera', Icons.account_balance_wallet_rounded, 'Cartera y pago', AppTheme.accentColor),
+              _menuItem('pagos', Icons.payments_rounded, 'Pagos', AppTheme.accentColor),
+              _menuItem('cartera', Icons.account_balance_wallet_rounded, 'Cartera', AppTheme.darkBlue),
               _menuItem('finalizar', Icons.flag_rounded, 'Finalizar visita', AppTheme.successColor),
             ],
           ),

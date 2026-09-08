@@ -9,6 +9,7 @@ import 'recaudos_screen.dart';
 
 class FormaPagoScreen extends StatefulWidget {
   final String nombreCliente;
+  final String nombreComercial;
   final String numeroCuenta;
   final int totalDocumentos;
   final int documentosPorCruzar;
@@ -22,6 +23,7 @@ class FormaPagoScreen extends StatefulWidget {
   const FormaPagoScreen({
     super.key,
     this.nombreCliente = '',
+    this.nombreComercial = '',
     this.numeroCuenta = '',
     this.totalDocumentos = 0,
     this.documentosPorCruzar = 0,
@@ -1058,6 +1060,7 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
         builder: (_) => RecaudosScreen(
           codigoCliente: widget.numeroCuenta,
           nombreCliente: widget.nombreCliente,
+          nombreComercial: widget.nombreComercial,
           pago: {
             'metodo': _metodo,
             'banco': _banco.text.trim(),
