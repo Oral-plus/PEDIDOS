@@ -25,7 +25,6 @@ class RepositorioProductos {
     this.imagenes = imagenes
     this.log = log || console
     this.bodega = env.SAP_BODEGA || "50"
-    this.grupos = fuente.gruposDesdeEnv(env.SAP_GRUPOS_PT)
     this.ttlMs = (Number.parseInt(env.CATALOGO_TTL_MIN, 10) || 5) * 60 * 1000
     this.modoFuente = (env.CATALOGO_FUENTE || "auto").toLowerCase()
     this.sl = new ServiceLayer({
@@ -107,7 +106,7 @@ class RepositorioProductos {
   }
 
   async _leerDeSap() {
-    const opciones = { bodega: this.bodega, grupos: this.grupos }
+    const opciones = { bodega: this.bodega }
     const usarSl = this.modoFuente !== "sql" && this.sl.configurado
     if (usarSl) {
       for (let intento = 1; intento <= 2; intento++) {

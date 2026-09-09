@@ -37,7 +37,7 @@ servicio:
 | `SL_URL`, `SL_COMPANY_DB`, `SL_USER`, `SL_PASSWORD` | Service Layer de SAP |
 | `SL_TLS_INSECURE` | `true` si el Service Layer usa certificado propio |
 | `SL_TIMEOUT_MS`, `SL_PAGE_SIZE` | Tiempo de espera y tamaño de página del catálogo |
-| `SAP_BODEGA`, `SAP_GRUPOS_PT` | Bodega y grupos de artículos del catálogo |
+| `SAP_BODEGA` | Bodega de la que se toma el stock del catálogo |
 | `CATALOGO_FUENTE` | `auto`, `sl` o `sql` |
 | `CATALOGO_TTL_MIN` | Minutos que el catálogo permanece en memoria |
 | `REDIS_URL` | Caché de lecturas; vacío la deshabilita sin afectar el servicio |
