@@ -11,7 +11,7 @@ function gruposDesdeEnv(valor) {
 
 async function leerPorServiceLayer(sl, { bodega, grupos }) {
   const filtroGrupos = grupos.map((g) => `ItemsGroupCode eq ${g}`).join(" or ")
-  const filtro = `SalesItem eq 'tYES' and Frozen eq 'tNO' and (${filtroGrupos})`
+  const filtro = `SalesItem eq 'tYES' and Valid eq 'tYES' and (${filtroGrupos})`
   const select = "ItemCode,ItemName,ItemsGroupCode,User_Text,ItemWarehouseInfoCollection,ItemPrices"
 
   const [items, gruposSap] = await Promise.all([
@@ -53,13 +53,13 @@ async function leerPorSql(pool, sql, { bodega, grupos }) {
     FROM OITM T0
     JOIN OITB T2 ON T2.ItmsGrpCod = T0.ItmsGrpCod
     LEFT JOIN OITW T1 ON T1.ItemCode = T0.ItemCode AND T1.WhsCode = @bodega
-    WHERE T0.SellItem = 'Y' AND T0.frozenFor = 'N' AND ${enGrupos}
+    WHERE T0.SellItem = 'Y' AND T0.validFor = 'Y' AND ${enGrupos}
     ORDER BY T0.ItemName;
 
     SELECT P.ItemCode, P.PriceList, P.Price
     FROM ITM1 P
     JOIN OITM T0 ON T0.ItemCode = P.ItemCode
-    WHERE P.Price > 0 AND T0.SellItem = 'Y' AND T0.frozenFor = 'N' AND ${enGrupos};
+    WHERE P.Price > 0 AND T0.SellItem = 'Y' AND T0.validFor = 'Y' AND ${enGrupos};
   `)
 
   const precios = new Map()
