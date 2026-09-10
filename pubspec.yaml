@@ -2,7 +2,7 @@ name: skypagos
 description: "Portal de pedidos ORAL-PLUS"
 publish_to: "none"
 
-version: 1.0.18+19
+version: 1.0.19+20
 
 environment:
   sdk: ">=3.1.0 <4.0.0"
@@ -32,6 +32,7 @@ dependencies:
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
   cached_network_image: ^3.4.1
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:

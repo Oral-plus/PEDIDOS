@@ -1,5 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../config/app_config.dart';
 import '../services/api_easy_service.dart';
 import '../utils/app_assets.dart';
 import '../utils/theme.dart';
@@ -406,6 +408,19 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
           contador: _cuadresPendientes > 0 ? _cuadresPendientes : null,
         )),
       ]),
+      const SizedBox(height: 12),
+      Row(children: [
+        Expanded(child: _menuTile(
+          icon: Icons.event_note_rounded,
+          title: 'Programación',
+          subtitle: 'Abrir en el navegador',
+          color: _blue,
+          active: true,
+          onTap: _abrirProgramacion,
+        )),
+        const SizedBox(width: 12),
+        const Expanded(child: SizedBox()),
+      ]),
     ]);
   }
 
@@ -541,6 +556,24 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
       ),
     );
     _cargarCuadresPendientes();
+  }
+
+  Future<void> _abrirProgramacion() async {
+    var abierto = false;
+    try {
+      abierto = await launchUrl(Uri.parse(AppConfig.urlProgramacion), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      abierto = false;
+    }
+    if (!mounted || abierto) return;
+    await showAppConfirm(
+      context,
+      title: 'No se pudo abrir la programación',
+      message: 'Revisa que el dispositivo tenga un navegador disponible.',
+      confirmText: 'Entendido',
+      cancelText: 'Cerrar',
+      icon: Icons.public_off_rounded,
+    );
   }
 
   Widget _buildClienteChip() {

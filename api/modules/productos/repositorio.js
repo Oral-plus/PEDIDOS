@@ -39,6 +39,7 @@ class RepositorioProductos {
 
     this.catalogo = null
     this.config = new Map()
+    this.parejaImagen = new Map()
     this.refrescando = null
     this.ultimoError = null
     this.listasCliente = new Map()
@@ -68,6 +69,14 @@ class RepositorioProductos {
     const mapa = new Map()
     for (const fila of r.recordset) mapa.set(fila.item_code, fila)
     this.config = mapa
+
+    const parejas = new Map()
+    for (const cfg of mapa.values()) {
+      if (!cfg.variante_de || cfg.variante_de === cfg.item_code) continue
+      parejas.set(cfg.item_code, cfg.variante_de)
+      if (!parejas.has(cfg.variante_de)) parejas.set(cfg.variante_de, cfg.item_code)
+    }
+    this.parejaImagen = parejas
   }
 
   async obtenerCatalogo({ forzar = false } = {}) {
@@ -149,9 +158,16 @@ class RepositorioProductos {
     return CATEGORIA_POR_GRUPO[item.grupoNombre] || item.grupoNombre || "Otros"
   }
 
+  codigoImagen(codigo) {
+    if (this.imagenes.existe(codigo)) return codigo
+    const pareja = this.parejaImagen.get(codigo)
+    return pareja && this.imagenes.existe(pareja) ? pareja : null
+  }
+
   urlImagen(codigo) {
-    if (!this.imagenes.existe(codigo)) return null
-    return `/api/productos/imagen/${encodeURIComponent(codigo)}?v=${this.imagenes.version(codigo)}`
+    const fuente = this.codigoImagen(codigo)
+    if (!fuente) return null
+    return `/api/productos/imagen/${encodeURIComponent(fuente)}?v=${this.imagenes.version(fuente)}`
   }
 
   async paraVendedor(listaPrecios) {
@@ -232,6 +248,7 @@ class RepositorioProductos {
         descripcionSap: item.descripcion,
         stock: item.stock,
         imagenUrl: this.urlImagen(item.codigo),
+        imagenPropia: this.imagenes.existe(item.codigo),
         actualizadoPor: cfg ? cfg.actualizado_por : null,
       })
     }

@@ -265,7 +265,10 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
     if (res['success'] != true && _sesionExpirada(res)) return _volverAlLogin();
     final ok = res['success'] == true;
     if (ok) {
-      setState(() => p['imagenUrl'] = res['imagenUrl']);
+      setState(() {
+        p['imagenUrl'] = res['imagenUrl'];
+        p['imagenPropia'] = true;
+      });
       CatalogoService().invalidar();
     }
     _snack(ok ? 'Foto guardada para $codigo' : (res['message']?.toString() ?? 'No se pudo subir la foto'), ok);
@@ -294,7 +297,10 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
     if (!mounted) return;
     final ok = res['success'] == true;
     if (ok) {
-      setState(() => p['imagenUrl'] = null);
+      setState(() {
+        p['imagenUrl'] = null;
+        p['imagenPropia'] = false;
+      });
       CatalogoService().invalidar();
     }
     _snack(ok ? 'Foto retirada de $codigo' : (res['message']?.toString() ?? 'No se pudo quitar'), ok);
@@ -853,6 +859,7 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
     final textura = (p['textura'] ?? '').toString();
     final descripcion = (p['descripcion'] ?? '').toString();
     final url = _urlImagen(p);
+    final imagenPropia = p['imagenPropia'] != false && url.isNotEmpty;
     final subiendo = _codigoSubiendo == codigo;
 
     return Container(
@@ -899,6 +906,7 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
                 if (!visible) _chip('OCULTO', _rojo),
                 if (varianteDe.isNotEmpty) _chip('Variante ${textura.isNotEmpty ? textura : ''} de $varianteDe'.trim(), _ambar),
                 if (url.isEmpty) _chip('SIN FOTO', _ambar),
+                if (url.isNotEmpty && !imagenPropia) _chip('FOTO COMPARTIDA CON $varianteDe', _accent),
               ]),
             ]),
           ),
@@ -912,10 +920,10 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
           TextButton.icon(
             onPressed: subiendo ? null : () => _subirFoto(p),
             icon: const Icon(Icons.photo_camera_rounded, size: 16),
-            label: Text(url.isEmpty ? 'Subir foto' : 'Cambiar foto'),
+            label: Text(imagenPropia ? 'Cambiar foto' : 'Subir foto'),
             style: TextButton.styleFrom(foregroundColor: _accent),
           ),
-          if (url.isNotEmpty)
+          if (imagenPropia)
             TextButton.icon(
               onPressed: subiendo ? null : () => _quitarFoto(p),
               icon: const Icon(Icons.hide_image_outlined, size: 16),

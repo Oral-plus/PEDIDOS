@@ -14,4 +14,12 @@ void main() {
     expect(uri.host, isNotEmpty);
     expect(AppConfig.apiUrlProduccion.endsWith('/'), isFalse);
   });
+
+  test('programacion apunta al rutero web y es https valido', () {
+    expect(AppConfig.urlProgramacion, AppConfig.urlProgramacionPorDefecto);
+    final uri = Uri.parse(AppConfig.urlProgramacion);
+    expect(uri.scheme, 'https');
+    expect(uri.host, 'oral-plus.com');
+    expect(uri.path, '/RUTERO/login.php');
+  });
 }

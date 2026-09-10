@@ -102,13 +102,28 @@ async function esperar() {
     original && suave ? `${original.nombre} | ${suave.nombre}` : "falta alguna de las dos")
   const ninos = ["50280130", "50360200", "50360407", "50360408"].filter((c) => productos.some((p) => p.codigo === c))
   ok("catálogo: niño y niña salen por separado", ninos.length >= 2, ninos.join(", "))
+  const mismaFoto = (a, b) => {
+    const x = productos.find((p) => p.codigo === a)
+    const y = productos.find((p) => p.codigo === b)
+    return x && y && x.imagenUrl && x.imagenUrl === y.imagenUrl
+  }
+  ok("catálogo: medio y suave comparten la misma foto (sin duplicarla)", mismaFoto("50360251", "50360256"),
+    (productos.find((p) => p.codigo === "50360256") || {}).imagenUrl || "sin foto")
+  ok("catálogo: niño y niña comparten la misma foto", mismaFoto("50360407", "50360408"),
+    (productos.find((p) => p.codigo === "50360408") || {}).imagenUrl || "sin foto")
   ok("catálogo: los artículos sin stock se entregan (disponibles, con aviso de sin stock)", productos.every((p) => typeof p.disponible === "boolean") && productos.some((p) => p.stock <= 0 && p.disponible === true && /sin stock/i.test(p.mensajeEstado)))
   const r304 = await llamar("GET", `/api/productos?cliente=${encodeURIComponent(cliente)}`, { token: vendedor, headers: { "If-None-Match": r1.headers.etag } })
   ok("catálogo: If-None-Match responde 304", r304.status === 304)
 
   const pedidos = await new sql.ConnectionPool(cfgDb(process.env.PEDIDOS_DB_NAME || "Pedidos")).connect()
   const t = await pedidos.request().query("SELECT COUNT(*) AS n, MIN(ancho) AS minAncho, MAX(ancho) AS maxAncho, MAX(tamano) AS maxTam FROM dbo.productos_imagenes")
-  ok("BD: tabla productos_imagenes con las 76 fotos migradas", t.recordset[0].n >= 76, `${t.recordset[0].n} filas, ancho ${t.recordset[0].minAncho}-${t.recordset[0].maxAncho} px, máx ${Math.round(t.recordset[0].maxTam / 1024)} KB`)
+  ok("BD: tabla productos_imagenes con las fotos migradas", t.recordset[0].n >= 75, `${t.recordset[0].n} filas, ancho ${t.recordset[0].minAncho}-${t.recordset[0].maxAncho} px, máx ${Math.round(t.recordset[0].maxTam / 1024)} KB`)
+  const dupVar = await pedidos.request().query(`
+    SELECT COUNT(*) AS n
+    FROM dbo.productos_imagenes i
+    JOIN dbo.productos_config c ON c.item_code = i.item_code AND c.variante_de IS NOT NULL
+    JOIN dbo.productos_imagenes p ON p.item_code = c.variante_de`)
+  ok("BD: ninguna variante guarda su propia copia de la foto del par", dupVar.recordset[0].n === 0, `${dupVar.recordset[0].n} duplicadas`)
   ok("BD: ninguna foto supera 400 px", t.recordset[0].maxAncho <= 400)
   const img1 = await llamar("GET", original.imagenUrl, { raw: true })
   ok("imagen migrada: 200 image/webp desde la BD con caché larga", img1.status === 200 && /image\/webp/.test(img1.headers["content-type"]) && /immutable/.test(img1.headers["cache-control"]), `${img1.buf.length} bytes`)
