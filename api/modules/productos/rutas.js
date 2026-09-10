@@ -109,6 +109,7 @@ function registrarRutas(app, { repositorio, imagenes, requireAuth, requireSoport
 
   app.post("/api/productos/refrescar", requireSoporte, async (req, res) => {
     try {
+      await imagenes.cargarVersiones()
       const catalogo = await repositorio.obtenerCatalogo({ forzar: true })
       res.json({ success: true, articulos: catalogo.items.size, fuente: catalogo.fuente })
     } catch (e) {

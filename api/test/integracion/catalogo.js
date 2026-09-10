@@ -131,6 +131,10 @@ async function esperar() {
   ok("imagen: If-None-Match responde 304", img304.status === 304)
 
   const codigoPrueba = "50360269"
+  const pedidosPrev = await new sql.ConnectionPool(cfgDb(process.env.PEDIDOS_DB_NAME || "Pedidos")).connect()
+  const previa = await pedidosPrev.request().input("c", sql.NVarChar, codigoPrueba)
+    .query("SELECT contenido, mime, tamano, ancho, alto, version, actualizado_por FROM dbo.productos_imagenes WHERE item_code = @c")
+  const fotoPrevia = previa.recordset[0] || null
   const rutaPng = path.join(RAIZ_APP, "assets_originales", "CEPILLOS", "RISTRACEPILLO.png")
   const hayOriginal = fs.existsSync(rutaPng)
   const png = hayOriginal
@@ -140,8 +144,10 @@ async function esperar() {
   const up = await llamar("PUT", `/api/productos/${codigoPrueba}/imagen`, { token: soporte, body: mp.body, headers: mp.headers })
   ok("soporte: subida de foto 200", up.status === 200 && up.json.imagenUrl, up.json && up.json.imagenUrl)
   const img2 = await llamar("GET", up.json.imagenUrl, { raw: true })
-  if (hayOriginal) ok("paridad: la foto subida por Soporte es byte a byte igual a la migrada", img2.status === 200 && img1.buf.equals(img2.buf), `${img1.buf.length} vs ${img2.buf.length} bytes`)
-  else ok("subida: la foto de prueba se sirve como webp (paridad omitida, sin PNG original)", img2.status === 200 && String(img2.headers["content-type"]).includes("image/webp"))
+  const sharp = require(path.join(process.cwd(), "node_modules", "sharp"))
+  const esperado = await sharp(png).rotate().resize(400, 400, { fit: "inside", withoutEnlargement: true }).webp({ quality: 85 }).toBuffer()
+  ok("paridad: la foto servida es byte a byte el webp 400 px del original subido", img2.status === 200 && esperado.equals(img2.buf), `${esperado.length} vs ${img2.buf.length} bytes`)
+  ok("subida: la foto se sirve como webp", img2.status === 200 && String(img2.headers["content-type"]).includes("image/webp"))
   const fila = await pedidos.request().input("c", sql.NVarChar, codigoPrueba).query("SELECT tamano, ancho, alto, mime, actualizado_por FROM dbo.productos_imagenes WHERE item_code = @c")
   ok("BD: la subida quedó con mime webp, 400 px y usuario", fila.recordset[0] && fila.recordset[0].mime === "image/webp" && fila.recordset[0].ancho === 400 && fila.recordset[0].actualizado_por && fila.recordset[0].actualizado_por !== "migracion", JSON.stringify(fila.recordset[0]))
   const r2 = await llamar("GET", `/api/productos?cliente=${encodeURIComponent(cliente)}`, { token: vendedor })
@@ -153,6 +159,19 @@ async function esperar() {
   const r3 = await llamar("GET", `/api/productos?cliente=${encodeURIComponent(cliente)}`, { token: vendedor })
   const cera3 = (r3.json.productos || []).find((p) => p.codigo === codigoPrueba)
   ok("limpieza: foto de prueba eliminada de la BD y del catálogo", del.status === 200 && quedo.recordset[0].n === 0 && cera3 && !cera3.imagenUrl)
+  if (fotoPrevia) {
+    await pedidosPrev.request()
+      .input("c", sql.NVarChar, codigoPrueba).input("contenido", sql.VarBinary(sql.MAX), fotoPrevia.contenido)
+      .input("mime", sql.NVarChar, fotoPrevia.mime).input("tamano", sql.Int, fotoPrevia.tamano)
+      .input("ancho", sql.Int, fotoPrevia.ancho).input("alto", sql.Int, fotoPrevia.alto)
+      .input("version", sql.BigInt, fotoPrevia.version).input("por", sql.NVarChar, fotoPrevia.actualizado_por)
+      .query(`INSERT INTO dbo.productos_imagenes (item_code, contenido, mime, tamano, ancho, alto, version, actualizado_por)
+              VALUES (@c, @contenido, @mime, @tamano, @ancho, @alto, @version, @por)`)
+    const rest = await pedidosPrev.request().input("c", sql.NVarChar, codigoPrueba).query("SELECT COUNT(*) AS n FROM dbo.productos_imagenes WHERE item_code = @c")
+    ok("limpieza: se restaura la foto que el artículo tenía antes de la prueba", rest.recordset[0].n === 1, `${fotoPrevia.tamano} bytes`)
+    await llamar("POST", "/api/productos/refrescar", { token: soporte })
+  }
+  await pedidosPrev.close()
   ok("no existe carpeta api/data (todo en BD)", !fs.existsSync(path.join(process.cwd(), "data")))
   const adm = await llamar("GET", "/api/productos/admin", { token: soporte })
   ok("admin: lista completa", adm.status === 200 && adm.json.productos.length >= 200, `${adm.json && adm.json.productos.length} artículos`)
