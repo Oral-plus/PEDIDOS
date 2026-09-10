@@ -96,7 +96,12 @@ async function esperar() {
   ok("catálogo: al menos 60 productos con imagen migrada (desde la BD)", conImagen >= 60, `${conImagen} con imagen`)
   ok("catálogo: ortodoncia presente", productos.some((p) => p.codigo === "50360269" && p.categoria === "Ortodoncia"))
   const original = productos.find((p) => p.codigo === "50360251")
-  ok("catálogo: Cepillo Original con variante Suave", original && original.variantes.some((v) => v.codigo === "50360256"))
+  const suave = productos.find((p) => p.codigo === "50360256")
+  ok("catálogo: medio y suave son referencias independientes, no variantes agrupadas",
+    original && suave && original.variantes.length === 0 && suave.variantes.length === 0,
+    original && suave ? `${original.nombre} | ${suave.nombre}` : "falta alguna de las dos")
+  const ninos = ["50280130", "50360200", "50360407", "50360408"].filter((c) => productos.some((p) => p.codigo === c))
+  ok("catálogo: niño y niña salen por separado", ninos.length >= 2, ninos.join(", "))
   ok("catálogo: los artículos sin stock se entregan (disponibles, con aviso de sin stock)", productos.every((p) => typeof p.disponible === "boolean") && productos.some((p) => p.stock <= 0 && p.disponible === true && /sin stock/i.test(p.mensajeEstado)))
   const r304 = await llamar("GET", `/api/productos?cliente=${encodeURIComponent(cliente)}`, { token: vendedor, headers: { "If-None-Match": r1.headers.etag } })
   ok("catálogo: If-None-Match responde 304", r304.status === 304)

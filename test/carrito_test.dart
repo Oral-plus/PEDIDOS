@@ -90,6 +90,25 @@ void main() {
       expect(cart.itemCount, 2);
     });
 
+    test('dos referencias distintas con el mismo nombre son lineas separadas', () {
+      final cart = CartProvider();
+      cart.addItem(_producto(title: 'CEP ORIGINAL', codigoSap: '50360251'));
+      cart.addItem(_producto(title: 'CEP ORIGINAL', codigoSap: '50360256'));
+      expect(cart.items.length, 2);
+      expect(cart.items.map((i) => i.codigoSap), containsAll(['50360251', '50360256']));
+    });
+
+    test('addItem devuelve el id de la linea y cantidadDe lo consulta', () {
+      final cart = CartProvider();
+      final id = cart.addItem(_producto());
+      expect(cart.cantidadDe(id), 1);
+      cart.addItem(_producto());
+      expect(cart.cantidadDe(id), 2);
+      cart.updateQuantity(id, 7);
+      expect(cart.cantidadDe(id), 7);
+      expect(cart.cantidadDe('inexistente'), 0);
+    });
+
     test('updateQuantity a cero elimina la linea', () {
       final cart = CartProvider();
       cart.addItem(_producto());

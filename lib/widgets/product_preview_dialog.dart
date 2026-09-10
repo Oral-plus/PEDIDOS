@@ -362,8 +362,8 @@ class ProductPreviewDialog extends StatelessWidget {
                       if (product['hasTextureOptions'] == true) {
                         onShowTextureSelection(product);
                       } else {
-                        onAddToCart(product);
                         Navigator.of(context).pop();
+                        onAddToCart(product);
                       }
                     }
                   : null,

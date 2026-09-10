@@ -30,8 +30,14 @@ class CartProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addItem(Map<String, dynamic> product) {
-    final String itemId = '${product['title']}_${product['textura'] ?? 'default'}';
+  int cantidadDe(String id) {
+    final index = _items.indexWhere((item) => item.id == id);
+    return index >= 0 ? _items[index].quantity : 0;
+  }
+
+  String addItem(Map<String, dynamic> product) {
+    final codigo = (product['codigoSap'] ?? product['title'] ?? '').toString();
+    final String itemId = '${codigo}_${product['textura'] ?? 'default'}';
     final existingIndex = _items.indexWhere((item) => item.id == itemId);
 
     if (existingIndex >= 0) {
@@ -49,6 +55,7 @@ class CartProvider extends ChangeNotifier {
       ));
     }
     _actualizar();
+    return itemId;
   }
 
   void removeItem(String id) {

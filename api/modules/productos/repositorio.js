@@ -158,21 +158,12 @@ class RepositorioProductos {
     const catalogo = await this.obtenerCatalogo()
     const items = catalogo.items
 
-    const variantesPor = new Map()
-    for (const cfg of this.config.values()) {
-      if (cfg.variante_de && items.has(cfg.item_code)) {
-        if (!variantesPor.has(cfg.variante_de)) variantesPor.set(cfg.variante_de, [])
-        variantesPor.get(cfg.variante_de).push(cfg)
-      }
-    }
-
     const productos = []
     for (const item of items.values()) {
       const cfg = this.config.get(item.codigo)
-      if (cfg && (cfg.visible === false || cfg.variante_de)) continue
-      const p = this._proyectar(item, cfg, listaPrecios, variantesPor.get(item.codigo) || [], items)
+      if (cfg && cfg.visible === false) continue
+      const p = this._proyectar(item, cfg, listaPrecios)
       if (!(p.precio > 0)) continue
-      p.variantes = p.variantes.filter((v) => v.precio > 0)
       productos.push(p)
     }
 
@@ -201,21 +192,9 @@ class RepositorioProductos {
     }
   }
 
-  _proyectar(item, cfg, listaPrecios, variantesCfg, items) {
+  _proyectar(item, cfg, listaPrecios) {
     const precio = item.precios[listaPrecios] ?? 0
     const habilitado = precio > 0
-    const variantes = variantesCfg.map((v) => {
-      const it = items.get(v.item_code)
-      const precioVariante = it ? it.precios[listaPrecios] ?? 0 : 0
-      return {
-        codigo: v.item_code,
-        textura: v.textura || "",
-        precio: precioVariante,
-        stock: it ? it.stock : 0,
-        habilitado: precioVariante > 0,
-        disponible: precioVariante > 0,
-      }
-    })
     return {
       codigo: item.codigo,
       nombre: item.nombre,
@@ -227,10 +206,10 @@ class RepositorioProductos {
       disponible: habilitado,
       mensajeEstado: mensajeEstado(habilitado, item.stock),
       descripcion: (cfg && cfg.descripcion) || item.descripcion || "",
-      textura: (cfg && cfg.textura) || (variantes.length > 0 ? "Media" : null),
+      textura: (cfg && cfg.textura) || null,
       orden: cfg && cfg.orden != null ? cfg.orden : null,
       imagenUrl: this.urlImagen(item.codigo),
-      variantes,
+      variantes: [],
     }
   }
 

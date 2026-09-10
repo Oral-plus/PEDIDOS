@@ -13,6 +13,7 @@ import '../widgets/cart_bottom_sheet.dart';
 import '../widgets/product_preview_dialog.dart';
 import '../widgets/texture_selection_dialog.dart';
 import '../widgets/codigo_cliente_dialog.dart';
+import '../widgets/cantidad_dialog.dart';
 import '../utils/app_assets.dart';
 import '../utils/theme.dart';
 import '../utils/responsive_utils.dart';
@@ -169,7 +170,7 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
     setState(() => _filteredProducts = _calcularFiltrados());
   }
 
-  void _addToCart(Map<String, dynamic> product) {
+  Future<void> _addToCart(Map<String, dynamic> product) async {
     if (product['disponible'] == false) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(product['mensajeEstado']?.toString() ??
@@ -178,8 +179,18 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
       ));
       return;
     }
-    context.read<CartProvider>().addItem(product);
+    final carrito = context.read<CartProvider>();
+    final id = carrito.addItem(product);
     HapticFeedback.mediumImpact();
+
+    final cantidad = await showCantidadDialog(
+      context,
+      producto: product['title']?.toString() ?? '',
+      cantidadInicial: carrito.cantidadDe(id),
+    );
+    if (!mounted) return;
+    if (cantidad != null) carrito.updateQuantity(id, cantidad);
+
     setState(() {
       _lastAddedProduct = product['title'];
       _bannerOffset = Offset.zero;

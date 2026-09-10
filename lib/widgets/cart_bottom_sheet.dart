@@ -673,7 +673,7 @@ class _CartBottomSheetState extends State<CartBottomSheet>
                       Icon(Icons.shopping_bag_rounded, color: Colors.white, size: 20),
                       SizedBox(width: 10),
                       Text(
-                        'Proceder al Pago',
+                        'Procesar Pedido',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 16,
