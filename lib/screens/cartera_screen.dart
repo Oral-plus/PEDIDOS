@@ -25,6 +25,7 @@ class _CarteraScreenState extends State<CarteraScreen> {
   static const Color _surface = Color(0xFFF3F4F6);
   static const Color _rojo = Color(0xFFDC2626);
   static const Color _verde = Color(0xFF16A34A);
+  static const Color _ambar = Color(0xFFD97706);
 
   List<Map<String, dynamic>> _clientes = [];
   List<Map<String, dynamic>> _filtrados = [];
@@ -34,6 +35,7 @@ class _CarteraScreenState extends State<CarteraScreen> {
   Map<String, dynamic>? _seleccionado;
   Map<String, dynamic>? _cartera;
   List<Map<String, dynamic>> _documentos = [];
+  List<Map<String, dynamic>> _pagosSinAplicar = [];
   bool _cargandoCartera = false;
   String? _errorCartera;
 
@@ -108,6 +110,7 @@ class _CarteraScreenState extends State<CarteraScreen> {
       _errorCartera = null;
       _cartera = null;
       _documentos = [];
+      _pagosSinAplicar = [];
     });
 
     final futuroCartera = _api.getCarteraCliente(codigo, forzar: forzar);
@@ -119,10 +122,14 @@ class _CarteraScreenState extends State<CarteraScreen> {
     final documentos = ((docsRes['documentos'] as List<dynamic>?) ?? [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
+    final pagos = ((docsRes['pagosSinAplicar'] as List<dynamic>?) ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
 
     setState(() {
       _cartera = cartera;
       _documentos = documentos;
+      _pagosSinAplicar = pagos;
       _cargandoCartera = false;
       _errorCartera = cartera == null ? 'No se pudo cargar la cartera del cliente' : null;
     });
@@ -134,6 +141,7 @@ class _CarteraScreenState extends State<CarteraScreen> {
       _seleccionado = null;
       _cartera = null;
       _documentos = [];
+      _pagosSinAplicar = [];
       _errorCartera = null;
       _cargandoCartera = false;
     });
@@ -156,6 +164,8 @@ class _CarteraScreenState extends State<CarteraScreen> {
   double get _saldoDocumentos => _documentos.fold(0.0, (s, d) => s + _n(d['saldo']));
 
   int get _documentosVencidos => _documentos.where((d) => d['vencida'] == true).length;
+
+  double get _saldoSinAplicar => _pagosSinAplicar.fold(0.0, (s, p) => s + _n(p['saldo']));
 
   @override
   Widget build(BuildContext context) {
@@ -374,6 +384,10 @@ class _CarteraScreenState extends State<CarteraScreen> {
             const SizedBox(width: 10),
             Expanded(child: _stat('Vencidas', '$vencidos', vencidos > 0 ? _rojo : _verde, Icons.warning_amber_rounded)),
           ]),
+          if (_pagosSinAplicar.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _stat('Pagos sin reconciliar', _pesos(_saldoSinAplicar), _ambar, Icons.savings_rounded),
+          ],
           const SizedBox(height: 10),
           _fichaCliente(d),
           const SizedBox(height: 18),
@@ -399,8 +413,68 @@ class _CarteraScreenState extends State<CarteraScreen> {
             )
           else
             ..._documentos.map(_filaDocumento),
+          if (_pagosSinAplicar.isNotEmpty) ...[
+            const SizedBox(height: 22),
+            Row(children: [
+              const Icon(Icons.savings_rounded, color: _ambar, size: 18),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text('Pagos sin reconciliar',
+                    style: TextStyle(color: _ink, fontWeight: FontWeight.w800, fontSize: 15)),
+              ),
+              Text(_pesos(_saldoSinAplicar),
+                  style: const TextStyle(color: _ambar, fontWeight: FontWeight.w800, fontSize: 15)),
+            ]),
+            const SizedBox(height: 4),
+            const Text('Dinero que el cliente ya pagó y en SAP no está aplicado a ninguna factura',
+                style: TextStyle(color: _gray, fontSize: 12, height: 1.3)),
+            const SizedBox(height: 10),
+            ..._pagosSinAplicar.map(_filaPago),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _filaPago(Map<String, dynamic> p) {
+    final recibo = (p['recibo'] ?? '').toString();
+    final medio = (p['medioPago'] ?? '').toString();
+    final parcial = _n(p['aplicado']) > 0;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _ambar.withOpacity(0.35)),
+      ),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(9),
+          decoration: BoxDecoration(color: _ambar.withOpacity(0.12), shape: BoxShape.circle),
+          child: const Icon(Icons.savings_rounded, color: _ambar, size: 18),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(recibo.isEmpty ? 'Pago' : 'Recibo $recibo',
+                style: const TextStyle(color: _ink, fontWeight: FontWeight.w800, fontSize: 13.5)),
+            const SizedBox(height: 3),
+            Text(
+              [_fecha(p['fecha']), if (medio.isNotEmpty) medio, '${p['antiguedad'] ?? 0} días'].join(' · '),
+              style: const TextStyle(color: _gray, fontSize: 11.5, fontWeight: FontWeight.w600),
+            ),
+            if (parcial) ...[
+              const SizedBox(height: 3),
+              Text('Pago de ${_pesos(p['valor'])} · aplicado ${_pesos(p['aplicado'])}',
+                  style: const TextStyle(color: _gray, fontSize: 11)),
+            ],
+          ]),
+        ),
+        const SizedBox(width: 8),
+        Text(_pesos(p['saldo']),
+            style: const TextStyle(color: _ambar, fontWeight: FontWeight.w800, fontSize: 14)),
+      ]),
     );
   }
 

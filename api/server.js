@@ -1246,10 +1246,11 @@ app.get("/api/clientes/:codigo/documentos", authenticateToken, async (req, res) 
     const sap = await connectSAP()
     const cardCode = req.params.codigo
     const limite = limiteDesdeQuery(req.query.limit, 500, 2000)
-    const result = await sap.request()
-      .input("cardCode", sql.VarChar, cardCode)
-      .input("limite", sql.Int, limite)
-      .query(`
+    const [result, pagosResult] = await Promise.all([
+      sap.request()
+        .input("cardCode", sql.VarChar, cardCode)
+        .input("limite", sql.Int, limite)
+        .query(`
       SELECT TOP (@limite) T0.DocEntry, T0.DocNum, T0.NumAtCard,
              CONVERT(VARCHAR(10), T0.DocDate, 120)     AS docDate,
              CONVERT(VARCHAR(10), T0.DocDueDate, 120)  AS dueDate,
@@ -1260,7 +1261,23 @@ app.get("/api/clientes/:codigo/documentos", authenticateToken, async (req, res) 
       WHERE T0.CardCode = @cardCode AND T0.DocStatus = 'O'
         AND (T0.DocTotal - T0.PaidToDate) > 0
       ORDER BY T0.DocDueDate ASC
-    `)
+    `),
+      sap.request()
+        .input("cardCode", sql.VarChar, cardCode)
+        .input("limite", sql.Int, limite)
+        .query(`
+      SELECT TOP (@limite) T.TransId, T.Line_ID, R.DocEntry, R.DocNum,
+             CONVERT(VARCHAR(10), ISNULL(R.DocDate, T.RefDate), 120) AS fecha,
+             T.Credit                                  AS valor,
+             T.BalDueCred                              AS saldo,
+             DATEDIFF(day, ISNULL(R.DocDate, T.RefDate), GETDATE()) AS antiguedad,
+             R.CashSum, R.TrsfrSum, R.CheckSum, R.Comments
+      FROM JDT1 T
+      LEFT JOIN ORCT R ON R.TransId = T.TransId AND R.Canceled = 'N'
+      WHERE T.ShortName = @cardCode AND T.TransType = 24 AND T.BalDueCred > 0
+      ORDER BY ISNULL(R.DocDate, T.RefDate) DESC
+    `).catch(() => null),
+    ])
     const documentos = result.recordset.map((d) => ({
       docEntry: d.DocEntry,
       docNum: d.DocNum,
@@ -1274,8 +1291,31 @@ app.get("/api/clientes/:codigo/documentos", authenticateToken, async (req, res) 
       vencida: (d.diasVencimiento || 0) < 0,
     }))
     const totalSaldo = documentos.reduce((a, d) => a + d.saldo, 0)
-    console.log(`Documentos abiertos cliente ${cardCode}: ${documentos.length} (saldo ${totalSaldo})`)
-    res.json({ success: true, data: documentos, total: documentos.length, totalSaldo })
+
+    const medioPago = (p) => {
+      if (Number.parseFloat(p.CashSum) > 0) return "Efectivo"
+      if (Number.parseFloat(p.TrsfrSum) > 0) return "Transferencia"
+      if (Number.parseFloat(p.CheckSum) > 0) return "Cheque"
+      return ""
+    }
+    const pagosSinAplicar = ((pagosResult && pagosResult.recordset) || []).map((p) => ({
+      transId: p.TransId,
+      lineId: p.Line_ID,
+      docEntry: p.DocEntry,
+      docNum: p.DocNum,
+      recibo: p.DocNum != null ? `${p.DocNum}` : "",
+      fecha: p.fecha,
+      valor: Number.parseFloat(p.valor) || 0,
+      saldo: Number.parseFloat(p.saldo) || 0,
+      aplicado: (Number.parseFloat(p.valor) || 0) - (Number.parseFloat(p.saldo) || 0),
+      antiguedad: p.antiguedad || 0,
+      medioPago: medioPago(p),
+      comentario: (p.Comments || "").toString().trim(),
+    }))
+    const totalSinAplicar = pagosSinAplicar.reduce((a, p) => a + p.saldo, 0)
+
+    console.log(`Documentos abiertos cliente ${cardCode}: ${documentos.length} (saldo ${totalSaldo}), pagos sin aplicar: ${pagosSinAplicar.length} (${totalSinAplicar})`)
+    res.json({ success: true, data: documentos, total: documentos.length, totalSaldo, pagosSinAplicar, totalSinAplicar })
   } catch (error) {
     console.error("Error obteniendo documentos:", error.message)
     res.status(500).json({ success: false, message: "Error al obtener documentos", data: [] })

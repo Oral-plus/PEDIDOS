@@ -803,7 +803,7 @@ class ApiEasyService {
 
   Future<Map<String, dynamic>> getDocumentosCliente(String codigo, {bool forzar = false}) async {
     if (_token == null || _token!.isEmpty) {
-      return {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0};
+      return {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0, 'pagosSinAplicar': <Map<String, dynamic>>[], 'totalSinAplicar': 0.0};
     }
     final datos = await _cache.obtener<Map<String, dynamic>?>(
       'documentos:$codigo',
@@ -811,7 +811,7 @@ class ApiEasyService {
       () => _getDocumentosClienteRed(codigo),
       forzar: forzar,
     );
-    return datos ?? {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0};
+    return datos ?? {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0, 'pagosSinAplicar': <Map<String, dynamic>>[], 'totalSinAplicar': 0.0};
   }
 
   Future<Map<String, dynamic>?> _getDocumentosClienteRed(String codigo) async {
@@ -826,9 +826,14 @@ class ApiEasyService {
         final list = (res['data'] as List<dynamic>? ?? [])
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
+        final pagos = (res['pagosSinAplicar'] as List<dynamic>? ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
         return {
           'documentos': list,
           'totalSaldo': (res['totalSaldo'] as num?)?.toDouble() ?? 0.0,
+          'pagosSinAplicar': pagos,
+          'totalSinAplicar': (res['totalSinAplicar'] as num?)?.toDouble() ?? 0.0,
         };
       }
     } catch (_) {}

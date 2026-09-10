@@ -126,6 +126,20 @@ class _ProductCardState extends State<ProductCard> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (codigo.isNotEmpty) ...[
+                      SizedBox(height: context.responsive(3)),
+                      Text(
+                        codigo,
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: context.clampFont(9, 12, 10),
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                     SizedBox(height: context.responsive(6)),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,

@@ -384,6 +384,20 @@ class _CartBottomSheetState extends State<CartBottomSheet>
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (item.codigoSap.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        item.codigoSap,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF6B7280),
+                          letterSpacing: 0.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                     if (item.textura != null) ...[
                       const SizedBox(height: 5),
                       Container(
