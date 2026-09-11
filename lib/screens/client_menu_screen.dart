@@ -12,6 +12,7 @@ import 'socio_negocio_screen.dart';
 import 'rutero_screen.dart';
 import 'mis_rutas_screen.dart';
 import 'cuadre_caja_screen.dart';
+import 'indicadores_screen.dart';
 
 class ClientMenuScreen extends StatefulWidget {
   const ClientMenuScreen({super.key});
@@ -419,7 +420,14 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
           onTap: _abrirProgramacion,
         )),
         const SizedBox(width: 12),
-        const Expanded(child: SizedBox()),
+        Expanded(child: _menuTile(
+          icon: Icons.insights_rounded,
+          title: 'Indicadores',
+          subtitle: 'Pagos y estado de pedidos',
+          color: _inkDeep,
+          active: true,
+          onTap: _abrirIndicadores,
+        )),
       ]),
     ]);
   }
@@ -556,6 +564,20 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
       ),
     );
     _cargarCuadresPendientes();
+  }
+
+  Future<void> _abrirIndicadores() async {
+    await Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const IndicadoresScreen(),
+        transitionsBuilder: (_, a, __, c) => SlideTransition(
+          position: Tween<Offset>(begin: const Offset(1.0, 0.0), end: Offset.zero)
+              .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
+          child: c,
+        ),
+        transitionDuration: const Duration(milliseconds: 250),
+      ),
+    );
   }
 
   Future<void> _abrirProgramacion() async {

@@ -13,6 +13,7 @@ const sesiones = require("./modules/sesiones")
 const clientesExtra = require("./modules/clientes_extra")
 const talonarios = require("./modules/talonarios")
 const cuadres = require("./modules/cuadres")
+const indicadores = require("./modules/indicadores")
 const cache = require("./modules/cache")
 const evidencias = require("./modules/evidencias")
 const multer = require("multer")
@@ -3270,6 +3271,13 @@ cuadres.registrarRutas(app, {
   sql,
   subida: subidaEvidencias,
   procesarImagen: evidencias.procesar,
+  log: console,
+})
+
+indicadores.registrarRutas(app, {
+  requireAuth: authenticateToken,
+  getPedidosPool: () => pedidosPool,
+  sql,
   log: console,
 })
 
