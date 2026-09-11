@@ -3277,6 +3277,7 @@ cuadres.registrarRutas(app, {
 indicadores.registrarRutas(app, {
   requireAuth: authenticateToken,
   getPedidosPool: () => pedidosPool,
+  getSapPool: connectSAP,
   sql,
   log: console,
 })

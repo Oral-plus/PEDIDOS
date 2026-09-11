@@ -1027,6 +1027,45 @@ class ApiEasyService {
     return {'success': false, 'data': <Map<String, dynamic>>[]};
   }
 
+  Future<Map<String, dynamic>> getHistorialPedidos({String? desde, String? hasta}) async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'data': <Map<String, dynamic>>[], 'message': 'Sesión expirada'};
+    }
+    final params = <String>[];
+    if (desde != null && desde.isNotEmpty) params.add('desde=$desde');
+    if (hasta != null && hasta.isNotEmpty) params.add('hasta=$hasta');
+    final query = params.isEmpty ? '' : '?${params.join('&')}';
+    try {
+      final res = await ApiClient.get(
+        '/api/indicadores/pedidos$query',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 30),
+      );
+      if (res is Map && res['success'] == true) {
+        final lista = (res['data'] as List<dynamic>? ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        return {
+          'success': true,
+          'data': lista,
+          'resumen': res['resumen'] is Map
+              ? Map<String, dynamic>.from(res['resumen'] as Map)
+              : <String, dynamic>{},
+          'sapOk': res['sapOk'] != false,
+          'sapMensaje': res['sapMensaje']?.toString() ?? '',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'data': <Map<String, dynamic>>[],
+        'message': e.toString().replaceFirst('Exception: ', ''),
+      };
+    }
+    return {'success': false, 'data': <Map<String, dynamic>>[]};
+  }
+
   Future<Map<String, dynamic>> getRecaudosCuadre({String estado = 'pendiente'}) async {
     if (_token == null || _token!.isEmpty) {
       return {'success': false, 'data': <Map<String, dynamic>>[], 'message': 'Sesión expirada'};

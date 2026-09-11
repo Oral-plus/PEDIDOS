@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'historial_pagos_screen.dart';
+import 'historial_pedidos_screen.dart';
 
 class IndicadoresScreen extends StatelessWidget {
   const IndicadoresScreen({super.key});
@@ -45,6 +46,19 @@ class IndicadoresScreen extends StatelessWidget {
               HapticFeedback.selectionClick();
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const HistorialPagosScreen()),
+              );
+            },
+          ),
+          _tarjeta(
+            context,
+            icono: Icons.fact_check_rounded,
+            titulo: 'Historial de pedidos',
+            detalle: 'Estado de cada pedido: enviado, bloqueado o nuevo',
+            color: _inkDeep,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HistorialPedidosScreen()),
               );
             },
           ),
