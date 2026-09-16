@@ -97,6 +97,8 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
         'iva': _get(p, 'iva', 'iva'),
         'total': _get(p, 'total', 'total'),
         'observaciones': _get(p, 'observaciones', 'observaciones'),
+        'comentarioDespacho': _get(p, 'comentario_despacho', 'comentarioDespacho'),
+        'comentarioComercial': _get(p, 'comentario_comercial', 'comentarioComercial'),
         'estado': _get(p, 'estado', 'estado'),
         'vendedor': _get(p, 'vendedor', 'vendedor'),
         'fechaCreacion': _get(p, 'fecha_creacion', 'fechaCreacion'),
@@ -269,6 +271,8 @@ class _VendorOrdersScreenState extends State<VendorOrdersScreen> {
           _detalleRow('Correo', p['correo'] ?? '—'),
           _detalleRow('Dirección', p['direccion'] ?? '—'),
           if ((p['observaciones'] ?? '').toString().isNotEmpty) _detalleRow('Observaciones', p['observaciones'] ?? '—'),
+          if ((p['comentarioDespacho'] ?? '').toString().isNotEmpty) _detalleRow('Despachos', p['comentarioDespacho'] ?? '—'),
+          if ((p['comentarioComercial'] ?? '').toString().isNotEmpty) _detalleRow('Comercial', p['comentarioComercial'] ?? '—'),
         ],
       ),
     );

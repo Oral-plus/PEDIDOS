@@ -29,8 +29,12 @@ class OrderReceiptService {
     required double total,
     String? docNum,
     String? docEntry,
+    String? comentarioDespacho,
+    String? comentarioComercial,
   }) async {
     final pdf = pw.Document();
+    final despacho = (comentarioDespacho ?? '').trim();
+    final comercial = (comentarioComercial ?? '').trim();
     final dateStr = DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now());
     final formatter = NumberFormat('#,##0', 'es_CO');
 
@@ -70,6 +74,14 @@ class OrderReceiptService {
               pw.Text('Cédula: $cedula', style: const pw.TextStyle(fontSize: 10)),
               pw.Text('Correo: $email', style: const pw.TextStyle(fontSize: 10)),
               pw.Text('Teléfono: $telefono', style: const pw.TextStyle(fontSize: 10)),
+              if (despacho.isNotEmpty) ...[
+                pw.SizedBox(height: 10),
+                pw.Text('Comentario de despachos: $despacho', style: const pw.TextStyle(fontSize: 10)),
+              ],
+              if (comercial.isNotEmpty) ...[
+                pw.SizedBox(height: 4),
+                pw.Text('Comentario comercial: $comercial', style: const pw.TextStyle(fontSize: 10)),
+              ],
               pw.SizedBox(height: 20),
               pw.Text('Detalle del pedido', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
               pw.SizedBox(height: 8),
@@ -156,6 +168,8 @@ class OrderReceiptService {
     final estado = pedido['estado']?.toString() ?? 'PENDIENTE';
     final total = (pedido['total'] as num?)?.toDouble() ?? 0;
     final observaciones = pedido['observaciones']?.toString() ?? '';
+    final comentarioDespacho = (pedido['comentarioDespacho'] ?? '').toString().trim();
+    final comentarioComercial = (pedido['comentarioComercial'] ?? '').toString().trim();
 
     pdf.addPage(
       pw.MultiPage(
@@ -220,6 +234,14 @@ class OrderReceiptService {
               if (observaciones.isNotEmpty) ...[
                 pw.SizedBox(height: 12),
                 pw.Text('Observaciones: $observaciones', style: const pw.TextStyle(fontSize: 10)),
+              ],
+              if (comentarioDespacho.isNotEmpty) ...[
+                pw.SizedBox(height: 8),
+                pw.Text('Comentario de despachos: $comentarioDespacho', style: const pw.TextStyle(fontSize: 10)),
+              ],
+              if (comentarioComercial.isNotEmpty) ...[
+                pw.SizedBox(height: 4),
+                pw.Text('Comentario comercial: $comentarioComercial', style: const pw.TextStyle(fontSize: 10)),
               ],
               pw.SizedBox(height: 20),
               pw.Text('Detalle del pedido', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),

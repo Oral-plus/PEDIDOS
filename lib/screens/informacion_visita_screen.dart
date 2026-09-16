@@ -7,6 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/session_provider.dart';
 import '../providers/visita_activa_provider.dart';
 import '../services/api_easy_service.dart';
+import '../services/rastreo/alerta_ubicacion_simulada.dart';
+import '../services/rastreo/estado_ubicacion_cliente.dart';
+import '../services/rastreo/rastreo_ubicacion.dart';
+import '../services/rastreo/ubicacion_dispositivo.dart';
 import '../utils/theme.dart';
 import '../widgets/app_header.dart';
 import 'cartera_screen.dart';
@@ -55,6 +59,11 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     final rid = '${widget.ruta['id'] ?? ''}';
     return rid.isNotEmpty ? 'visita_inicio_ruta_$rid' : 'visita_inicio_cli_$_codigo';
   }
+
+  String get _visitaIdKey => '${_visitaKey}_id';
+  int? _visitaId;
+  EstadoUbicacionCliente? _ubicacionCliente;
+  bool _ubicacionOcupada = false;
 
   Map<String, dynamic>? _pago;
   Map<String, dynamic>? _encuesta;
@@ -136,6 +145,97 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     } catch (_) {}
     _visitaActiva?.iniciar(cliente: widget.cliente, ruta: widget.ruta, inicio: _horaInicio);
     _visitaActiva?.setEnPantallaVisita(true);
+    _registrarInicioVisita();
+  }
+
+  Future<void> _registrarInicioVisita() async {
+    if (_codigo.isEmpty || _ubicacionOcupada) return;
+    _ubicacionOcupada = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final guardado = prefs.getInt(_visitaIdKey);
+      if (guardado != null) {
+        _visitaId = guardado;
+        _visitaActiva?.setVisitaId(guardado, _codigo);
+        await RastreoUbicacion.guardarVisitaEnCurso(visitaId: guardado, cliente: _codigo, inicio: _horaInicio);
+        _ubicacionOcupada = false;
+        await _validarUbicacion();
+        return;
+      }
+      if (mounted) setState(() => _ubicacionCliente = EstadoUbicacionCliente.evaluando);
+      final punto = await UbicacionDispositivo.capturar(
+        origen: 'visita_inicio',
+        usuario: _api.loginUsuario,
+        clienteCodigo: _codigo,
+        limite: const Duration(seconds: 20),
+        pedirPermiso: true,
+      );
+      final res = await _api.iniciarVisita(
+        _codigo,
+        rutaId: int.tryParse('${widget.ruta['id'] ?? ''}'),
+        horaInicio: _horaInicio,
+        duracionSegundos: DateTime.now().difference(_horaInicio).inSeconds,
+        segundaVisita: widget.segundaVisita,
+        motivoSegundaVisita: widget.motivoSegundaVisita,
+        ubicacion: punto?.paraServidor(),
+      );
+      final id = (res?['id'] as num?)?.toInt();
+      if (id != null) {
+        _visitaId = id;
+        _visitaActiva?.setVisitaId(id, _codigo);
+        await prefs.setInt(_visitaIdKey, id);
+        await RastreoUbicacion.guardarVisitaEnCurso(visitaId: id, cliente: _codigo, inicio: _horaInicio);
+      }
+      if (!mounted) return;
+      setState(() => _ubicacionCliente = EstadoUbicacionCliente.desdeRespuesta(
+            res,
+            hayUbicacion: punto != null,
+            simulada: punto?.simulada ?? false,
+          ));
+      if (punto?.simulada == true) AlertaUbicacionSimulada.mostrar();
+    } catch (_) {
+      if (mounted) setState(() => _ubicacionCliente = const EstadoUbicacionCliente(TipoUbicacionCliente.sinConexion));
+    } finally {
+      _ubicacionOcupada = false;
+    }
+  }
+
+  Future<void> _validarUbicacion() async {
+    if (_codigo.isEmpty || _ubicacionOcupada) return;
+    _ubicacionOcupada = true;
+    try {
+      if (mounted) setState(() => _ubicacionCliente = EstadoUbicacionCliente.evaluando);
+      final punto = await UbicacionDispositivo.capturar(
+        origen: 'manual',
+        usuario: _api.loginUsuario,
+        limite: const Duration(seconds: 20),
+        pedirPermiso: true,
+      );
+      final data = punto == null ? null : await _api.evaluarEnCliente(_codigo, punto.latitud, punto.longitud);
+      if (!mounted) return;
+      setState(() => _ubicacionCliente = EstadoUbicacionCliente.desdeRespuesta(
+            data,
+            hayUbicacion: punto != null,
+            simulada: punto?.simulada ?? false,
+          ));
+      if (punto?.simulada == true) {
+        RastreoUbicacion.capturarAhora('manual');
+        AlertaUbicacionSimulada.mostrar();
+      }
+    } catch (_) {
+      if (mounted) setState(() => _ubicacionCliente = const EstadoUbicacionCliente(TipoUbicacionCliente.sinConexion));
+    } finally {
+      _ubicacionOcupada = false;
+    }
+  }
+
+  void _reintentarUbicacion() {
+    HapticFeedback.selectionClick();
+    if (_visitaId == null) {
+      _registrarInicioVisita();
+    } else {
+      _validarUbicacion();
+    }
   }
 
   @override
@@ -337,6 +437,14 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     if (!mounted) return;
     setState(() => _guardando = true);
 
+    final puntoFin = await UbicacionDispositivo.capturar(
+      origen: 'visita_fin',
+      usuario: _api.loginUsuario,
+      clienteCodigo: _codigo,
+      visitaId: _visitaId,
+      limite: const Duration(seconds: 12),
+    );
+    if (!mounted) return;
     final ahora = DateTime.now();
     final res = await _api.registrarVisita(
       _codigo,
@@ -363,6 +471,8 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
           : null,
       segundaVisita: widget.segundaVisita,
       motivoSegundaVisita: widget.motivoSegundaVisita,
+      visitaId: _visitaId,
+      ubicacion: puntoFin?.paraServidor(),
     );
 
     if (!mounted) return;
@@ -374,7 +484,10 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
         await prefs.remove(_visitaKey);
         await prefs.remove(_pagoKey);
         await prefs.remove(_recaudoKey);
+        await prefs.remove(_visitaIdKey);
+        await RastreoUbicacion.limpiarVisitaEnCurso();
       } catch (_) {}
+      _visitaId = null;
       _pago = null;
       _encuesta = null;
       _numeroRecaudo = null;
@@ -689,6 +802,10 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
                 _clienteHeader(),
                 const SizedBox(height: 12),
                 _cronometro(),
+                if (_ubicacionCliente != null) ...[
+                  const SizedBox(height: 10),
+                  _tarjetaUbicacion(_ubicacionCliente!),
+                ],
                 const SizedBox(height: 14),
                 _seccionObjetivos(),
                 const SizedBox(height: 10),
@@ -834,6 +951,61 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
           ),
         ),
       ]),
+    );
+  }
+
+  Widget _tarjetaUbicacion(EstadoUbicacionCliente estado) {
+    final evaluando = estado.tipo == TipoUbicacionCliente.evaluando;
+    final color = switch (estado.tipo) {
+      TipoUbicacionCliente.enCliente => AppTheme.successColor,
+      TipoUbicacionCliente.fueraDeCliente => AppTheme.accentColor,
+      TipoUbicacionCliente.simulada => AppTheme.errorColor,
+      TipoUbicacionCliente.evaluando => _primary,
+      _ => _textMuted,
+    };
+    final icono = switch (estado.tipo) {
+      TipoUbicacionCliente.enCliente => Icons.where_to_vote_rounded,
+      TipoUbicacionCliente.fueraDeCliente => Icons.wrong_location_rounded,
+      TipoUbicacionCliente.simulada => Icons.gps_off_rounded,
+      TipoUbicacionCliente.sinCoordenadas => Icons.location_searching_rounded,
+      TipoUbicacionCliente.sinUbicacion => Icons.location_disabled_rounded,
+      _ => Icons.my_location_rounded,
+    };
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: evaluando || _guardando ? null : _reintentarUbicacion,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withOpacity(0.35)),
+          ),
+          child: Row(children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(11)),
+              child: Icon(icono, color: color, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(estado.titulo, style: TextStyle(color: color, fontSize: 14.5, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text(estado.detalle,
+                    style: TextStyle(color: _textMuted, fontSize: 12, fontWeight: FontWeight.w600)),
+              ]),
+            ),
+            if (evaluando)
+              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+            else
+              Icon(Icons.refresh_rounded, color: _textMuted, size: 20),
+          ]),
+        ),
+      ),
     );
   }
 

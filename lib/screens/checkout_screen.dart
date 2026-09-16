@@ -38,6 +38,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final _emailController = TextEditingController();
   final _telefonoController = TextEditingController();
   final _direccionController = TextEditingController();
+  final _comentarioDespachoController = TextEditingController();
+  final _comentarioComercialController = TextEditingController();
+
+  static const int _maxComentario = 1000;
 
   bool _isProcessingOrder = false;
   bool _isSearchingUser = false;
@@ -60,6 +64,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _emailController.dispose();
     _telefonoController.dispose();
     _direccionController.dispose();
+    _comentarioDespachoController.dispose();
+    _comentarioComercialController.dispose();
     super.dispose();
   }
 
@@ -199,6 +205,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         vendedor: vendedor,
         ciudad: session.ciudad.isNotEmpty ? session.ciudad : null,
         descuentoPiePct: context.read<CartProvider>().descuentoPiePct,
+        comentarioDespacho: _comentarioDespachoController.text,
+        comentarioComercial: _comentarioComercialController.text,
       );
 
       if (result['success'] == true && mounted) {
@@ -252,6 +260,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             _productsCard(),
                             const SizedBox(height: 20),
                             _clientCard(),
+                            const SizedBox(height: 20),
+                            _comentariosCard(),
                             const SizedBox(height: 20),
                             _termsRow(),
                             const SizedBox(height: 24),
@@ -649,6 +659,67 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  Widget _comentariosCard() {
+    return Container(
+      decoration: _cardDecoration,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader(Icons.chat_bubble_outline_rounded, 'Comentarios del pedido', AppTheme.primaryBlue),
+          const Divider(height: 1, color: AppTheme.borderColor),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                _campoComentario(
+                  _comentarioDespachoController,
+                  'Comentario de despachos',
+                  'Ej: entregar en la bodega trasera, horario de recibo…',
+                  Icons.local_shipping_outlined,
+                ),
+                const SizedBox(height: 14),
+                _campoComentario(
+                  _comentarioComercialController,
+                  'Comentario comercial',
+                  'Ej: condiciones acordadas, promoción, seguimiento…',
+                  Icons.handshake_outlined,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _campoComentario(TextEditingController controller, String label, String hint, IconData icon) {
+    return TextFormField(
+      controller: controller,
+      minLines: 2,
+      maxLines: 4,
+      maxLength: _maxComentario,
+      textCapitalization: TextCapitalization.sentences,
+      style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500, color: AppTheme.darkBlue),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        alignLabelWithHint: true,
+        labelStyle: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        hintStyle: const TextStyle(color: AppTheme.textTertiaryColor, fontSize: 13),
+        prefixIcon: Padding(
+          padding: const EdgeInsets.only(bottom: 24),
+          child: Icon(icon, color: AppTheme.primaryBlue.withOpacity(0.5), size: 18),
+        ),
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.borderColor)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.borderColor)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primaryBlue, width: 1.5)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+    );
+  }
+
   Widget _field(TextEditingController controller, String label, IconData icon, {bool readOnly = true, TextInputType? keyboard, String? Function(String?)? validator, Widget? suffix, void Function(String)? onSubmitted}) {
     return TextFormField(
       controller: controller, readOnly: readOnly, keyboardType: keyboard, validator: validator, onFieldSubmitted: onSubmitted,
@@ -877,7 +948,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Future<void> _downloadPdf(Map<String, dynamic> result) async {
     try {
-      await OrderReceiptService.generateAndSavePdf(clientName: _nombreController.text, cedula: _cedulaController.text, email: _emailController.text, telefono: _telefonoController.text, items: _validItems, total: _total, docNum: result['docNum']?.toString(), docEntry: result['docEntry']?.toString());
+      await OrderReceiptService.generateAndSavePdf(clientName: _nombreController.text, cedula: _cedulaController.text, email: _emailController.text, telefono: _telefonoController.text, items: _validItems, total: _total, docNum: result['docNum']?.toString(), docEntry: result['docEntry']?.toString(), comentarioDespacho: _comentarioDespachoController.text, comentarioComercial: _comentarioComercialController.text);
       _snack('PDF generado', AppTheme.successColor);
     } catch (_) { _snack('Error al generar PDF', AppTheme.errorColor); }
   }

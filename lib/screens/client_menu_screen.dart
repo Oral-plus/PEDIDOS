@@ -6,6 +6,8 @@ import '../services/api_easy_service.dart';
 import '../utils/app_assets.dart';
 import '../utils/theme.dart';
 import '../widgets/app_dialog.dart';
+import '../services/rastreo/alerta_ubicacion_simulada.dart';
+import '../services/rastreo/rastreo_ubicacion.dart';
 import '../services/sesion.dart';
 import 'vendor_orders_screen.dart';
 import 'socio_negocio_screen.dart';
@@ -73,6 +75,11 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     _slideController.forward();
     _cargarClientes();
     _cargarCuadresPendientes();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await RastreoUbicacion.asegurar(context);
+      AlertaUbicacionSimulada.mostrarSiPendiente();
+    });
   }
 
   @override

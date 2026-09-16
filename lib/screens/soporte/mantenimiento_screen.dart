@@ -6,6 +6,7 @@ import '../../services/api_easy_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/sesion.dart';
 import '../../widgets/producto_imagen.dart';
+import 'recorridos_usuarios_screen.dart';
 
 class MantenimientoScreen extends StatefulWidget {
   const MantenimientoScreen({super.key});
@@ -391,6 +392,13 @@ class _MantenimientoScreenState extends State<MantenimientoScreen>
         elevation: 0,
         title: const Text('Mantenimiento', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
         actions: [
+          IconButton(
+            tooltip: 'Recorridos',
+            icon: const Icon(Icons.route_rounded),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RecorridosUsuariosScreen()),
+            ),
+          ),
           IconButton(
             tooltip: 'Cerrar sesión',
             icon: const Icon(Icons.logout_rounded),

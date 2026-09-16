@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'historial_pagos_screen.dart';
 import 'historial_pedidos_screen.dart';
+import 'recorrido_screen.dart';
 
 class IndicadoresScreen extends StatelessWidget {
   const IndicadoresScreen({super.key});
@@ -59,6 +60,19 @@ class IndicadoresScreen extends StatelessWidget {
               HapticFeedback.selectionClick();
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const HistorialPedidosScreen()),
+              );
+            },
+          ),
+          _tarjeta(
+            context,
+            icono: Icons.route_rounded,
+            titulo: 'Mi recorrido',
+            detalle: 'Ubicaciones registradas y visitas en cliente',
+            color: const Color(0xFF16A34A),
+            onTap: () {
+              HapticFeedback.selectionClick();
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const RecorridoScreen()),
               );
             },
           ),

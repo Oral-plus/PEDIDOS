@@ -8,6 +8,7 @@ import '../utils/navegacion.dart';
 import 'api_client.dart';
 import 'api_easy_service.dart';
 import 'catalogo_service.dart';
+import 'rastreo/rastreo_ubicacion.dart';
 
 class Sesion {
   Sesion._();
@@ -39,6 +40,7 @@ class Sesion {
     try {
       final api = ApiEasyService();
       if (avisarServidor) {
+        await RastreoUbicacion.alCerrarSesion();
         await api.logout();
       } else {
         await api.clearSession();

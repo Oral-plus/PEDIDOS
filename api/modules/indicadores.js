@@ -175,7 +175,7 @@ async function historialPedidos(pedidosPool, getSapPool, sql, vendedor, { desde,
   }
   const r = await req.query(`
     SELECT p.id, p.numero_pedido, p.codigo_cliente, p.nombre_cliente, p.estado,
-           p.subtotal, p.iva, p.total, p.observaciones,
+           p.subtotal, p.iva, p.total, p.observaciones, p.comentario_despacho, p.comentario_comercial,
            p.fecha_creacion, p.fecha_entrega,
            p.sincronizado_sap, p.doc_num_sap, p.doc_entry_sap,
            (SELECT COUNT(*) FROM dbo.pedidos_detalle d WHERE d.pedido_id = p.id) AS lineas
@@ -196,6 +196,8 @@ async function historialPedidos(pedidosPool, getSapPool, sql, vendedor, { desde,
     total: num(p.total),
     lineas: Number(p.lineas) || 0,
     observaciones: (p.observaciones || "").toString().trim(),
+    comentarioDespacho: (p.comentario_despacho || "").toString().trim(),
+    comentarioComercial: (p.comentario_comercial || "").toString().trim(),
     fecha: p.fecha_creacion instanceof Date ? p.fecha_creacion.toISOString() : p.fecha_creacion,
     fechaEntrega: p.fecha_entrega instanceof Date ? p.fecha_entrega.toISOString() : p.fecha_entrega,
     sincronizado: p.sincronizado_sap === 1 || p.sincronizado_sap === true || p.sincronizado_sap === "1",

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:provider/provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/informacion_visita_screen.dart';
@@ -8,11 +9,17 @@ import 'utils/theme.dart';
 import 'providers/session_provider.dart';
 import 'providers/cart_provider.dart';
 import 'providers/visita_activa_provider.dart';
+import 'services/rastreo/alerta_ubicacion_simulada.dart';
+import 'services/rastreo/rastreo_ubicacion.dart';
 import 'services/sesion.dart';
 import 'utils/navegacion.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  if (RastreoUbicacion.disponible) {
+    FlutterForegroundTask.initCommunicationPort();
+    RastreoUbicacion.configurar();
+  }
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   rootBundle.load(AppAssets.logo).ignore();
   runApp(
@@ -39,6 +46,7 @@ class _SkyPagosAppState extends State<SkyPagosApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     Sesion.instalar();
+    AlertaUbicacionSimulada.instalar();
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -50,7 +58,11 @@ class _SkyPagosAppState extends State<SkyPagosApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) Sesion.verificarVigencia();
+    if (state == AppLifecycleState.resumed) {
+      Sesion.verificarVigencia();
+      RastreoUbicacion.alVolverALaApp();
+      AlertaUbicacionSimulada.mostrarSiPendiente();
+    }
   }
 
   @override

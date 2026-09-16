@@ -98,6 +98,12 @@ const RUTAS = [
   ["GET", "/api/cuadres/recaudos"],
   ["GET", "/api/cuadres/recaudos/1"],
   ["POST", "/api/cuadres", { recaudoId: 1 }],
+  ["POST", "/api/ubicaciones", { puntos: [{ latitud: 4.6, longitud: -74.07 }] }],
+  ["GET", "/api/ubicaciones/en-cliente?cliente=C1000100148&lat=4.6&lng=-74.07"],
+  ["GET", "/api/ubicaciones/recorrido"],
+  ["GET", "/api/ubicaciones/usuarios"],
+  ["POST", "/api/clientes/C1000100148/visita/iniciar", { rutaId: 1 }],
+  ["PUT", "/api/clientes/C1000100148/visita/1/actividad", { duracionSegundos: 1 }],
 ]
 
 ;(async () => {

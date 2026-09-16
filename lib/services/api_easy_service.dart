@@ -1561,12 +1561,16 @@ class ApiEasyService {
     Map<String, dynamic>? encuestaRespuestas,
     bool segundaVisita = false,
     String? motivoSegundaVisita,
+    int? visitaId,
+    Map<String, dynamic>? ubicacion,
   }) async {
     if (_token == null || _token!.isEmpty) return null;
     try {
       final res = await ApiClient.post(
         '/api/clientes/$codigo/visita',
         body: {
+          if (visitaId != null) 'visitaId': visitaId,
+          if (ubicacion != null) 'ubicacion': ubicacion,
           if (estadoCliente != null && estadoCliente.isNotEmpty) 'estadoCliente': estadoCliente,
           if (observacion.isNotEmpty) 'observacion': observacion,
           if (motivo != null && motivo.isNotEmpty) 'motivo': motivo,
@@ -1602,6 +1606,108 @@ class ApiEasyService {
       }
     } catch (_) {}
     return null;
+  }
+
+  Future<Map<String, dynamic>?> iniciarVisita(
+    String codigo, {
+    int? rutaId,
+    required DateTime horaInicio,
+    int? duracionSegundos,
+    bool segundaVisita = false,
+    String? motivoSegundaVisita,
+    Map<String, dynamic>? ubicacion,
+  }) async {
+    if (_token == null || _token!.isEmpty) return null;
+    try {
+      final res = await ApiClient.post(
+        '/api/clientes/${Uri.encodeComponent(codigo)}/visita/iniciar',
+        body: {
+          if (rutaId != null) 'rutaId': rutaId,
+          'horaInicio': horaInicio.toIso8601String(),
+          if (duracionSegundos != null) 'duracionSegundos': duracionSegundos,
+          if (segundaVisita) 'segundaVisita': true,
+          if (motivoSegundaVisita != null && motivoSegundaVisita.isNotEmpty) 'motivoSegundaVisita': motivoSegundaVisita,
+          if (ubicacion != null) 'ubicacion': ubicacion,
+        },
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 20),
+      );
+      if (res['success'] == true && res['data'] is Map) {
+        return Map<String, dynamic>.from(res['data'] as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<bool> pulsoVisita(String codigo, int visitaId, int duracionSegundos) async {
+    if (_token == null || _token!.isEmpty) return false;
+    try {
+      final res = await ApiClient.put(
+        '/api/clientes/${Uri.encodeComponent(codigo)}/visita/$visitaId/actividad',
+        body: {'duracionSegundos': duracionSegundos},
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 15),
+      );
+      return res['success'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> evaluarEnCliente(String codigo, double latitud, double longitud) async {
+    if (_token == null || _token!.isEmpty) return null;
+    try {
+      final res = await ApiClient.get(
+        '/api/ubicaciones/en-cliente?cliente=${Uri.encodeQueryComponent(codigo)}&lat=$latitud&lng=$longitud',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 15),
+      );
+      if (res['success'] == true && res['data'] is Map) {
+        return Map<String, dynamic>.from(res['data'] as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<Map<String, dynamic>> getRecorrido({String? fecha, String? usuario}) async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'message': 'Sesión expirada', 'data': []};
+    }
+    try {
+      final params = <String>[
+        if (fecha != null && fecha.isNotEmpty) 'fecha=$fecha',
+        if (usuario != null && usuario.isNotEmpty) 'usuario=${Uri.encodeQueryComponent(usuario)}',
+      ];
+      final res = await ApiClient.get(
+        '/api/ubicaciones/recorrido${params.isEmpty ? '' : '?${params.join('&')}'}',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 25),
+      );
+      return Map<String, dynamic>.from(res);
+    } catch (e) {
+      return {'success': false, 'message': 'No se pudo cargar el recorrido', 'data': []};
+    }
+  }
+
+  Future<Map<String, dynamic>> getUsuariosRecorrido({String? fecha}) async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'message': 'Sesión expirada', 'data': []};
+    }
+    try {
+      final res = await ApiClient.get(
+        '/api/ubicaciones/usuarios${fecha != null && fecha.isNotEmpty ? '?fecha=$fecha' : ''}',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 25),
+      );
+      return Map<String, dynamic>.from(res);
+    } catch (e) {
+      return {'success': false, 'message': 'No se pudieron cargar los usuarios', 'data': []};
+    }
   }
 
   Future<Map<String, dynamic>?> getVisitasHoy(String codigo) {

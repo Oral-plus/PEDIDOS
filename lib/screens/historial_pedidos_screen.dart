@@ -372,6 +372,29 @@ class _HistorialPedidosScreenState extends State<HistorialPedidosScreen> {
           Text(_explicacion(principal, etapa),
               style: const TextStyle(color: _gray, fontSize: 11.5, height: 1.3)),
         ],
+        _comentario(Icons.local_shipping_outlined, 'Despachos', p['comentarioDespacho']),
+        _comentario(Icons.handshake_outlined, 'Comercial', p['comentarioComercial']),
+      ]),
+    );
+  }
+
+  Widget _comentario(IconData icono, String etiqueta, Object? valor) {
+    final texto = (valor ?? '').toString().trim();
+    if (texto.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 7),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icono, size: 14, color: _gray),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text.rich(
+            TextSpan(children: [
+              TextSpan(text: '$etiqueta: ', style: const TextStyle(fontWeight: FontWeight.w800, color: _inkDeep)),
+              TextSpan(text: texto),
+            ]),
+            style: const TextStyle(color: _gray, fontSize: 11.5, height: 1.3),
+          ),
+        ),
       ]),
     );
   }

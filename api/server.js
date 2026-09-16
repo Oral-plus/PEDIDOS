@@ -14,6 +14,7 @@ const clientesExtra = require("./modules/clientes_extra")
 const talonarios = require("./modules/talonarios")
 const cuadres = require("./modules/cuadres")
 const indicadores = require("./modules/indicadores")
+const ubicaciones = require("./modules/ubicaciones")
 const cache = require("./modules/cache")
 const evidencias = require("./modules/evidencias")
 const multer = require("multer")
@@ -337,6 +338,15 @@ async function ensurePedidosTables() {
     `)
   } catch (e) {
     console.error("No se pudieron agregar las columnas de descuento de pedidos:", e.message)
+  }
+
+  try {
+    await pedidosPool.request().query(`
+      IF COL_LENGTH('dbo.pedidos', 'comentario_despacho') IS NULL ALTER TABLE dbo.pedidos ADD comentario_despacho NVARCHAR(1000) NULL;
+      IF COL_LENGTH('dbo.pedidos', 'comentario_comercial') IS NULL ALTER TABLE dbo.pedidos ADD comentario_comercial NVARCHAR(1000) NULL;
+    `)
+  } catch (e) {
+    console.error("No se pudieron agregar las columnas de comentarios de pedidos:", e.message)
   }
 
   try {
@@ -1567,7 +1577,8 @@ function generatePedidoNumero() {
 app.post("/api/orders", authenticateToken, async (req, res) => {
   const startTime = Date.now()
   try {
-    const { cedula, nombre, direccion, telefono, correo, productos, observaciones, codigoCliente, vendedor, descuentoPiePct } = req.body
+    const { cedula, nombre, direccion, telefono, correo, productos, observaciones, codigoCliente, vendedor, descuentoPiePct, comentarioDespacho, comentarioComercial } = req.body
+    const comentario = (v) => (v == null ? "" : String(v)).trim().slice(0, 1000) || null
 
     const numeroPedido = generatePedidoNumero()
     const aNumero = (v) => { const n = Number.parseFloat(v); return Number.isNaN(n) ? 0 : n }
@@ -1627,10 +1638,12 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
         .input("vendedor", sql.NVarChar, (vendedor || "").trim() || null)
         .input("descuento_pie_pct", sql.Decimal(9, 4), piePct)
         .input("descuento_total", sql.Decimal(18, 2), descuentoTotal)
+        .input("comentario_despacho", sql.NVarChar, comentario(comentarioDespacho))
+        .input("comentario_comercial", sql.NVarChar, comentario(comentarioComercial))
         .query(`
-          INSERT INTO pedidos (numero_pedido, codigo_cliente, cedula_cliente, nombre_cliente, direccion, telefono, correo, subtotal, iva, total, observaciones, vendedor, descuento_pie_pct, descuento_total)
+          INSERT INTO pedidos (numero_pedido, codigo_cliente, cedula_cliente, nombre_cliente, direccion, telefono, correo, subtotal, iva, total, observaciones, vendedor, descuento_pie_pct, descuento_total, comentario_despacho, comentario_comercial)
           OUTPUT INSERTED.id
-          VALUES (@numero_pedido, @codigo_cliente, @cedula_cliente, @nombre_cliente, @direccion, @telefono, @correo, @subtotal, @iva, @total, @observaciones, @vendedor, @descuento_pie_pct, @descuento_total)
+          VALUES (@numero_pedido, @codigo_cliente, @cedula_cliente, @nombre_cliente, @direccion, @telefono, @correo, @subtotal, @iva, @total, @observaciones, @vendedor, @descuento_pie_pct, @descuento_total, @comentario_despacho, @comentario_comercial)
         `)
 
       const pedidoId = headerResult.recordset[0].id
@@ -2155,6 +2168,7 @@ app.get("/api/rutas/mias", authenticateToken, async (req, res) => {
              CONVERT(VARCHAR(19), r.fecha_actualizacion, 126) AS fecha_actualizacion,
              (SELECT COUNT(*) FROM visitas_clientes v
               WHERE v.cliente_id = r.cliente_id
+                AND (v.estado_visita IS NULL OR v.estado_visita <> 'abierta')
                 AND v.fecha >= CAST(GETDATE() AS DATE)
                 AND v.fecha < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))) AS visitas_hoy
       FROM rutas r
@@ -2372,6 +2386,18 @@ async function ensureVisitasTabla(pool) {
       ALTER TABLE dbo.visitas_clientes ADD numero_recaudo NVARCHAR(60) NULL;
     IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name='recaudo_id' AND Object_ID=Object_ID('dbo.visitas_clientes'))
       ALTER TABLE dbo.visitas_clientes ADD recaudo_id INT NULL;
+    IF COL_LENGTH('dbo.visitas_clientes', 'estado_visita') IS NULL ALTER TABLE dbo.visitas_clientes ADD estado_visita NVARCHAR(20) NULL;
+    IF COL_LENGTH('dbo.visitas_clientes', 'ultima_actividad') IS NULL ALTER TABLE dbo.visitas_clientes ADD ultima_actividad DATETIME NULL;
+    IF COL_LENGTH('dbo.visitas_clientes', 'lat_inicio') IS NULL ALTER TABLE dbo.visitas_clientes ADD lat_inicio DECIMAL(9,6) NULL;
+    IF COL_LENGTH('dbo.visitas_clientes', 'lng_inicio') IS NULL ALTER TABLE dbo.visitas_clientes ADD lng_inicio DECIMAL(9,6) NULL;
+    IF COL_LENGTH('dbo.visitas_clientes', 'precision_inicio_m') IS NULL ALTER TABLE dbo.visitas_clientes ADD precision_inicio_m DECIMAL(10,2) NULL;
+    IF COL_LENGTH('dbo.visitas_clientes', 'distancia_cliente_inicio_m') IS NULL ALTER TABLE dbo.visitas_clientes ADD distancia_cliente_inicio_m INT NULL;
+    IF COL_LENGTH('dbo.visitas_clientes', 'en_cliente_inicio') IS NULL ALTER TABLE dbo.visitas_clientes ADD en_cliente_inicio BIT NULL;
+    IF COL_LENGTH('dbo.visitas_clientes', 'lat_fin') IS NULL ALTER TABLE dbo.visitas_clientes ADD lat_fin DECIMAL(9,6) NULL;
+    IF COL_LENGTH('dbo.visitas_clientes', 'lng_fin') IS NULL ALTER TABLE dbo.visitas_clientes ADD lng_fin DECIMAL(9,6) NULL;
+    IF COL_LENGTH('dbo.visitas_clientes', 'distancia_cliente_fin_m') IS NULL ALTER TABLE dbo.visitas_clientes ADD distancia_cliente_fin_m INT NULL;
+    IF COL_LENGTH('dbo.visitas_clientes', 'en_cliente_fin') IS NULL ALTER TABLE dbo.visitas_clientes ADD en_cliente_fin BIT NULL;
+    IF COL_LENGTH('dbo.visitas_clientes', 'ubicacion_simulada') IS NULL ALTER TABLE dbo.visitas_clientes ADD ubicacion_simulada BIT NULL;
   `)
   visitasTablaLista = true
 
@@ -2387,6 +2413,40 @@ async function ensureVisitasTabla(pool) {
   }
 }
 
+const rastreo = ubicaciones.crear({
+  sql,
+  getPedidosPool: () => pedidosPool,
+  getRutaPool: connectRuta,
+  geocodificarCliente: async (codigo) => {
+    const direccion = await direccionSapCliente(codigo)
+    return direccion ? geocodificarDireccion(direccion) : null
+  },
+  env: process.env,
+  log: console,
+})
+
+function ubicacionDeVisita(cuerpo) {
+  return ubicaciones.normalizarPunto(cuerpo && cuerpo.ubicacion)
+}
+
+async function evaluarUbicacionVisita(punto, codigo) {
+  if (!punto) return null
+  return rastreo.evaluar({ lat: punto.latitud, lng: punto.longitud, clienteCodigo: codigo })
+}
+
+async function registrarPuntoDeVisita(req, cuerpo, origen, codigo, visitaId) {
+  if (!cuerpo || !cuerpo.ubicacion) return
+  try {
+    await rastreo.registrarPuntos(ubicaciones.usuarioDeSesion(req.user), [
+      { ...cuerpo.ubicacion, origen, clienteCodigo: codigo, visitaId },
+    ])
+  } catch (e) {
+    console.error(`No se pudo guardar la ubicacion de ${origen}:`, e.message)
+  }
+}
+
+const SIN_VISITAS_ABIERTAS = "(estado_visita IS NULL OR estado_visita <> 'abierta')"
+
 app.get("/api/clientes/:codigo/visitas-hoy", authenticateToken, async (req, res) => {
   try {
     const ruta = await connectRuta()
@@ -2396,6 +2456,7 @@ app.get("/api/clientes/:codigo/visitas-hoy", authenticateToken, async (req, res)
              MAX(CONVERT(VARCHAR(19), fecha, 120)) AS ultima
       FROM visitas_clientes
       WHERE cliente_id = @cliente
+        AND ${SIN_VISITAS_ABIERTAS}
         AND fecha >= CAST(GETDATE() AS DATE)
         AND fecha < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
     `)
@@ -2461,6 +2522,118 @@ app.get("/api/clientes/:codigo/ultimo-pedido", authenticateToken, async (req, re
 
 const ESTADOS_VISITA = ["nuevo", "activo", "sesenta", "perdido"]
 
+const FILTRO_VENDEDOR_VISITA = "((@vendId IS NULL AND vendedor_id IS NULL) OR vendedor_id = @vendId)"
+
+app.post("/api/clientes/:codigo/visita/iniciar", authenticateToken, async (req, res) => {
+  try {
+    const codigo = req.params.codigo
+    const b = req.body || {}
+    const slpCode = getSlpCodeFromToken(req)
+    const vendedorNombre = ((req.user && req.user.nombre) || "").toString()
+    const rutaId = Number.parseInt(b.rutaId, 10)
+    const horaInicio = b.horaInicio ? new Date(b.horaInicio) : new Date()
+    const inicio = Number.isNaN(horaInicio.getTime()) ? new Date() : horaInicio
+    const duracionSeg = Number.parseInt(b.duracionSegundos, 10)
+    const segundaVisita = b.segundaVisita === true || b.segundaVisita === 1
+    const motivoSegunda = (b.motivoSegundaVisita || "").toString().trim()
+    const punto = ubicacionDeVisita(b)
+    const evaluacion = await evaluarUbicacionVisita(punto, codigo)
+
+    const ruta = await connectRuta()
+    await ensureVisitasTabla(ruta)
+
+    const existente = await ruta.request()
+      .input("cliente", sql.NVarChar, codigo)
+      .input("vendId", sql.Int, slpCode)
+      .input("hIni", sql.DateTime, inicio)
+      .query(`
+        SELECT TOP 1 id FROM visitas_clientes
+        WHERE cliente_id = @cliente AND estado_visita = 'abierta' AND ${FILTRO_VENDEDOR_VISITA}
+          AND hora_inicio IS NOT NULL AND ABS(DATEDIFF(second, hora_inicio, @hIni)) <= 1
+        ORDER BY id DESC
+      `)
+
+    let id
+    const reutilizada = existente.recordset.length > 0
+    if (reutilizada) {
+      id = existente.recordset[0].id
+    } else {
+      const ins = await ruta.request()
+        .input("cliente", sql.NVarChar, codigo)
+        .input("rutaId", sql.Int, Number.isNaN(rutaId) ? null : rutaId)
+        .input("vendId", sql.Int, slpCode)
+        .input("vendNom", sql.NVarChar, vendedorNombre)
+        .input("hIni", sql.DateTime, inicio)
+        .input("dur", sql.Int, Number.isNaN(duracionSeg) || duracionSeg < 0 ? 0 : duracionSeg)
+        .input("segunda", sql.Bit, segundaVisita ? 1 : 0)
+        .input("motSeg", sql.NVarChar, motivoSegunda || null)
+        .input("lat", sql.Decimal(9, 6), punto ? punto.latitud : null)
+        .input("lng", sql.Decimal(9, 6), punto ? punto.longitud : null)
+        .input("prec", sql.Decimal(10, 2), punto ? punto.precision : null)
+        .input("dist", sql.Int, evaluacion && evaluacion.distanciaM != null ? evaluacion.distanciaM : null)
+        .input("enCli", sql.Bit, evaluacion && evaluacion.enCliente != null ? (evaluacion.enCliente ? 1 : 0) : null)
+        .input("sim", sql.Bit, punto ? (punto.simulada ? 1 : 0) : null)
+        .query(`
+          INSERT INTO visitas_clientes
+            (cliente_id, ruta_id, vendedor_id, vendedor_nombre, hora_inicio, duracion_segundos,
+             segunda_visita, motivo_segunda_visita, estado_visita, ultima_actividad,
+             lat_inicio, lng_inicio, precision_inicio_m, distancia_cliente_inicio_m, en_cliente_inicio, ubicacion_simulada)
+          OUTPUT INSERTED.id
+          VALUES (@cliente, @rutaId, @vendId, @vendNom, @hIni, @dur,
+                  @segunda, @motSeg, 'abierta', GETDATE(),
+                  @lat, @lng, @prec, @dist, @enCli, @sim)
+        `)
+      id = ins.recordset[0].id
+      await registrarPuntoDeVisita(req, b, "visita_inicio", codigo, id)
+      console.log(`Visita abierta cliente ${codigo}: id=${id} vend=${slpCode} enCliente=${evaluacion ? evaluacion.enCliente : "-"} dist=${evaluacion ? evaluacion.distanciaM : "-"}m`)
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id,
+        reutilizada,
+        enCliente: evaluacion ? evaluacion.enCliente : null,
+        distanciaM: evaluacion ? evaluacion.distanciaM : null,
+        radioM: rastreo.radioM,
+        sinCoordenadas: evaluacion ? evaluacion.sinCoordenadas : null,
+        simulada: punto ? punto.simulada : null,
+      },
+    })
+  } catch (error) {
+    console.error("Error abriendo visita:", error.message)
+    res.status(500).json({ success: false, message: "No se pudo registrar el inicio de la visita" })
+  }
+})
+
+app.put("/api/clientes/:codigo/visita/:id/actividad", authenticateToken, async (req, res) => {
+  try {
+    const id = Number.parseInt(req.params.id, 10)
+    if (Number.isNaN(id)) return res.status(400).json({ success: false, message: "Visita inválida" })
+    const duracionSeg = Number.parseInt((req.body || {}).duracionSegundos, 10)
+    const ruta = await connectRuta()
+    await ensureVisitasTabla(ruta)
+    const r = await ruta.request()
+      .input("id", sql.Int, id)
+      .input("cliente", sql.NVarChar, req.params.codigo)
+      .input("vendId", sql.Int, getSlpCodeFromToken(req))
+      .input("dur", sql.Int, Number.isNaN(duracionSeg) || duracionSeg < 0 ? null : duracionSeg)
+      .query(`
+        UPDATE visitas_clientes
+        SET duracion_segundos = COALESCE(@dur, duracion_segundos), ultima_actividad = GETDATE()
+        WHERE id = @id AND cliente_id = @cliente AND estado_visita = 'abierta' AND ${FILTRO_VENDEDOR_VISITA}
+      `)
+    const actualizada = (r.rowsAffected[0] || 0) > 0
+    if (!actualizada) {
+      return res.status(404).json({ success: false, message: "La visita no está abierta", data: { id, actualizada } })
+    }
+    res.json({ success: true, data: { id, actualizada, duracionSegundos: Number.isNaN(duracionSeg) ? null : duracionSeg } })
+  } catch (error) {
+    console.error("Error actualizando tiempo de visita:", error.message)
+    res.status(500).json({ success: false, message: "No se pudo actualizar el tiempo de la visita" })
+  }
+})
+
 app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => {
   try {
     const codigo = req.params.codigo
@@ -2502,11 +2675,15 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
       } catch (_) {}
     }
 
+    const visitaId = Number.parseInt(b.visitaId, 10)
+    const puntoFin = ubicacionDeVisita(b)
+    const evaluacionFin = await evaluarUbicacionVisita(puntoFin, codigo)
+
     const ruta = await connectRuta()
     await ensureVisitasTabla(ruta)
     const recaudoIdVisita = await resolverRecaudoIdPedidos(numeroRecaudo || null)
 
-    const insert = await ruta.request()
+    const solicitud = () => ruta.request()
       .input("cliente", sql.NVarChar, codigo)
       .input("rutaId", sql.Int, Number.isNaN(rutaId) ? null : rutaId)
       .input("vendId", sql.Int, slpCode)
@@ -2529,22 +2706,60 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
       .input("refPago", sql.NVarChar, referenciaPago || null)
       .input("numRec", sql.NVarChar, numeroRecaudo || null)
       .input("recaudoId", sql.Int, recaudoIdVisita)
-      .query(`
+      .input("latFin", sql.Decimal(9, 6), puntoFin ? puntoFin.latitud : null)
+      .input("lngFin", sql.Decimal(9, 6), puntoFin ? puntoFin.longitud : null)
+      .input("distFin", sql.Int, evaluacionFin && evaluacionFin.distanciaM != null ? evaluacionFin.distanciaM : null)
+      .input("enCliFin", sql.Bit, evaluacionFin && evaluacionFin.enCliente != null ? (evaluacionFin.enCliente ? 1 : 0) : null)
+      .input("sim", sql.Bit, puntoFin && puntoFin.simulada ? 1 : 0)
+
+    let row = null
+    let yaCerrada = false
+    if (!Number.isNaN(visitaId)) {
+      const upd = await solicitud()
+        .input("visitaId", sql.Int, visitaId)
+        .query(`
+          UPDATE visitas_clientes SET
+            ruta_id = COALESCE(@rutaId, ruta_id), vendedor_nombre = @vendNom, estado_cliente = @estado,
+            observacion = @obs, motivo_no_gestion = @motivo,
+            total_pedidos = @tPed, total_cartera = @tCar, total_recaudos = @tRec,
+            hora_inicio = COALESCE(hora_inicio, @hIni), hora_fin = @hFin, duracion_segundos = @dur,
+            encuesta_tipo = @encTipo, encuesta_respuestas = @encResp,
+            segunda_visita = @segunda, motivo_segunda_visita = @motSeg,
+            metodo_pago = @metPago, banco_pago = @bancoPago, referencia_pago = @refPago,
+            numero_recaudo = @numRec, recaudo_id = @recaudoId,
+            estado_visita = 'cerrada', ultima_actividad = GETDATE(), fecha = GETDATE(),
+            lat_fin = @latFin, lng_fin = @lngFin, distancia_cliente_fin_m = @distFin, en_cliente_fin = @enCliFin,
+            ubicacion_simulada = CASE WHEN @sim = 1 THEN 1 ELSE ubicacion_simulada END
+          OUTPUT INSERTED.id, CONVERT(VARCHAR(19), INSERTED.fecha, 120) AS fecha, DELETED.estado_visita AS estado_previo
+          WHERE id = @visitaId AND cliente_id = @cliente AND ${FILTRO_VENDEDOR_VISITA}
+        `)
+      if (upd.recordset.length > 0) {
+        row = upd.recordset[0]
+        yaCerrada = row.estado_previo === "cerrada"
+      }
+    }
+
+    if (!row) {
+      const insert = await solicitud().query(`
         INSERT INTO visitas_clientes
           (cliente_id, ruta_id, vendedor_id, vendedor_nombre, estado_cliente, observacion,
            motivo_no_gestion, total_pedidos, total_cartera, total_recaudos,
            hora_inicio, hora_fin, duracion_segundos, encuesta_tipo, encuesta_respuestas,
-           segunda_visita, motivo_segunda_visita, metodo_pago, banco_pago, referencia_pago, numero_recaudo, recaudo_id)
+           segunda_visita, motivo_segunda_visita, metodo_pago, banco_pago, referencia_pago, numero_recaudo, recaudo_id,
+           estado_visita, ultima_actividad, lat_fin, lng_fin, distancia_cliente_fin_m, en_cliente_fin, ubicacion_simulada)
         OUTPUT INSERTED.id, CONVERT(VARCHAR(19), INSERTED.fecha, 120) AS fecha
         VALUES (@cliente, @rutaId, @vendId, @vendNom, @estado, @obs,
                 @motivo, @tPed, @tCar, @tRec, @hIni, @hFin, @dur, @encTipo, @encResp,
-                @segunda, @motSeg, @metPago, @bancoPago, @refPago, @numRec, @recaudoId)
+                @segunda, @motSeg, @metPago, @bancoPago, @refPago, @numRec, @recaudoId,
+                'cerrada', GETDATE(), @latFin, @lngFin, @distFin, @enCliFin, @sim)
       `)
+      row = insert.recordset[0]
+    }
 
-    const row = insert.recordset[0]
-    console.log(`Visita registrada cliente ${codigo}: estado=${estado || "-"} motivo=${motivo || "-"} recaudo=${Number.isNaN(totalRecaudos) ? 0 : totalRecaudos} pago=${metodoPago || "-"}${bancoPago ? "/" + bancoPago : ""}${referenciaPago ? " ref:" + referenciaPago : ""} dur=${duracionSeg || 0}s vend=${slpCode}`)
+    if (!yaCerrada) await registrarPuntoDeVisita(req, b, "visita_fin", codigo, row.id)
+    console.log(`Visita registrada cliente ${codigo}: id=${row.id}${Number.isNaN(visitaId) ? "" : " (abierta " + visitaId + ")"} estado=${estado || "-"} motivo=${motivo || "-"} recaudo=${Number.isNaN(totalRecaudos) ? 0 : totalRecaudos} pago=${metodoPago || "-"}${bancoPago ? "/" + bancoPago : ""}${referenciaPago ? " ref:" + referenciaPago : ""} dur=${duracionSeg || 0}s vend=${slpCode}`)
 
-    if (encuestaRespuestas) {
+    if (encuestaRespuestas && !yaCerrada) {
       try {
         await ensureEncuestasTablas(pedidosPool)
         const encObj = typeof encuestaRespuestas === "string"
@@ -2591,7 +2806,16 @@ app.post("/api/clientes/:codigo/visita", authenticateToken, async (req, res) => 
 
     res.json({
       success: true,
-      data: { id: row.id, fecha: row.fecha, estadoCliente: estado, observacion, motivo, duracionSegundos: duracionSeg },
+      data: {
+        id: row.id,
+        fecha: row.fecha,
+        estadoCliente: estado,
+        observacion,
+        motivo,
+        duracionSegundos: duracionSeg,
+        enCliente: evaluacionFin ? evaluacionFin.enCliente : null,
+        distanciaM: evaluacionFin ? evaluacionFin.distanciaM : null,
+      },
     })
   } catch (error) {
     console.error("Error registrando visita:", error.message)
@@ -2796,7 +3020,7 @@ app.get("/api/clientes/:codigo/visita/ultima", authenticateToken, async (req, re
     const r = await ruta.request().input("cliente", sql.NVarChar, req.params.codigo).query(`
       SELECT TOP 1 id, estado_cliente, observacion, vendedor_nombre,
              CONVERT(VARCHAR(19), fecha, 120) AS fecha
-      FROM visitas_clientes WHERE cliente_id = @cliente ORDER BY fecha DESC, id DESC
+      FROM visitas_clientes WHERE cliente_id = @cliente AND ${SIN_VISITAS_ABIERTAS} ORDER BY fecha DESC, id DESC
     `)
     if (r.recordset.length === 0) {
       return res.json({ success: true, data: null })
@@ -2927,66 +3151,76 @@ async function googleGeocode(q) {
   }
 }
 
+async function direccionSapCliente(codigo) {
+  const sap = await connectSAP()
+  const r = await sap.request()
+    .input("cardCode", sql.VarChar, codigo)
+    .query("SELECT Address, City FROM OCRD WHERE CardCode = @cardCode")
+  if (r.recordset.length === 0) return ""
+  const c = r.recordset[0]
+  return [c.Address, c.City, "Colombia"].filter(Boolean).join(", ")
+}
+
+async function geocodificarDireccion(direccion) {
+  const cacheKey = direccion.toUpperCase()
+  if (geocodeCache.has(cacheKey)) return geocodeCache.get(cacheKey)
+
+  const partes = direccion.split(",").map((p) => normalizarDireccion(p)).filter(Boolean)
+  const calle = partes[0] || ""
+  const resto = partes.slice(1).join(", ")
+  const viaMatch = calle.match(/^([A-Za-zÁÉÍÓÚÑáéíóúñ\s]+\d+\s?[A-Za-z]?)/)
+  const soloVia = viaMatch ? viaMatch[1].trim() : ""
+
+  const google = await googleGeocode(partes.join(", "))
+  if (google) {
+    geocodeCache.set(cacheKey, google)
+    console.log(`Geocode "${direccion}" -> ${google.lat},${google.lng} (google/${google.precision})`)
+    return google
+  }
+
+  const intentos = [
+    { q: partes.join(", "), precision: "exacta" },
+    soloVia && resto ? { q: `${soloVia}, ${resto}`, precision: "via" } : null,
+    resto ? { q: resto, precision: "ciudad" } : null,
+  ].filter(Boolean)
+
+  for (const intento of intentos) {
+    const hit = await nominatimSearch(intento.q)
+    if (hit) {
+      const data = {
+        lat: Number.parseFloat(hit.lat),
+        lng: Number.parseFloat(hit.lon),
+        formattedAddress: hit.display_name || direccion,
+        placeId: String(hit.place_id || ""),
+        precision: intento.precision,
+      }
+      geocodeCache.set(cacheKey, data)
+      console.log(`Geocode "${direccion}" -> ${data.lat},${data.lng} (osm/${intento.precision})`)
+      return data
+    }
+  }
+
+  console.log(`Geocode sin resultados: "${direccion}"`)
+  return null
+}
+
 app.get("/api/clientes/:codigo/geocode", authenticateToken, async (req, res) => {
   try {
     let direccion = (req.query.address || "").toString().trim()
 
     if (!direccion) {
-      const sap = await connectSAP()
-      const r = await sap.request()
-        .input("cardCode", sql.VarChar, req.params.codigo)
-        .query("SELECT Address, City FROM OCRD WHERE CardCode = @cardCode")
-      if (r.recordset.length > 0) {
-        const c = r.recordset[0]
-        direccion = [c.Address, c.City, "Colombia"].filter(Boolean).join(", ")
-      }
+      direccion = await direccionSapCliente(req.params.codigo)
     }
 
     if (!direccion) {
       return res.status(404).json({ success: false, message: "Cliente sin dirección" })
     }
 
-    const cacheKey = direccion.toUpperCase()
-    if (geocodeCache.has(cacheKey)) {
-      return res.json({ success: true, data: geocodeCache.get(cacheKey) })
+    const data = await geocodificarDireccion(direccion)
+    if (data) {
+      return res.json({ success: true, data })
     }
 
-    const partes = direccion.split(",").map((p) => normalizarDireccion(p)).filter(Boolean)
-    const calle = partes[0] || ""
-    const resto = partes.slice(1).join(", ")
-    const viaMatch = calle.match(/^([A-Za-zÁÉÍÓÚÑáéíóúñ\s]+\d+\s?[A-Za-z]?)/)
-    const soloVia = viaMatch ? viaMatch[1].trim() : ""
-
-    const google = await googleGeocode(partes.join(", "))
-    if (google) {
-      geocodeCache.set(cacheKey, google)
-      console.log(`Geocode "${direccion}" -> ${google.lat},${google.lng} (google/${google.precision})`)
-      return res.json({ success: true, data: google })
-    }
-
-    const intentos = [
-      { q: partes.join(", "), precision: "exacta" },
-      soloVia && resto ? { q: `${soloVia}, ${resto}`, precision: "via" } : null,
-      resto ? { q: resto, precision: "ciudad" } : null,
-    ].filter(Boolean)
-
-    for (const intento of intentos) {
-      const hit = await nominatimSearch(intento.q)
-      if (hit) {
-        const data = {
-          lat: Number.parseFloat(hit.lat),
-          lng: Number.parseFloat(hit.lon),
-          formattedAddress: hit.display_name || direccion,
-          placeId: String(hit.place_id || ""),
-          precision: intento.precision,
-        }
-        geocodeCache.set(cacheKey, data)
-        console.log(`Geocode "${direccion}" -> ${data.lat},${data.lng} (osm/${intento.precision})`)
-        return res.json({ success: true, data })
-      }
-    }
-
-    console.log(`Geocode sin resultados: "${direccion}"`)
     res.status(404).json({ success: false, message: "No se encontraron coordenadas para la dirección" })
   } catch (error) {
     console.error("Error geocodificando:", error.message)
@@ -3313,6 +3547,8 @@ indicadores.registrarRutas(app, {
   sql,
   log: console,
 })
+
+rastreo.registrarRutas(app, { requireAuth: authenticateToken, requireSoporte })
 
 app.get("/api/usuarios", requireSoporte, async (req, res) => {
   try {

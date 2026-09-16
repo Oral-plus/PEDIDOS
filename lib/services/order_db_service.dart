@@ -42,6 +42,60 @@ class OrderDbService {
     return '$porDefecto (${res.statusCode})';
   }
 
+  static String? _textoOpcional(String? v) {
+    final t = (v ?? '').trim();
+    return t.isEmpty ? null : t;
+  }
+
+  static Map<String, dynamic>? construirCuerpo({
+    required List<CartItem> cartItems,
+    required String cedula,
+    required String nombre,
+    required String correo,
+    required String telefono,
+    String? direccion,
+    String? observaciones,
+    String? codigoCliente,
+    String? vendedor,
+    String? ciudad,
+    double descuentoPiePct = 0,
+    String? comentarioDespacho,
+    String? comentarioComercial,
+  }) {
+    final productos = <Map<String, dynamic>>[];
+    for (final item in cartItems) {
+      if (item.codigoSap.isEmpty || item.quantity <= 0) continue;
+      productos.add({
+        'codigo': item.codigoSap,
+        'nombre': item.title,
+        'textura': item.textura ?? 'Media',
+        'precio': item.price,
+        'descuentoPct': item.descuentoPct,
+        'cantidad': item.quantity,
+        'total': item.totalPrice,
+      });
+    }
+    if (productos.isEmpty) return null;
+
+    final subtotal = productos.fold<double>(0, (s, p) => s + ((p['total'] as num?)?.toDouble() ?? 0));
+    return {
+      'cedula': cedula.trim(),
+      'nombre': nombre.trim(),
+      'correo': correo.trim(),
+      'telefono': telefono.trim(),
+      'direccion': _textoOpcional(direccion),
+      'subtotal': subtotal,
+      'productos': productos,
+      'observaciones': _textoOpcional(observaciones),
+      'codigoCliente': (codigoCliente ?? cedula).trim(),
+      'vendedor': vendedor?.trim(),
+      'ciudad': ciudad?.trim(),
+      'descuentoPiePct': descuentoPiePct,
+      'comentarioDespacho': _textoOpcional(comentarioDespacho),
+      'comentarioComercial': _textoOpcional(comentarioComercial),
+    };
+  }
+
   static Future<Map<String, dynamic>> saveOrder({
     required List<CartItem> cartItems,
     required String cedula,
@@ -54,44 +108,30 @@ class OrderDbService {
     String? vendedor,
     String? ciudad,
     double descuentoPiePct = 0,
+    String? comentarioDespacho,
+    String? comentarioComercial,
   }) async {
     try {
       final workingUrl = await _baseUrl();
 
-      final productos = <Map<String, dynamic>>[];
-      for (final item in cartItems) {
-        if (item.codigoSap.isEmpty || item.quantity <= 0) continue;
-        productos.add({
-          'codigo': item.codigoSap,
-          'nombre': item.title,
-          'textura': item.textura ?? 'Media',
-          'precio': item.price,
-          'descuentoPct': item.descuentoPct,
-          'cantidad': item.quantity,
-          'total': item.totalPrice,
-        });
-      }
-
-      if (productos.isEmpty) {
+      final body = construirCuerpo(
+        cartItems: cartItems,
+        cedula: cedula,
+        nombre: nombre,
+        correo: correo,
+        telefono: telefono,
+        direccion: direccion,
+        observaciones: observaciones,
+        codigoCliente: codigoCliente,
+        vendedor: vendedor,
+        ciudad: ciudad,
+        descuentoPiePct: descuentoPiePct,
+        comentarioDespacho: comentarioDespacho,
+        comentarioComercial: comentarioComercial,
+      );
+      if (body == null) {
         return {'success': false, 'message': 'No hay productos válidos en el carrito.'};
       }
-
-      final subtotal = productos.fold<double>(0, (s, p) => s + ((p['total'] as num?)?.toDouble() ?? 0));
-
-      final body = {
-        'cedula': cedula.trim(),
-        'nombre': nombre.trim(),
-        'correo': correo.trim(),
-        'telefono': telefono.trim(),
-        'direccion': (direccion ?? '').trim().isEmpty ? null : direccion!.trim(),
-        'subtotal': subtotal,
-        'productos': productos,
-        'observaciones': (observaciones ?? '').trim().isEmpty ? null : observaciones!.trim(),
-        'codigoCliente': (codigoCliente ?? cedula).trim(),
-        'vendedor': vendedor?.trim(),
-        'ciudad': ciudad?.trim(),
-        'descuentoPiePct': descuentoPiePct,
-      };
 
       final res = await SharedHttp.client
           .post(
