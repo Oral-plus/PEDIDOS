@@ -153,6 +153,56 @@ class RepositorioProductos {
     return lista
   }
 
+  async descuentosDe(cardCode) {
+    if (!cardCode) return null
+    if (!this.descuentosCliente) this.descuentosCliente = new Map()
+    const guardado = this.descuentosCliente.get(cardCode)
+    if (guardado && Date.now() < guardado.vence) return guardado.datos
+
+    const catalogo = await this.obtenerCatalogo()
+    const pool = await this.getSapPool()
+    const r = await pool
+      .request()
+      .input("cardCode", this.sql.VarChar, cardCode)
+      .query(`
+        SELECT ISNULL(Discount, 0) AS pie FROM OCRD WHERE CardCode = @cardCode;
+
+        SELECT E.ObjType, E.ObjKey, MIN(E.Discount) AS pct
+        FROM OEDG G
+        JOIN EDG1 E ON E.AbsEntry = G.AbsEntry
+        WHERE G.Type = 'S' AND G.ObjType = '2' AND G.ObjCode = @cardCode AND G.ValidFor = 'Y'
+          AND (G.ValidForm IS NULL OR G.ValidForm <= GETDATE())
+          AND (G.ValidTo IS NULL OR G.ValidTo >= CAST(GETDATE() AS DATE))
+          AND E.DiscType = 'D' AND E.ObjType IN ('4', '52')
+        GROUP BY E.ObjType, E.ObjKey;
+      `)
+    if (r.recordsets[0].length === 0) return null
+
+    const porGrupo = new Map()
+    const porCodigo = new Map()
+    for (const f of r.recordsets[1]) {
+      const destino = String(f.ObjType) === "52" ? porGrupo : porCodigo
+      destino.set(String(f.ObjKey).trim(), Number(f.pct) || 0)
+    }
+
+    const porArticulo = {}
+    for (const item of catalogo.items.values()) {
+      const candidatos = [porCodigo.get(item.codigo), porGrupo.get(String(item.grupoCodigo))]
+        .filter((v) => v != null)
+      if (candidatos.length === 0) continue
+      const pct = Math.min(...candidatos)
+      if (pct > 0) porArticulo[item.codigo] = pct
+    }
+
+    const datos = {
+      cliente: cardCode,
+      piePagina: Number(r.recordsets[0][0].pie) || 0,
+      porArticulo,
+    }
+    this.descuentosCliente.set(cardCode, { datos, vence: Date.now() + 10 * 60 * 1000 })
+    return datos
+  }
+
   categoriaDe(item, cfg) {
     if (cfg && cfg.categoria_app) return cfg.categoria_app
     return CATEGORIA_POR_GRUPO[item.grupoNombre] || item.grupoNombre || "Otros"

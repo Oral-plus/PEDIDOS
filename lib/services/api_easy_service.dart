@@ -1118,7 +1118,7 @@ class ApiEasyService {
     required int recaudoId,
     required String banco,
     required String numeroRecibo,
-    required String fotoRuta,
+    required List<String> fotosRutas,
     String observaciones = '',
   }) async {
     if (_token == null || _token!.isEmpty) {
@@ -1135,7 +1135,9 @@ class ApiEasyService {
       if (observaciones.trim().isNotEmpty) {
         req.fields['observaciones'] = observaciones.trim();
       }
-      req.files.add(await http.MultipartFile.fromPath('foto', fotoRuta));
+      for (var i = 0; i < fotosRutas.length; i++) {
+        req.files.add(await http.MultipartFile.fromPath(i == 0 ? 'foto' : 'fotos', fotosRutas[i]));
+      }
       final streamed = await SharedHttp.client.send(req).timeout(const Duration(seconds: 45));
       final res = await http.Response.fromStream(streamed);
       final tipo = res.headers['content-type'] ?? '';
@@ -1172,6 +1174,31 @@ class ApiEasyService {
       default:
         return 'No se pudo registrar el cuadre ($codigo)';
     }
+  }
+
+  Future<Map<String, dynamic>?> getDescuentosCliente(String codigo, {bool forzar = false}) {
+    return _cache.obtener<Map<String, dynamic>?>(
+      'descuentos:$codigo',
+      const Duration(minutes: 10),
+      () => _getDescuentosClienteRed(codigo),
+      forzar: forzar,
+    );
+  }
+
+  Future<Map<String, dynamic>?> _getDescuentosClienteRed(String codigo) async {
+    if (_token == null || _token!.isEmpty) return null;
+    try {
+      final res = await ApiClient.get(
+        '/api/productos/descuentos?cliente=${Uri.encodeQueryComponent(codigo)}',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 20),
+      );
+      if (res is Map && res['success'] == true) {
+        return Map<String, dynamic>.from(res);
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<Map<String, dynamic>?> getCarteraCliente(String codigo, {bool forzar = false}) {

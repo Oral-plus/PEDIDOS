@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_easy_service.dart';
 import '../utils/theme.dart';
+import '../utils/filtro_cliente.dart';
 import '../widgets/cliente_sheets.dart';
 
 class SocioNegocioScreen extends StatefulWidget {
@@ -69,7 +70,8 @@ class _SocioNegocioScreenState extends State<SocioNegocioScreen> {
         _filtrados = widget.clientes.where((c) {
           final id = (c['id'] ?? '').toString().toLowerCase();
           final nombre = (c['nombre'] ?? c['cardName'] ?? c['nombre1'] ?? '').toString().toLowerCase();
-          return id.contains(q) || nombre.contains(q);
+          final comercial = FiltroCliente.nombreComercial(c).toLowerCase();
+          return id.contains(q) || nombre.contains(q) || comercial.contains(q);
         }).toList();
       }
     });
@@ -344,7 +346,12 @@ class _SocioNegocioScreenState extends State<SocioNegocioScreen> {
                                   style: TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w700),
                                   maxLines: 1, overflow: TextOverflow.ellipsis),
                               const SizedBox(height: 2),
-                              Text('${c['id'] ?? '—'}',
+                              Text(
+                                  FiltroCliente.nombreComercial(c).isEmpty
+                                      ? '${c['id'] ?? '—'}'
+                                      : '${c['id'] ?? '—'} · ${FiltroCliente.nombreComercial(c)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(color: _textMuted, fontSize: 12, fontWeight: FontWeight.w600)),
                             ]),
                           ),
@@ -364,6 +371,9 @@ class _SocioNegocioScreenState extends State<SocioNegocioScreen> {
     final codigo = c['id']?.toString() ?? '';
     final nombre = (c['nombre'] ?? c['cardName'] ?? c['nombre1'] ?? '—').toString();
     final sap = _detalle;
+    final comercial = FiltroCliente.nombreComercial(sap).isNotEmpty
+        ? FiltroCliente.nombreComercial(sap)
+        : FiltroCliente.nombreComercial(c);
     final telefono = sap?['telefono']?.toString().trim().isNotEmpty == true ? sap!['telefono'].toString() : '—';
     final direccion = sap?['direccion']?.toString().trim().isNotEmpty == true ? sap!['direccion'].toString() : '—';
     final ciudad = sap?['ciudad']?.toString().trim().isNotEmpty == true ? sap!['ciudad'].toString() : '—';
@@ -411,6 +421,19 @@ class _SocioNegocioScreenState extends State<SocioNegocioScreen> {
               Text(nombre,
                   style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
                   maxLines: 2, overflow: TextOverflow.ellipsis),
+              if (comercial.isNotEmpty && comercial.toLowerCase() != nombre.toLowerCase()) ...[
+                const SizedBox(height: 4),
+                Row(children: [
+                  const Icon(Icons.store_mall_directory_rounded, color: Colors.white70, size: 15),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(comercial,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w600)),
+                  ),
+                ]),
+              ],
               const SizedBox(height: 4),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),

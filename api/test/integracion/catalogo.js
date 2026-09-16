@@ -173,6 +173,35 @@ async function esperar() {
   }
   await pedidosPrev.close()
   ok("no existe carpeta api/data (todo en BD)", !fs.existsSync(path.join(process.cwd(), "data")))
+  const sapDesc = await new sql.ConnectionPool(cfgDb(process.env.SAP_DB_NAME || "RBOSKY3")).connect()
+  const cliDesc = (await sapDesc.request().query(`
+    SELECT TOP 1 C.CardCode, C.Discount
+    FROM OCRD C
+    WHERE C.CardType = 'C' AND C.validFor = 'Y' AND C.Discount > 0
+      AND EXISTS (SELECT 1 FROM OEDG G JOIN EDG1 E ON E.AbsEntry = G.AbsEntry
+                  WHERE G.Type = 'S' AND G.ObjType = '2' AND G.ObjCode = C.CardCode
+                    AND G.ValidFor = 'Y' AND E.ObjType = '52' AND E.ObjKey = '130')
+    ORDER BY C.CardCode`)).recordset[0]
+  if (cliDesc) {
+    const esperado = (await sapDesc.request().input("c", sql.VarChar, cliDesc.CardCode).query(`
+      SELECT MIN(E.Discount) pct FROM OEDG G JOIN EDG1 E ON E.AbsEntry = G.AbsEntry
+      WHERE G.Type = 'S' AND G.ObjType = '2' AND G.ObjCode = @c AND G.ValidFor = 'Y'
+        AND E.ObjType = '52' AND E.ObjKey = '130'`)).recordset[0].pct
+    const rDesc = await llamar("GET", `/api/productos/descuentos?cliente=${encodeURIComponent(cliDesc.CardCode)}`, { token: vendedor })
+    const d = rDesc.json || {}
+    const cepillo = productos.find((p) => p.grupoSap === "PT-CEPILLOS NACIONAL")
+    ok("descuentos: pie de pagina del cliente = OCRD.Discount",
+      rDesc.status === 200 && Number(d.piePagina) === Number(cliDesc.Discount), `${cliDesc.CardCode} pie ${d.piePagina}%`)
+    ok("descuentos: por referencia = menor grupo de descuento del cliente para el grupo del articulo",
+      cepillo && Number((d.porArticulo || {})[cepillo.codigo]) === Number(esperado),
+      cepillo ? `${cepillo.codigo} ${(d.porArticulo || {})[cepillo.codigo]}% esperado ${esperado}%` : "sin cepillo en el catalogo")
+  } else {
+    ok("descuentos: hay un cliente con pie de pagina y grupo de descuento para probar", false)
+  }
+  const sinCliente = await llamar("GET", "/api/productos/descuentos", { token: vendedor })
+  ok("descuentos: sin cliente responde 400", sinCliente.status === 400)
+  await sapDesc.close()
+
   const adm = await llamar("GET", "/api/productos/admin", { token: soporte })
   ok("admin: lista completa", adm.status === 200 && adm.json.productos.length >= 200, `${adm.json && adm.json.productos.length} artículos`)
 

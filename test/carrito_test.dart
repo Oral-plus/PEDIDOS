@@ -148,6 +148,58 @@ void main() {
     });
   });
 
+  group('Descuentos del cliente', () {
+    Map<String, dynamic> conDescuento(String codigo, double pct, {double precio = 10000}) => {
+          ..._producto(codigoSap: codigo, title: codigo, price: precio),
+          'precioLista': precio,
+          'descuentoPct': pct,
+        };
+
+    test('la linea toma el descuento por referencia y el total queda neto', () {
+      final cart = CartProvider();
+      final id = cart.addItem(conDescuento('A', 15));
+      cart.updateQuantity(id, 3);
+      final item = cart.items.first;
+      expect(item.price, 10000.0);
+      expect(item.precioNeto, 8500.0);
+      expect(item.totalBruto, 30000.0);
+      expect(item.totalPrice, 25500.0);
+      expect(cart.totalAmount, 25500.0);
+    });
+
+    test('el pie de pagina se aplica sobre el subtotal neto, igual que SAP', () {
+      final cart = CartProvider();
+      cart.aplicarDescuentos('C1', const {'A': 10}, 5);
+      cart.addItem(conDescuento('A', 10));
+      cart.addItem(conDescuento('B', 0, precio: 2000));
+      final r = cart.resumen;
+      expect(r.subtotalBruto, 12000.0);
+      expect(r.descuentoLineas, 1000.0);
+      expect(r.subtotalNeto, 11000.0);
+      expect(r.descuentoPie, 550.0);
+      expect(r.total, 10450.0);
+      expect(cart.totalAmount, 10450.0);
+    });
+
+    test('aplicarDescuentos reprecia lo que ya estaba en el carrito', () {
+      final cart = CartProvider();
+      cart.addItem(_producto(codigoSap: 'A', title: 'A', price: 1000));
+      expect(cart.totalAmount, 1000.0);
+      cart.aplicarDescuentos('C1', const {'A': 20}, 10);
+      expect(cart.items.first.descuentoPct, 20.0);
+      expect(cart.totalAmount, 720.0);
+    });
+
+    test('sin descuentos el carrito se comporta igual que antes', () {
+      final cart = CartProvider();
+      cart.addItem(_producto(price: 1500));
+      cart.addItem(_producto(price: 1500));
+      expect(cart.resumen.descuentoLineas, 0.0);
+      expect(cart.resumen.descuentoPie, 0.0);
+      expect(cart.totalAmount, 3000.0);
+    });
+  });
+
   group('PriceUtils.formatPriceDisplay', () {
     test('formatea con separador de miles y dos decimales', () {
       expect(PriceUtils.formatPriceDisplay(304532), r'$304.532,00');

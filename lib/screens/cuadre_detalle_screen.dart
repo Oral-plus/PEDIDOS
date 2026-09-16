@@ -51,7 +51,8 @@ class _CuadreDetalleScreenState extends State<CuadreDetalleScreen> {
   bool _cargando = true;
   bool _guardando = false;
   String? _banco;
-  XFile? _comprobante;
+  static const int _maxFotos = 3;
+  final List<XFile> _comprobantes = [];
   late final DateTime _fecha;
 
   @override
@@ -86,7 +87,7 @@ class _CuadreDetalleScreenState extends State<CuadreDetalleScreen> {
   bool get _completo =>
       _bancoElegido.isNotEmpty &&
       _numeroRecibo.text.trim().isNotEmpty &&
-      _comprobante != null;
+      _comprobantes.isNotEmpty;
 
   String _pesos(num v) => PriceUtils.formatPriceDisplay(v.toDouble());
 
@@ -116,6 +117,11 @@ class _CuadreDetalleScreenState extends State<CuadreDetalleScreen> {
   }
 
   Future<void> _adjuntar() async {
+    final restantes = _maxFotos - _comprobantes.length;
+    if (restantes <= 0) {
+      _aviso('Puedes adjuntar máximo $_maxFotos imágenes del comprobante', error: true);
+      return;
+    }
     final fuente = await showModalBottomSheet<ImageSource>(
       context: context,
       backgroundColor: Colors.white,
@@ -136,6 +142,8 @@ class _CuadreDetalleScreenState extends State<CuadreDetalleScreen> {
           ListTile(
             leading: const Icon(Icons.photo_library_rounded, color: _ink),
             title: const Text('Elegir de galería', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+            subtitle: Text(restantes == 1 ? 'Puedes elegir 1 imagen más' : 'Hasta $restantes imágenes',
+                style: const TextStyle(fontSize: 12)),
             onTap: () => Navigator.pop(ctx, ImageSource.gallery),
           ),
           const SizedBox(height: 8),
@@ -144,8 +152,18 @@ class _CuadreDetalleScreenState extends State<CuadreDetalleScreen> {
     );
     if (fuente == null) return;
     try {
-      final foto = await _picker.pickImage(source: fuente, imageQuality: 70, maxWidth: 1600);
-      if (foto != null && mounted) setState(() => _comprobante = foto);
+      final List<XFile> nuevas;
+      if (fuente == ImageSource.camera || restantes == 1) {
+        final foto = await _picker.pickImage(source: fuente, imageQuality: 70, maxWidth: 1600);
+        nuevas = foto == null ? const [] : [foto];
+      } else {
+        nuevas = await _picker.pickMultiImage(imageQuality: 70, maxWidth: 1600, limit: restantes);
+      }
+      if (nuevas.isEmpty || !mounted) return;
+      setState(() => _comprobantes.addAll(nuevas.take(restantes)));
+      if (nuevas.length > restantes) {
+        _aviso('Solo se adjuntaron $restantes: el máximo son $_maxFotos imágenes', error: true);
+      }
     } catch (_) {
       if (mounted) _aviso('No se pudo abrir ${fuente == ImageSource.camera ? 'la cámara' : 'la galería'}', error: true);
     }
@@ -163,7 +181,7 @@ class _CuadreDetalleScreenState extends State<CuadreDetalleScreen> {
       banco: _bancoElegido,
       numeroRecibo: _numeroRecibo.text,
       observaciones: _observaciones.text,
-      fotoRuta: _comprobante!.path,
+      fotosRutas: _comprobantes.map((f) => f.path).toList(),
     );
     if (!mounted) return;
     setState(() => _guardando = false);
@@ -489,42 +507,66 @@ class _CuadreDetalleScreenState extends State<CuadreDetalleScreen> {
   }
 
   Widget _adjunto() {
-    if (_comprobante == null) {
-      return OutlinedButton.icon(
-        onPressed: _adjuntar,
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size(double.infinity, 46),
-          side: const BorderSide(color: _line),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+    final puedeAgregar = _comprobantes.length < _maxFotos;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      if (_comprobantes.isNotEmpty) ...[
+        Wrap(spacing: 12, runSpacing: 12, children: [
+          for (var i = 0; i < _comprobantes.length; i++) _miniatura(i),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          const Icon(Icons.check_circle_rounded, color: _verde, size: 16),
+          const SizedBox(width: 5),
+          Text('${_comprobantes.length} de $_maxFotos imágenes adjuntas',
+              style: const TextStyle(color: _verde, fontSize: 12.5, fontWeight: FontWeight.w700)),
+        ]),
+        const SizedBox(height: 10),
+      ],
+      if (puedeAgregar)
+        OutlinedButton.icon(
+          onPressed: _guardando ? null : _adjuntar,
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 46),
+            side: const BorderSide(color: _line),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+          ),
+          icon: const Icon(Icons.photo_camera_rounded, size: 18, color: _ink),
+          label: Text(_comprobantes.isEmpty ? 'Adjuntar comprobante' : 'Agregar otra imagen',
+              style: const TextStyle(color: _ink, fontSize: 13.5, fontWeight: FontWeight.w700)),
         ),
-        icon: const Icon(Icons.photo_camera_rounded, size: 18, color: _ink),
-        label: const Text('Adjuntar comprobante',
-            style: TextStyle(color: _ink, fontSize: 13.5, fontWeight: FontWeight.w700)),
-      );
-    }
-    return Row(children: [
+      if (_comprobantes.isEmpty) ...[
+        const SizedBox(height: 6),
+        const Text('Puedes adjuntar hasta $_maxFotos imágenes',
+            style: TextStyle(color: _gray, fontSize: 11.5)),
+      ],
+    ]);
+  }
+
+  Widget _miniatura(int i) {
+    return Stack(clipBehavior: Clip.none, children: [
       ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: Image.file(File(_comprobante!.path), width: 56, height: 56, fit: BoxFit.cover,
+        child: Image.file(File(_comprobantes[i].path), width: 76, height: 76, fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => Container(
-                  width: 56, height: 56, color: _surface,
+                  width: 76, height: 76, color: _surface,
                   child: const Icon(Icons.image_rounded, color: _gray),
                 )),
       ),
-      const SizedBox(width: 10),
-      const Expanded(
-        child: Row(children: [
-          Icon(Icons.check_circle_rounded, color: _verde, size: 18),
-          SizedBox(width: 5),
-          Expanded(
-            child: Text('Comprobante adjunto',
-                style: TextStyle(color: _verde, fontSize: 12.5, fontWeight: FontWeight.w700)),
+      Positioned(
+        top: -7,
+        right: -7,
+        child: Material(
+          color: _rojo,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: _guardando ? null : () => setState(() => _comprobantes.removeAt(i)),
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(Icons.close_rounded, color: Colors.white, size: 15),
+            ),
           ),
-        ]),
-      ),
-      TextButton(
-        onPressed: _adjuntar,
-        child: const Text('Cambiar', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+        ),
       ),
     ]);
   }

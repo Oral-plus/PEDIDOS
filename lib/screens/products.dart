@@ -8,6 +8,7 @@ import '../models/producto.dart';
 import '../providers/session_provider.dart';
 import '../providers/cart_provider.dart';
 import '../services/catalogo_service.dart';
+import '../services/api_easy_service.dart';
 import '../widgets/product_card.dart';
 import '../widgets/cart_bottom_sheet.dart';
 import '../widgets/product_preview_dialog.dart';
@@ -55,6 +56,7 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
   String _codigoClienteActual = '';
   Map<String, Map<String, dynamic>> _preciosSAP = {};
   Map<String, Map<String, dynamic>> _estadosSAP = {};
+  Map<String, double> _descuentosPorArticulo = {};
   bool _cargando = true;
   String? _error;
 
@@ -128,12 +130,42 @@ class _ProductsTabState extends State<ProductsTab> with TickerProviderStateMixin
       return;
     }
     _aplicarCatalogo(catalogo);
+    _cargarDescuentos(forzar: forzar);
+  }
+
+  Future<void> _cargarDescuentos({bool forzar = false}) async {
+    final cliente = _codigoClienteActual;
+    if (cliente.isEmpty) return;
+    final datos = await ApiEasyService().getDescuentosCliente(cliente, forzar: forzar);
+    if (!mounted || datos == null || cliente != _codigoClienteActual) return;
+    final porArticulo = <String, double>{};
+    final crudo = datos['porArticulo'];
+    if (crudo is Map) {
+      crudo.forEach((codigo, valor) {
+        final pct = valor is num ? valor.toDouble() : double.tryParse('$valor') ?? 0;
+        if (pct > 0) porArticulo[codigo.toString()] = pct;
+      });
+    }
+    final pieCrudo = datos['piePagina'];
+    final pie = pieCrudo is num ? pieCrudo.toDouble() : double.tryParse('$pieCrudo') ?? 0;
+    context.read<CartProvider>().aplicarDescuentos(cliente, porArticulo, pie);
+    setState(() {
+      _descuentosPorArticulo = porArticulo;
+      for (final p in _allProducts) {
+        p['descuentoPct'] = porArticulo[p['codigoSap']?.toString() ?? ''] ?? 0;
+      }
+    });
   }
 
   void _aplicarCatalogo(Catalogo catalogo) {
     final productos = catalogo.productos.map((p) => p.toMapUi()).toList();
+    final precios = catalogo.preciosPorCodigo;
     final porCategoria = <String, List<Map<String, dynamic>>>{};
     for (final p in productos) {
+      final codigo = p['codigoSap']?.toString() ?? '';
+      p['descuentoPct'] = _descuentosPorArticulo[codigo] ?? 0;
+      final lista = precios[codigo]?['precio'];
+      if (lista is num) p['precioLista'] = lista.toDouble();
       p['_busqueda'] = '${p['title'] ?? ''} ${p['codigoSap'] ?? ''} ${p['category'] ?? ''}'.toLowerCase();
       porCategoria.putIfAbsent(p['category']?.toString() ?? '', () => []).add(p);
     }

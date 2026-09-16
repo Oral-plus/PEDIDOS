@@ -203,6 +203,29 @@ const cfg = { server: process.env.DB_SERVER, database: process.env.PEDIDOS_DB_NA
     .query("SELECT COUNT(*) n FROM dbo.evidencias_archivos WHERE recaudo_id=@id")).recordset[0].n
   ok("transacciones: el intento perdido no deja comprobantes sueltos", eviB === 1, `comprobantes=${eviB}`)
 
+  const fotoN = (i) => ({ campo: "fotos", nombre: `consignacion-${i}.png`, contenido: foto })
+  const efectivoTres = await crearRecaudo("f3", { recibo: 56 })
+  const tres = await llamar("POST", "/api/cuadres", {
+    token,
+    mp: multipart({ recaudoId: efectivoTres, banco: "Bancolombia", numeroRecibo: "9301" }, [fotoN(1), fotoN(2), fotoN(3)]),
+  })
+  const eviTres = (await pedidos.request().input("id", sql.Int, efectivoTres)
+    .query("SELECT COUNT(*) n FROM dbo.evidencias_archivos WHERE recaudo_id=@id AND origen='cuadre'")).recordset[0].n
+  ok("se pueden adjuntar hasta 3 imagenes del comprobante: 200 y quedan las 3 ligadas al cuadre",
+    tres.status === 200 && eviTres === 3 && tres.json && tres.json.data && tres.json.data.evidencias === 3,
+    `${tres.status} · imagenes=${eviTres}`)
+
+  const efectivoCuatro = await crearRecaudo("f4", { recibo: 57 })
+  const cuatro = await llamar("POST", "/api/cuadres", {
+    token,
+    mp: multipart({ recaudoId: efectivoCuatro, banco: "Bancolombia", numeroRecibo: "9401" }, [fotoN(1), fotoN(2), fotoN(3), fotoN(4)]),
+  })
+  const trasCuatro = (await pedidos.request().input("id", sql.Int, efectivoCuatro).query(`
+    SELECT (SELECT COUNT(*) FROM dbo.cuadres_caja WHERE recaudo_id=@id)
+         + (SELECT COUNT(*) FROM dbo.evidencias_archivos WHERE recaudo_id=@id) AS n`)).recordset[0].n
+  ok("con 4 imagenes responde 400 y no escribe ni cuadre ni imagenes",
+    cuatro.status === 400 && trasCuatro === 0, `${cuatro.status} · registros=${trasCuatro} · ${cuatro.json && cuatro.json.message}`)
+
   const pend2 = await listar("pendiente")
   const cuad2 = await listar("cuadrado")
   const idsPend = ((pend2.json && pend2.json.data) || []).map((f) => f.recaudoId)

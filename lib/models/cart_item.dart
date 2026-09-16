@@ -10,6 +10,7 @@ class CartItem {
   final String codigoSap;
   final String? textura;
   int quantity;
+  double descuentoPct;
 
   CartItem({
     required this.id,
@@ -21,12 +22,13 @@ class CartItem {
     required this.codigoSap,
     this.textura,
     this.quantity = 1,
+    this.descuentoPct = 0,
   });
 
   static double parsePrice(dynamic val) {
     if (val is num) return val.toDouble();
     if (val == null) return 0.0;
-    
+
     String s = val.toString().replaceAll(RegExp(r'[^\d.,]'), '').trim();
     if (s.isEmpty) return 0.0;
     if (s.contains(',') && s.contains('.')) {
@@ -44,7 +46,21 @@ class CartItem {
     return double.tryParse(s) ?? 0.0;
   }
 
-  double get totalPrice => price * quantity;
+  static double redondear(double v) => (v * 100).roundToDouble() / 100;
+
+  double get _pctAplicable => descuentoPct.clamp(0, 100).toDouble();
+
+  bool get tieneDescuentoCliente => _pctAplicable > 0;
+
+  double get precioNeto => redondear(price * (1 - _pctAplicable / 100));
+
+  double get descuentoUnitario => redondear(price - precioNeto);
+
+  double get totalBruto => redondear(price * quantity);
+
+  double get totalPrice => redondear(precioNeto * quantity);
+
+  double get ahorro => redondear(totalBruto - totalPrice);
 
   double get totalOriginalPrice => originalPrice * quantity;
 
@@ -67,6 +83,11 @@ class CartItem {
   String get formattedPrice {
     return '\$${_fmt.format(price)}';
   }
+
+  String get formattedPrecioNeto => '\$${_fmt.format(precioNeto)}';
+
+  String get formattedDescuentoPct =>
+      '${_pctAplicable.toStringAsFixed(_pctAplicable % 1 == 0 ? 0 : 2)}%';
 
   String get formattedOriginalPrice {
     if (originalPrice <= 0) return '';
@@ -98,6 +119,8 @@ class CartItem {
       'codigoSap': codigoSap,
       'textura': textura,
       'quantity': quantity,
+      'descuentoPct': descuentoPct,
+      'precioNeto': precioNeto,
       'totalPrice': totalPrice,
       'discount': discount,
       'hasDiscount': hasDiscount,
@@ -115,6 +138,7 @@ class CartItem {
       codigoSap: json['codigoSap']?.toString() ?? '',
       textura: json['textura']?.toString(),
       quantity: json['quantity'] is int ? json['quantity'] : int.tryParse(json['quantity']?.toString() ?? '1') ?? 1,
+      descuentoPct: (json['descuentoPct'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -128,6 +152,7 @@ class CartItem {
     String? codigoSap,
     String? textura,
     int? quantity,
+    double? descuentoPct,
   }) {
     return CartItem(
       id: id ?? this.id,
@@ -139,6 +164,7 @@ class CartItem {
       codigoSap: codigoSap ?? this.codigoSap,
       textura: textura ?? this.textura,
       quantity: quantity ?? this.quantity,
+      descuentoPct: descuentoPct ?? this.descuentoPct,
     );
   }
 
@@ -157,10 +183,10 @@ class CartItem {
   }
 
   bool get isValid {
-    return id.isNotEmpty && 
-           title.isNotEmpty && 
-           codigoSap.isNotEmpty && 
-           price > 0 && 
+    return id.isNotEmpty &&
+           title.isNotEmpty &&
+           codigoSap.isNotEmpty &&
+           price > 0 &&
            quantity > 0;
   }
 
@@ -184,8 +210,8 @@ class CartItem {
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-    return other is CartItem && 
-           other.id == id && 
+    return other is CartItem &&
+           other.id == id &&
            other.codigoSap == codigoSap;
   }
 
@@ -201,6 +227,7 @@ CartItem Debug Info:
   Price: $price
   Original Price: $originalPrice
   Quantity: $quantity
+  Descuento cliente: $formattedDescuentoPct
   Total Price: $formattedTotalPrice
   Discount: $formattedDiscount ($formattedDiscountPercentage)
   Has Discount: $hasDiscount

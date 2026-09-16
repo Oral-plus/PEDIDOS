@@ -123,7 +123,9 @@ async function detalle(pool, sql, codigo, recaudoId) {
   return cab
 }
 
-async function registrar(pool, sql, decoded, { recaudoId, banco, numeroRecibo, observaciones, evidencia }) {
+const MAX_FOTOS = 3
+
+async function registrar(pool, sql, decoded, { recaudoId, banco, numeroRecibo, observaciones, evidencias }) {
   const codigo = codigoDeSesion(decoded)
   if (!codigo) return { status: 400, message: "Sesión sin usuario identificable" }
 
@@ -133,8 +135,14 @@ async function registrar(pool, sql, decoded, { recaudoId, banco, numeroRecibo, o
   const reciboLimpio = (numeroRecibo || "").toString().trim()
   if (!bancoLimpio) return { status: 400, message: "Indica el banco al que se consignó" }
   if (!reciboLimpio) return { status: 400, message: "Indica el número del recibo de consignación" }
-  if (!evidencia || !evidencia.contenido || evidencia.contenido.length === 0) {
+  const imagenes = Array.isArray(evidencias)
+    ? evidencias.filter((e) => e && e.contenido && e.contenido.length > 0)
+    : []
+  if (imagenes.length === 0) {
     return { status: 400, message: "Adjunta la imagen del comprobante de consignación" }
+  }
+  if (imagenes.length > MAX_FOTOS) {
+    return { status: 400, message: `Máximo ${MAX_FOTOS} imágenes del comprobante` }
   }
   const obs = (observaciones || "").toString().trim().slice(0, 1000)
 
@@ -182,30 +190,33 @@ async function registrar(pool, sql, decoded, { recaudoId, banco, numeroRecibo, o
     cuadreId = ins.recordset[0].id
     const fecha = ins.recordset[0].fecha
 
-    await transaction.request()
-      .input("origen", sql.NVarChar, "cuadre")
-      .input("cliente", sql.NVarChar, r.cliente_id)
-      .input("numRec", sql.NVarChar, r.numero_recaudo)
-      .input("vendId", sql.Int, Number.parseInt(codigo, 10))
-      .input("vendNom", sql.NVarChar, (decoded.nombre || "").toString() || null)
-      .input("cuadreId", sql.Int, cuadreId)
-      .input("recaudoId", sql.Int, r.id)
-      .input("contenido", sql.VarBinary(sql.MAX), evidencia.contenido)
-      .input("tamano", sql.Int, evidencia.contenido.length)
-      .input("ancho", sql.Int, evidencia.ancho || null)
-      .input("alto", sql.Int, evidencia.alto || null)
-      .query(`
-        INSERT INTO dbo.evidencias_archivos
-          (origen, cliente_id, numero_recaudo, vendedor_id, vendedor_nombre, cuadre_id, recaudo_id,
-           contenido, tamano, ancho, alto)
-        VALUES (@origen, @cliente, @numRec, @vendId, @vendNom, @cuadreId, @recaudoId,
-                @contenido, @tamano, @ancho, @alto)
-      `)
+    for (const evidencia of imagenes) {
+      await transaction.request()
+        .input("origen", sql.NVarChar, "cuadre")
+        .input("cliente", sql.NVarChar, r.cliente_id)
+        .input("numRec", sql.NVarChar, r.numero_recaudo)
+        .input("vendId", sql.Int, Number.parseInt(codigo, 10))
+        .input("vendNom", sql.NVarChar, (decoded.nombre || "").toString() || null)
+        .input("cuadreId", sql.Int, cuadreId)
+        .input("recaudoId", sql.Int, r.id)
+        .input("contenido", sql.VarBinary(sql.MAX), evidencia.contenido)
+        .input("tamano", sql.Int, evidencia.contenido.length)
+        .input("ancho", sql.Int, evidencia.ancho || null)
+        .input("alto", sql.Int, evidencia.alto || null)
+        .query(`
+          INSERT INTO dbo.evidencias_archivos
+            (origen, cliente_id, numero_recaudo, vendedor_id, vendedor_nombre, cuadre_id, recaudo_id,
+             contenido, tamano, ancho, alto)
+          VALUES (@origen, @cliente, @numRec, @vendId, @vendNom, @cuadreId, @recaudoId,
+                  @contenido, @tamano, @ancho, @alto)
+        `)
+    }
     await transaction.commit()
     return {
       status: 200,
       data: {
         cuadreId,
+        evidencias: imagenes.length,
         recaudoId: r.id,
         numeroRecaudo: r.numero_recaudo,
         reciboCaja: r.recibo_caja == null ? null : Number(r.recibo_caja),
@@ -265,15 +276,35 @@ function registrarRutas(app, { requireAuth, getPedidosPool, sql, subida, procesa
     }
   })
 
-  app.post("/api/cuadres", requireAuth, subida.single("foto"), async (req, res) => {
+  const recibirFotos = (req, res, next) => {
+    subida.fields([{ name: "foto", maxCount: 1 }, { name: "fotos", maxCount: MAX_FOTOS }])(req, res, (err) => {
+      if (!err) return next()
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ success: false, message: "Cada imagen del comprobante debe pesar menos de 12 MB" })
+      }
+      if (err.code === "LIMIT_UNEXPECTED_FILE" || err.code === "LIMIT_FILE_COUNT") {
+        return res.status(400).json({ success: false, message: `Máximo ${MAX_FOTOS} imágenes del comprobante` })
+      }
+      return res.status(400).json({ success: false, message: "No se pudieron recibir las imágenes del comprobante" })
+    })
+  }
+
+  app.post("/api/cuadres", requireAuth, recibirFotos, async (req, res) => {
     try {
       await ensureEstructuras(getPedidosPool())
-      let evidencia = null
-      if (req.file && req.file.buffer && req.file.buffer.length > 0) {
+      const archivos = [
+        ...((req.files && req.files.foto) || []),
+        ...((req.files && req.files.fotos) || []),
+      ].filter((f) => f.buffer && f.buffer.length > 0)
+      if (archivos.length > MAX_FOTOS) {
+        return res.status(400).json({ success: false, message: `Máximo ${MAX_FOTOS} imágenes del comprobante` })
+      }
+      const evidencias = []
+      for (const archivo of archivos) {
         try {
-          evidencia = await procesarImagen(req.file.buffer)
+          evidencias.push(await procesarImagen(archivo.buffer))
         } catch (e) {
-          return res.status(400).json({ success: false, message: "La imagen del comprobante no se pudo procesar" })
+          return res.status(400).json({ success: false, message: "Una de las imágenes del comprobante no se pudo procesar" })
         }
       }
       const b = req.body || {}
@@ -282,11 +313,11 @@ function registrarRutas(app, { requireAuth, getPedidosPool, sql, subida, procesa
         banco: b.banco,
         numeroRecibo: b.numeroRecibo,
         observaciones: b.observaciones,
-        evidencia,
+        evidencias,
       })
       if (r.status !== 200) return res.status(r.status).json({ success: false, message: r.message })
       const d = r.data
-      logger.log(`Cuadre #${d.cuadreId} recaudo ${d.numeroRecaudo} recibo ${d.reciboCaja || "-"} cliente ${d.clienteId} banco ${d.banco} consignacion ${d.numeroRecibo} por ${(req.user && req.user.nombre) || "?"}`)
+      logger.log(`Cuadre #${d.cuadreId} recaudo ${d.numeroRecaudo} recibo ${d.reciboCaja || "-"} cliente ${d.clienteId} banco ${d.banco} consignacion ${d.numeroRecibo} imagenes ${d.evidencias} por ${(req.user && req.user.nombre) || "?"}`)
       res.json({ success: true, message: "Cuadre de caja registrado", data: d })
     } catch (error) {
       logger.error("Error registrando el cuadre:", error.message)

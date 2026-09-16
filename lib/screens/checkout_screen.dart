@@ -73,8 +73,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return fuente.where((i) => i.price > 0).toList();
   }
 
-  double get _total =>
-      _validItems.fold(0.0, (s, i) => s + i.totalPrice);
+  ResumenCarrito get _resumen {
+    try {
+      return context.read<CartProvider>().resumenDe(_validItems);
+    } catch (_) {
+      return CartProvider().resumenDe(_validItems);
+    }
+  }
+
+  double get _total => _resumen.total;
 
   bool get _canProcess =>
       _nombreController.text.trim().isNotEmpty &&
@@ -191,6 +198,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         codigoCliente: widget.codigoCliente,
         vendedor: vendedor,
         ciudad: session.ciudad.isNotEmpty ? session.ciudad : null,
+        descuentoPiePct: context.read<CartProvider>().descuentoPiePct,
       );
 
       if (result['success'] == true && mounted) {
@@ -694,12 +702,41 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  String _pct(double v) => '${v.toStringAsFixed(v % 1 == 0 ? 0 : 2)}%';
+
+  Widget _filaResumen(String etiqueta, String valor) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Flexible(
+            child: Text(etiqueta,
+                style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, fontWeight: FontWeight.w600)),
+          ),
+          const SizedBox(width: 8),
+          Text(valor, style: const TextStyle(fontSize: 13.5, color: AppTheme.darkBlue, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
   Widget _totalBar() {
+    final r = _resumen;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(color: AppTheme.primaryBlue.withOpacity(0.05), borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.15))),
       child: Column(
         children: [
+          if (r.tieneDescuento) ...[
+            _filaResumen('Subtotal', PriceUtils.formatPriceDisplay(r.subtotalBruto)),
+            if (r.descuentoLineas > 0)
+              _filaResumen('Descuento por referencia', '- ${PriceUtils.formatPriceDisplay(r.descuentoLineas)}'),
+            if (r.descuentoPie > 0)
+              _filaResumen('Descuento pie de página (${_pct(r.descuentoPiePct)})',
+                  '- ${PriceUtils.formatPriceDisplay(r.descuentoPie)}'),
+            const Divider(height: 20),
+          ],
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [

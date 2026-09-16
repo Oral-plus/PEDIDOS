@@ -70,13 +70,24 @@ const cfgDb = (db) => ({ server: process.env.DB_SERVER, database: db, user: proc
 
   const limpieza = []
 
-  const rPed = await llamar("POST", "/api/orders", { token, body: { cedula: CLIENTE, nombre: "PRUEBA", correo: "p@oral-plus.com", codigoCliente: CLIENTE, vendedor: "PRUEBA", productos: [{ codigo: "PRB1", nombre: "Prod prueba", cantidad: 2, precio: 1500 }] } })
+  const rPed = await llamar("POST", "/api/orders", { token, body: { cedula: CLIENTE, nombre: "PRUEBA", correo: "p@oral-plus.com", codigoCliente: CLIENTE, vendedor: "PRUEBA", descuentoPiePct: 5, productos: [{ codigo: "PRB1", nombre: "Prod prueba", cantidad: 2, precio: 1500 }, { codigo: "PRB2", nombre: "Prod con descuento", cantidad: 3, precio: 10000, descuentoPct: 15 }] } })
   const docNum = rPed.json && rPed.json.docNum
   const fPed = docNum ? (await pedidos.request().input("n", sql.NVarChar, docNum).query("SELECT id FROM pedidos WHERE numero_pedido=@n")).recordset[0] : null
   const pedidoId = fPed && fPed.id
   const nDet = pedidoId ? (await pedidos.request().input("id", sql.Int, pedidoId).query("SELECT COUNT(*) n FROM pedidos_detalle WHERE pedido_id=@id")).recordset[0].n : 0
   const nHist = pedidoId ? (await pedidos.request().input("id", sql.Int, pedidoId).query("SELECT COUNT(*) n FROM pedidos_historial WHERE pedido_id=@id")).recordset[0].n : 0
   ok("Pedido (checkout)", "pedidos + pedidos_detalle + pedidos_historial", "Pedidos", rPed.status === 200 && pedidoId && nDet >= 1 && nHist >= 1, `${docNum} det=${nDet} hist=${nHist}`)
+  const dPed = pedidoId ? (await pedidos.request().input("id", sql.Int, pedidoId).query("SELECT subtotal, total, descuento_pie_pct, descuento_total FROM pedidos WHERE id=@id")).recordset[0] : null
+  const dLin = pedidoId ? (await pedidos.request().input("id", sql.Int, pedidoId).query("SELECT codigo_producto, precio_unitario, total_linea, descuento_pct, precio_neto, total_neto FROM pedidos_detalle WHERE pedido_id=@id")).recordset : []
+  const l1 = dLin.find((l) => l.codigo_producto === "PRB1")
+  const l2 = dLin.find((l) => l.codigo_producto === "PRB2")
+  ok("Pedido con descuentos de SAP", "pedidos + pedidos_detalle", "Pedidos",
+    dPed && Number(dPed.subtotal) === 33000 && Number(dPed.descuento_pie_pct) === 5 &&
+    Number(dPed.total) === 27075 && Number(dPed.descuento_total) === 5925 &&
+    l1 && Number(l1.descuento_pct) === 0 && Number(l1.total_neto) === 3000 &&
+    l2 && Number(l2.precio_unitario) === 10000 && Number(l2.total_linea) === 30000 &&
+    Number(l2.descuento_pct) === 15 && Number(l2.precio_neto) === 8500 && Number(l2.total_neto) === 25500,
+    dPed ? `subtotal ${dPed.subtotal} total ${dPed.total} pie ${dPed.descuento_pie_pct}% desc ${dPed.descuento_total}` : "sin pedido")
   if (pedidoId) limpieza.push(async () => {
     await pedidos.request().input("id", sql.Int, pedidoId).query("DELETE FROM pedidos_historial WHERE pedido_id=@id")
     await pedidos.request().input("id", sql.Int, pedidoId).query("DELETE FROM pedidos_detalle WHERE pedido_id=@id")

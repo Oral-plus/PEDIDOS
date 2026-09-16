@@ -53,6 +53,7 @@ class OrderDbService {
     String? codigoCliente,
     String? vendedor,
     String? ciudad,
+    double descuentoPiePct = 0,
   }) async {
     try {
       final workingUrl = await _baseUrl();
@@ -65,6 +66,7 @@ class OrderDbService {
           'nombre': item.title,
           'textura': item.textura ?? 'Media',
           'precio': item.price,
+          'descuentoPct': item.descuentoPct,
           'cantidad': item.quantity,
           'total': item.totalPrice,
         });
@@ -88,6 +90,7 @@ class OrderDbService {
         'codigoCliente': (codigoCliente ?? cedula).trim(),
         'vendedor': vendedor?.trim(),
         'ciudad': ciudad?.trim(),
+        'descuentoPiePct': descuentoPiePct,
       };
 
       final res = await SharedHttp.client

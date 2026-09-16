@@ -30,6 +30,20 @@ function registrarRutas(app, { repositorio, imagenes, requireAuth, requireSoport
     }
   })
 
+  app.get("/api/productos/descuentos", requireAuth, async (req, res) => {
+    try {
+      const cliente = (req.query.cliente || "").toString().trim()
+      if (!cliente) return res.status(400).json({ success: false, message: "Cliente requerido" })
+      const datos = await repositorio.descuentosDe(cliente)
+      if (!datos) return res.status(404).json({ success: false, message: `El cliente ${cliente} no existe en SAP` })
+      res.set("Cache-Control", "private, no-cache")
+      res.json({ success: true, ...datos })
+    } catch (e) {
+      console.error("Error calculando descuentos del cliente:", e.message)
+      res.status(503).json({ success: false, message: "Descuentos no disponibles por ahora" })
+    }
+  })
+
   app.get("/api/productos/imagen/:codigo", async (req, res) => {
     try {
       const codigo = limpiar(req.params.codigo)

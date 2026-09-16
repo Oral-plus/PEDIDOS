@@ -65,11 +65,19 @@ class _ProductCardState extends State<ProductCard> {
       precioNum = num.tryParse(precioSAP.replaceAll(RegExp(r'[^0-9.\-]'), ''));
     }
 
+    final double descuentoPct = (product['descuentoPct'] as num?)?.toDouble() ?? 0;
+    final bool conDescuento = disponible && precioNum != null && descuentoPct > 0;
     final String precioMostrar = !disponible
         ? 'Sin precio'
         : (precioNum != null)
-            ? PriceUtils.formatPriceDisplay(precioNum.toDouble())
+            ? PriceUtils.formatPriceDisplay(conDescuento
+                ? ((precioNum.toDouble() * (1 - descuentoPct / 100)) * 100).roundToDouble() / 100
+                : precioNum.toDouble())
             : (product['price']?.toString() ?? '\$0');
+    final String precioLista = conDescuento ? PriceUtils.formatPriceDisplay(precioNum.toDouble()) : '';
+    final String etiquetaDescuento = conDescuento
+        ? '-${descuentoPct.toStringAsFixed(descuentoPct % 1 == 0 ? 0 : 2)}%'
+        : '';
 
     final radius = context.responsive(18);
 
@@ -157,8 +165,41 @@ class _ProductCardState extends State<ProductCard> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (conDescuento) ...[
+                          SizedBox(width: context.responsive(6)),
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: context.responsive(6),
+                              vertical: context.responsive(2),
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDC2626),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              etiquetaDescuento,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: context.clampFont(9, 12, 10),
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
+                    if (conDescuento)
+                      Text(
+                        precioLista,
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: context.clampFont(9, 12, 10),
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.lineThrough,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     SizedBox(height: context.responsive(9)),
                     _buildAddButton(context, disponible),
                   ],

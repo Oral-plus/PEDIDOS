@@ -442,7 +442,14 @@ class _CartBottomSheetState extends State<CartBottomSheet>
             ),
             child: Column(
               children: [
-                _priceRow('Precio unidad', item.formattedPrice, false),
+                _priceRow(item.tieneDescuentoCliente ? 'Precio lista' : 'Precio unidad', item.formattedPrice, false),
+                if (item.tieneDescuentoCliente) ...[
+                  const SizedBox(height: 5),
+                  _priceRow('Descuento ${item.formattedDescuentoPct}',
+                      '- ${PriceUtils.formatPriceDisplay(item.descuentoUnitario)}', false),
+                  const SizedBox(height: 5),
+                  _priceRow('Precio neto', item.formattedPrecioNeto, false),
+                ],
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   child: Divider(
@@ -633,6 +640,21 @@ class _CartBottomSheetState extends State<CartBottomSheet>
             ),
             child: Column(
               children: [
+                if (cartProvider.resumen.tieneDescuento) ...[
+                  _footerPriceRow('Subtotal', PriceUtils.formatPriceDisplay(cartProvider.resumen.subtotalBruto), false),
+                  if (cartProvider.resumen.descuentoLineas > 0) ...[
+                    const SizedBox(height: 4),
+                    _footerPriceRow('Descuento por referencia',
+                        '- ${PriceUtils.formatPriceDisplay(cartProvider.resumen.descuentoLineas)}', false),
+                  ],
+                  if (cartProvider.resumen.descuentoPie > 0) ...[
+                    const SizedBox(height: 4),
+                    _footerPriceRow(
+                        'Descuento pie de página (${cartProvider.resumen.descuentoPiePct.toStringAsFixed(cartProvider.resumen.descuentoPiePct % 1 == 0 ? 0 : 2)}%)',
+                        '- ${PriceUtils.formatPriceDisplay(cartProvider.resumen.descuentoPie)}', false),
+                  ],
+                  const SizedBox(height: 8),
+                ],
                 _footerPriceRow('Total', PriceUtils.formatPriceDisplay(cartProvider.totalAmount), true, animate: true),
               ],
             ),

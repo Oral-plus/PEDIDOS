@@ -329,6 +329,18 @@ async function ensurePedidosTables() {
 
   try {
     await pedidosPool.request().query(`
+      IF COL_LENGTH('dbo.pedidos', 'descuento_pie_pct') IS NULL ALTER TABLE dbo.pedidos ADD descuento_pie_pct DECIMAL(9,4) NULL;
+      IF COL_LENGTH('dbo.pedidos', 'descuento_total') IS NULL ALTER TABLE dbo.pedidos ADD descuento_total DECIMAL(18,2) NULL;
+      IF COL_LENGTH('dbo.pedidos_detalle', 'descuento_pct') IS NULL ALTER TABLE dbo.pedidos_detalle ADD descuento_pct DECIMAL(9,4) NULL;
+      IF COL_LENGTH('dbo.pedidos_detalle', 'precio_neto') IS NULL ALTER TABLE dbo.pedidos_detalle ADD precio_neto DECIMAL(18,2) NULL;
+      IF COL_LENGTH('dbo.pedidos_detalle', 'total_neto') IS NULL ALTER TABLE dbo.pedidos_detalle ADD total_neto DECIMAL(18,2) NULL;
+    `)
+  } catch (e) {
+    console.error("No se pudieron agregar las columnas de descuento de pedidos:", e.message)
+  }
+
+  try {
+    await pedidosPool.request().query(`
       IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_pedidos_vendedor_fecha' AND object_id = OBJECT_ID('dbo.pedidos'))
         CREATE INDEX IX_pedidos_vendedor_fecha ON dbo.pedidos(vendedor, fecha_creacion DESC);
       IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_pedidos_cliente_fecha' AND object_id = OBJECT_ID('dbo.pedidos'))
@@ -1555,17 +1567,24 @@ function generatePedidoNumero() {
 app.post("/api/orders", authenticateToken, async (req, res) => {
   const startTime = Date.now()
   try {
-    const { cedula, nombre, direccion, telefono, correo, productos, observaciones, codigoCliente, vendedor } = req.body
+    const { cedula, nombre, direccion, telefono, correo, productos, observaciones, codigoCliente, vendedor, descuentoPiePct } = req.body
 
     const numeroPedido = generatePedidoNumero()
     const aNumero = (v) => { const n = Number.parseFloat(v); return Number.isNaN(n) ? 0 : n }
+    const redondear = (v) => Math.round(v * 100) / 100
+    const porcentaje = (v) => Math.min(100, Math.max(0, aNumero(v)))
 
     let subtotalNum = 0
+    let subtotalNeto = 0
     const items = (Array.isArray(productos) ? productos : []).map((p) => {
       const precio = aNumero(p.precio)
       const cant = Number.parseInt(p.cantidad, 10) || 0
-      const totalLinea = precio * cant
+      const descuentoPct = porcentaje(p.descuentoPct)
+      const totalLinea = redondear(precio * cant)
+      const precioNeto = redondear(precio * (1 - descuentoPct / 100))
+      const totalNeto = redondear(precioNeto * cant)
       subtotalNum += totalLinea
+      subtotalNeto += totalNeto
       return {
         codigo: (p.codigo || "").toString(),
         nombre: (p.nombre || p.title || "").toString(),
@@ -1573,11 +1592,19 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
         cantidad: cant,
         precio: precio,
         total: totalLinea,
+        descuentoPct,
+        precioNeto,
+        totalNeto,
       }
     })
 
+    subtotalNum = redondear(subtotalNum)
+    subtotalNeto = redondear(subtotalNeto)
+    const piePct = porcentaje(descuentoPiePct)
+    const descuentoPie = redondear(subtotalNeto * piePct / 100)
     const iva = 0
-    const total = subtotalNum
+    const total = redondear(subtotalNeto - descuentoPie)
+    const descuentoTotal = redondear(subtotalNum - total)
 
     const transaction = pedidosPool.transaction()
     await transaction.begin()
@@ -1598,10 +1625,12 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
         .input("total", sql.Decimal(18, 2), total)
         .input("observaciones", sql.NVarChar, (observaciones || "").trim() || null)
         .input("vendedor", sql.NVarChar, (vendedor || "").trim() || null)
+        .input("descuento_pie_pct", sql.Decimal(9, 4), piePct)
+        .input("descuento_total", sql.Decimal(18, 2), descuentoTotal)
         .query(`
-          INSERT INTO pedidos (numero_pedido, codigo_cliente, cedula_cliente, nombre_cliente, direccion, telefono, correo, subtotal, iva, total, observaciones, vendedor)
+          INSERT INTO pedidos (numero_pedido, codigo_cliente, cedula_cliente, nombre_cliente, direccion, telefono, correo, subtotal, iva, total, observaciones, vendedor, descuento_pie_pct, descuento_total)
           OUTPUT INSERTED.id
-          VALUES (@numero_pedido, @codigo_cliente, @cedula_cliente, @nombre_cliente, @direccion, @telefono, @correo, @subtotal, @iva, @total, @observaciones, @vendedor)
+          VALUES (@numero_pedido, @codigo_cliente, @cedula_cliente, @nombre_cliente, @direccion, @telefono, @correo, @subtotal, @iva, @total, @observaciones, @vendedor, @descuento_pie_pct, @descuento_total)
         `)
 
       const pedidoId = headerResult.recordset[0].id
@@ -1609,7 +1638,7 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       await insertarFilas(
         () => transaction.request(),
         "pedidos_detalle",
-        ["pedido_id", "codigo_producto", "nombre_producto", "textura", "cantidad", "precio_unitario", "total_linea"],
+        ["pedido_id", "codigo_producto", "nombre_producto", "textura", "cantidad", "precio_unitario", "total_linea", "descuento_pct", "precio_neto", "total_neto"],
         items,
         (item) => [
           [sql.Int, pedidoId],
@@ -1619,6 +1648,9 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
           [sql.Int, item.cantidad],
           [sql.Decimal(18, 2), item.precio],
           [sql.Decimal(18, 2), item.total],
+          [sql.Decimal(9, 4), item.descuentoPct],
+          [sql.Decimal(18, 2), item.precioNeto],
+          [sql.Decimal(18, 2), item.totalNeto],
         ],
       )
 
