@@ -1,4 +1,5 @@
 const TABLAS = ["tareas", "tareas_gestores", "tareas_clientes"]
+const LOTE_IDS = 400
 
 function codigoDeSesion(decoded) {
   if (!decoded) return null
@@ -86,21 +87,33 @@ function crear({ sql, getPedidosPool, log }) {
     return tablasDisponibles
   }
 
+  // SQL Server admite 2100 parametros por consulta: los ids van por lotes.
+  async function porLotes(ids, consulta) {
+    const filas = []
+    for (let i = 0; i < ids.length; i += LOTE_IDS) {
+      filas.push(...(await consulta(ids.slice(i, i + LOTE_IDS))))
+    }
+    return filas
+  }
+
   async function clientesDe(ids) {
-    if (ids.length === 0) return new Map()
-    const req = getPedidosPool().request()
-    const marcadores = ids.map((id, i) => {
-      req.input(`t${i}`, sql.Int, id)
-      return `@t${i}`
-    })
-    const r = await req.query(`
-      SELECT tarea_id, cliente_codigo, cliente_nombre
-      FROM dbo.tareas_clientes
-      WHERE tarea_id IN (${marcadores.join(",")})
-      ORDER BY cliente_nombre
-    `)
     const porTarea = new Map()
-    for (const f of r.recordset) {
+    if (ids.length === 0) return porTarea
+    const filas = await porLotes(ids, async (lote) => {
+      const req = getPedidosPool().request()
+      const marcadores = lote.map((id, i) => {
+        req.input(`t${i}`, sql.Int, id)
+        return `@t${i}`
+      })
+      const r = await req.query(`
+        SELECT tarea_id, cliente_codigo, cliente_nombre
+        FROM dbo.tareas_clientes
+        WHERE tarea_id IN (${marcadores.join(",")})
+        ORDER BY cliente_nombre
+      `)
+      return r.recordset
+    })
+    for (const f of filas) {
       if (!porTarea.has(f.tarea_id)) porTarea.set(f.tarea_id, [])
       porTarea.get(f.tarea_id).push({
         codigo: texto(f.cliente_codigo),
@@ -114,24 +127,27 @@ function crear({ sql, getPedidosPool, log }) {
     const mapa = new Map()
     if (ids.length === 0) return mapa
     await asegurarRespuestas()
-    const req = getPedidosPool().request().input("vend", sql.Int, vendedorCodigo)
-    const marcadores = ids.map((id, i) => {
-      req.input(`t${i}`, sql.Int, id)
-      return `@t${i}`
+    const filas = await porLotes(ids, async (lote) => {
+      const req = getPedidosPool().request().input("vend", sql.Int, vendedorCodigo)
+      const marcadores = lote.map((id, i) => {
+        req.input(`t${i}`, sql.Int, id)
+        return `@t${i}`
+      })
+      let filtroCliente = ""
+      if (clienteCodigo) {
+        req.input("cli", sql.NVarChar, clienteCodigo)
+        filtroCliente = "AND r.cliente_codigo = @cli"
+      }
+      const r = await req.query(`
+        SELECT r.tarea_id, r.cliente_codigo, r.cumplida, r.observacion,
+               CONVERT(VARCHAR(19), r.fecha, 120) AS fecha
+        FROM dbo.tareas_respuestas r
+        WHERE r.tarea_id IN (${marcadores.join(",")}) AND r.vendedor_codigo = @vend ${filtroCliente}
+        ORDER BY r.fecha DESC, r.id DESC
+      `)
+      return r.recordset
     })
-    let filtroCliente = ""
-    if (clienteCodigo) {
-      req.input("cli", sql.NVarChar, clienteCodigo)
-      filtroCliente = "AND r.cliente_codigo = @cli"
-    }
-    const r = await req.query(`
-      SELECT r.tarea_id, r.cliente_codigo, r.cumplida, r.observacion,
-             CONVERT(VARCHAR(19), r.fecha, 120) AS fecha
-      FROM dbo.tareas_respuestas r
-      WHERE r.tarea_id IN (${marcadores.join(",")}) AND r.vendedor_codigo = @vend ${filtroCliente}
-      ORDER BY r.fecha DESC, r.id DESC
-    `)
-    for (const f of r.recordset) {
+    for (const f of filas) {
       const clave = `${f.tarea_id}|${texto(f.cliente_codigo)}`
       if (mapa.has(clave)) continue
       mapa.set(clave, {
@@ -144,7 +160,7 @@ function crear({ sql, getPedidosPool, log }) {
     return mapa
   }
 
-  async function misTareas(vendedorCodigo, { limite = 200, clienteCodigo = null } = {}) {
+  async function misTareas(vendedorCodigo, { limite = 1000, clienteCodigo = null } = {}) {
     if (!(await hayTablas())) return []
     const req = getPedidosPool().request().input("vend", sql.Int, vendedorCodigo).input("limite", sql.Int, limite)
     let filtroCliente = ""
