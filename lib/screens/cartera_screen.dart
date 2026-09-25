@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_easy_service.dart';
+import '../utils/cartera_cliente.dart';
 import '../utils/filtro_cliente.dart';
 import '../utils/price_utils.dart';
 
@@ -36,6 +37,9 @@ class _CarteraScreenState extends State<CarteraScreen> {
   Map<String, dynamic>? _cartera;
   List<Map<String, dynamic>> _documentos = [];
   List<Map<String, dynamic>> _pagosSinAplicar = [];
+  List<Map<String, dynamic>> _recaudosPendientes = [];
+  double _saldoNeto = 0;
+  double _pendientePorAplicar = 0;
   bool _cargandoCartera = false;
   String? _errorCartera;
 
@@ -111,6 +115,9 @@ class _CarteraScreenState extends State<CarteraScreen> {
       _cartera = null;
       _documentos = [];
       _pagosSinAplicar = [];
+      _recaudosPendientes = [];
+      _saldoNeto = 0;
+      _pendientePorAplicar = 0;
     });
 
     final futuroCartera = _api.getCarteraCliente(codigo, forzar: forzar);
@@ -126,10 +133,17 @@ class _CarteraScreenState extends State<CarteraScreen> {
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
 
+    final pendientes = ((docsRes['recaudosPendientes'] as List<dynamic>?) ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+
     setState(() {
       _cartera = cartera;
       _documentos = documentos;
       _pagosSinAplicar = pagos;
+      _recaudosPendientes = pendientes;
+      _saldoNeto = (docsRes['saldoNeto'] as num?)?.toDouble() ?? _n(docsRes['totalSaldo']);
+      _pendientePorAplicar = (docsRes['pendientePorAplicar'] as num?)?.toDouble() ?? 0;
       _cargandoCartera = false;
       _errorCartera = cartera == null ? 'No se pudo cargar la cartera del cliente' : null;
     });
@@ -374,10 +388,20 @@ class _CarteraScreenState extends State<CarteraScreen> {
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
         children: [
           Row(children: [
-            Expanded(child: _stat('Saldo SAP', _pesos(d['balance']), _inkDeep, Icons.account_balance_rounded)),
+            Expanded(child: _stat('Cartera', _pesos(CarteraCliente.neta(d)), _inkDeep, Icons.account_balance_rounded)),
             const SizedBox(width: 10),
-            Expanded(child: _stat('Saldo facturas', _pesos(_saldoDocumentos), _ink, Icons.receipt_long_rounded)),
+            Expanded(child: _stat('Facturas por cobrar', _pesos(_saldoNeto), _ink, Icons.receipt_long_rounded)),
           ]),
+          if (_pendientePorAplicar > 0) ...[
+            const SizedBox(height: 10),
+            _stat('Tus pagos por aplicar en SAP', _pesos(_pendientePorAplicar), _ambar, Icons.hourglass_bottom_rounded),
+            const SizedBox(height: 6),
+            Text(
+              'Ya están descontados de la cartera. En SAP todavía figura ${_pesos(_saldoDocumentos)}.',
+              style: const TextStyle(color: _gray, fontSize: 11.5, fontWeight: FontWeight.w500),
+            ),
+            ..._recaudosPendientes.map(_filaRecaudoPendiente),
+          ],
           const SizedBox(height: 10),
           Row(children: [
             Expanded(child: _stat('Abiertas', '${_documentos.length}', _gray, Icons.folder_open_rounded)),
@@ -563,12 +587,41 @@ class _CarteraScreenState extends State<CarteraScreen> {
           ]),
         ),
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text(_pesos(f['saldo']),
+          Text(_pesos(CarteraCliente.saldoNetoDocumento(f)),
               style: const TextStyle(color: _ink, fontWeight: FontWeight.w800, fontSize: 13.5)),
           const SizedBox(height: 2),
-          Text('Total ${_pesos(f['total'])}',
-              style: const TextStyle(color: _gray, fontSize: 11)),
+          if (_n(f['pendientePorAplicar']) > 0)
+            Text('En SAP ${_pesos(f['saldo'])}',
+                style: const TextStyle(color: _ambar, fontSize: 11, fontWeight: FontWeight.w600))
+          else
+            Text('Total ${_pesos(f['total'])}',
+                style: const TextStyle(color: _gray, fontSize: 11)),
         ]),
+      ]),
+    );
+  }
+
+  Widget _filaRecaudoPendiente(Map<String, dynamic> p) {
+    final demorado = p['demorado'] == true;
+    final dias = (p['dias'] as num?)?.toInt() ?? 0;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(children: [
+        Icon(demorado ? Icons.error_outline_rounded : Icons.schedule_rounded,
+            size: 14, color: demorado ? _rojo : _gray),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            '${p['numeroRecaudo'] ?? ''} · factura ${p['numFactura'] ?? ''} · '
+            '${dias == 0 ? 'hoy' : 'hace $dias día(s)'}${demorado ? ' · sin llegar a SAP' : ''}',
+            style: TextStyle(color: demorado ? _rojo : _gray, fontSize: 11.5, fontWeight: FontWeight.w500),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(_pesos(p['pendiente']),
+            style: TextStyle(color: demorado ? _rojo : _ink, fontSize: 11.5, fontWeight: FontWeight.w700)),
       ]),
     );
   }

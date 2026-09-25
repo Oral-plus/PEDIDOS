@@ -104,6 +104,8 @@ const RUTAS = [
   ["GET", "/api/ubicaciones/usuarios"],
   ["POST", "/api/clientes/C1000100148/visita/iniciar", { rutaId: 1 }],
   ["PUT", "/api/clientes/C1000100148/visita/1/actividad", { duracionSegundos: 1 }],
+  ["GET", "/api/tareas"],
+  ["POST", "/api/tareas/1/respuesta", { clienteCodigo: "C1", cumplida: true }],
 ]
 
 ;(async () => {

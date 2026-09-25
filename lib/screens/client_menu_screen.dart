@@ -15,6 +15,7 @@ import 'rutero_screen.dart';
 import 'mis_rutas_screen.dart';
 import 'cuadre_caja_screen.dart';
 import 'indicadores_screen.dart';
+import 'tareas_screen.dart';
 
 class ClientMenuScreen extends StatefulWidget {
   const ClientMenuScreen({super.key});
@@ -32,6 +33,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
   bool _isLoadingClientes = true;
   String? _errorMessage;
   int _cuadresPendientes = 0;
+  int _tareasPendientes = 0;
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -75,6 +77,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     _slideController.forward();
     _cargarClientes();
     _cargarCuadresPendientes();
+    _cargarTareasPendientes();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       await RastreoUbicacion.asegurar(context);
@@ -112,6 +115,23 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     setState(() {
       _cuadresPendientes = (res['data'] as List?)?.length ?? 0;
     });
+  }
+
+  Future<void> _cargarTareasPendientes() async {
+    final res = await _api.getTareas();
+    if (!mounted) return;
+    final resumen = (res['resumen'] as Map?) ?? {};
+    setState(() {
+      _tareasPendientes = (resumen['pendientes'] as num?)?.toInt() ?? 0;
+    });
+  }
+
+  void _abrirTareas() async {
+    HapticFeedback.selectionClick();
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const TareasScreen()),
+    );
+    _cargarTareasPendientes();
   }
 
   Future<void> _redirectToLogin() => Sesion.expirar();
@@ -435,6 +455,20 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
           active: true,
           onTap: _abrirIndicadores,
         )),
+      ]),
+      const SizedBox(height: 12),
+      Row(children: [
+        Expanded(child: _menuTile(
+          icon: Icons.assignment_rounded,
+          title: 'Tareas',
+          subtitle: _tareasPendientes > 0 ? 'Pendientes por cumplir' : 'Asignadas a ti',
+          color: _blue,
+          active: true,
+          onTap: _abrirTareas,
+          contador: _tareasPendientes > 0 ? _tareasPendientes : null,
+        )),
+        const SizedBox(width: 12),
+        const Expanded(child: SizedBox.shrink()),
       ]),
     ]);
   }

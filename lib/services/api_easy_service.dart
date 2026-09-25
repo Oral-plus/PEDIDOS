@@ -803,7 +803,7 @@ class ApiEasyService {
 
   Future<Map<String, dynamic>> getDocumentosCliente(String codigo, {bool forzar = false}) async {
     if (_token == null || _token!.isEmpty) {
-      return {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0, 'pagosSinAplicar': <Map<String, dynamic>>[], 'totalSinAplicar': 0.0};
+      return {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0, 'saldoSap': 0.0, 'saldoNeto': 0.0, 'pendientePorAplicar': 0.0, 'recaudosPendientes': <Map<String, dynamic>>[], 'pagosSinAplicar': <Map<String, dynamic>>[], 'totalSinAplicar': 0.0};
     }
     final datos = await _cache.obtener<Map<String, dynamic>?>(
       'documentos:$codigo',
@@ -811,7 +811,7 @@ class ApiEasyService {
       () => _getDocumentosClienteRed(codigo),
       forzar: forzar,
     );
-    return datos ?? {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0, 'pagosSinAplicar': <Map<String, dynamic>>[], 'totalSinAplicar': 0.0};
+    return datos ?? {'documentos': <Map<String, dynamic>>[], 'totalSaldo': 0.0, 'saldoSap': 0.0, 'saldoNeto': 0.0, 'pendientePorAplicar': 0.0, 'recaudosPendientes': <Map<String, dynamic>>[], 'pagosSinAplicar': <Map<String, dynamic>>[], 'totalSinAplicar': 0.0};
   }
 
   Future<Map<String, dynamic>?> _getDocumentosClienteRed(String codigo) async {
@@ -829,9 +829,17 @@ class ApiEasyService {
         final pagos = (res['pagosSinAplicar'] as List<dynamic>? ?? [])
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
+        final pendientes = (res['recaudosPendientes'] as List<dynamic>? ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        final saldoSap = (res['saldoSap'] as num?)?.toDouble() ?? (res['totalSaldo'] as num?)?.toDouble() ?? 0.0;
         return {
           'documentos': list,
           'totalSaldo': (res['totalSaldo'] as num?)?.toDouble() ?? 0.0,
+          'saldoSap': saldoSap,
+          'saldoNeto': (res['saldoNeto'] as num?)?.toDouble() ?? saldoSap,
+          'pendientePorAplicar': (res['pendientePorAplicar'] as num?)?.toDouble() ?? 0.0,
+          'recaudosPendientes': pendientes,
           'pagosSinAplicar': pagos,
           'totalSinAplicar': (res['totalSinAplicar'] as num?)?.toDouble() ?? 0.0,
         };
@@ -909,6 +917,8 @@ class ApiEasyService {
       if (res['success'] == true) {
         _cache.invalidar('documentos:$clienteId');
         _cache.invalidar('cartera:$clienteId');
+        _cache.invalidar('cliente:$clienteId');
+        _cache.invalidar('clientes');
         _cache.invalidar('talonario:siguiente');
       }
       return {
@@ -1708,6 +1718,73 @@ class ApiEasyService {
     } catch (e) {
       return {'success': false, 'message': 'No se pudieron cargar los usuarios', 'data': []};
     }
+  }
+
+  Future<Map<String, dynamic>> getTareas({String? cliente, bool forzar = false}) async {
+    if (_token == null || _token!.isEmpty) {
+      return {'success': false, 'data': <Map<String, dynamic>>[], 'resumen': <String, dynamic>{}};
+    }
+    final clave = cliente == null || cliente.isEmpty ? 'tareas' : 'tareas:$cliente';
+    final datos = await _cache.obtener<Map<String, dynamic>?>(
+      clave,
+      const Duration(minutes: 2),
+      () => _getTareasRed(cliente),
+      forzar: forzar,
+    );
+    return datos ?? {'success': false, 'data': <Map<String, dynamic>>[], 'resumen': <String, dynamic>{}};
+  }
+
+  Future<Map<String, dynamic>?> _getTareasRed(String? cliente) async {
+    try {
+      final filtro = cliente == null || cliente.isEmpty ? '' : '?cliente=${Uri.encodeQueryComponent(cliente)}';
+      final res = await ApiClient.get(
+        '/api/tareas$filtro',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 20),
+      );
+      if (res['success'] == true) {
+        return {
+          'success': true,
+          'data': (res['data'] as List<dynamic>? ?? [])
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList(),
+          'resumen': Map<String, dynamic>.from((res['resumen'] as Map?) ?? {}),
+          'pendientesPorResponder': (res['pendientesPorResponder'] as num?)?.toInt() ?? 0,
+        };
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<bool> responderTarea(
+    int tareaId, {
+    required String clienteCodigo,
+    int? visitaId,
+    required bool cumplida,
+    String observacion = '',
+  }) async {
+    if (_token == null || _token!.isEmpty) return false;
+    try {
+      final res = await ApiClient.post(
+        '/api/tareas/$tareaId/respuesta',
+        body: {
+          'clienteCodigo': clienteCodigo,
+          if (visitaId != null) 'visitaId': visitaId,
+          'cumplida': cumplida,
+          if (observacion.trim().isNotEmpty) 'observacion': observacion.trim(),
+        },
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 20),
+      );
+      if (res['success'] == true) {
+        _cache.invalidar('tareas');
+        _cache.invalidar('tareas:$clienteCodigo');
+        return true;
+      }
+    } catch (_) {}
+    return false;
   }
 
   Future<Map<String, dynamic>?> getVisitasHoy(String codigo) {

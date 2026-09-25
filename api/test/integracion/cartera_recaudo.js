@@ -53,11 +53,18 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const token = jwt.sign({ userId: 0, nombre: "PRUEBA CARTERA", tipo: "usuario", jti }, process.env.JWT_SECRET, { expiresIn: 900 })
   const n = (v) => Number(v)
 
-  let cliente = null, docsCartera = [], saldoCartera = 0
+  let cliente = null, docsCartera = [], saldoCartera = 0, pendienteAntes = 0, netoAntes = 0
   for (const c of CANDIDATOS) {
     const r = await llamar("GET", `/api/clientes/${c}/documentos`, { token })
     const d = (r.json && r.json.data) || []
-    if (r.status === 200 && d.length > 0) { cliente = c; docsCartera = d; saldoCartera = n(r.json.totalSaldo); break }
+    if (r.status === 200 && d.length > 0) {
+      cliente = c
+      docsCartera = d
+      saldoCartera = n(r.json.totalSaldo)
+      pendienteAntes = n(r.json.pendientePorAplicar)
+      netoAntes = n(r.json.saldoNeto)
+      break
+    }
   }
   ok("cartera real: se obtienen facturas abiertas de SAP", !!cliente && docsCartera.length > 0, cliente ? `${cliente}: ${docsCartera.length} factura(s), saldo ${saldoCartera}` : "ningun cliente con cartera")
   if (!cliente) { process.stdout.write("Sin cartera con que probar\n"); process.exit(1) }
@@ -110,7 +117,34 @@ const cfg = (d) => ({ server: process.env.DB_SERVER, database: d, user: process.
   const saldoDespues = n(rCar.json && rCar.json.totalSaldo)
   ok("la cartera de SAP queda intacta (el recaudo no la modifica)", saldoDespues === saldoCartera, `antes ${saldoCartera} · despues ${saldoDespues}`)
 
+  const pendienteDespues = n(rCar.json && rCar.json.pendientePorAplicar)
+  const netoDespues = n(rCar.json && rCar.json.saldoNeto)
+  const cercano = (a, b) => Math.abs(a - b) <= 1
+  ok("el pago recien registrado se descuenta de la cartera que ve el gestor",
+    cercano(pendienteDespues - pendienteAntes, totalAplicado) && cercano(netoAntes - netoDespues, totalAplicado),
+    `pendiente ${pendienteAntes}->${pendienteDespues} · neto ${netoAntes}->${netoDespues} · abonado ${totalAplicado}`)
+  ok("el neto nunca queda por debajo de cero ni por encima del saldo de SAP",
+    netoDespues >= 0 && netoDespues <= saldoDespues, `neto ${netoDespues} de ${saldoDespues}`)
+
+  const mios = ((rCar.json && rCar.json.recaudosPendientes) || []).filter((p) => p.numeroRecaudo === NUM)
+  ok("el detalle identifica el recaudo pendiente y su antiguedad",
+    mios.length === documentos.length && mios.every((p) => p.dias === 0 && p.demorado === false && n(p.pendiente) > 0),
+    mios.map((p) => `${p.numFactura}:${n(p.pendiente)}`).join(" "))
+
+  const rCartera = await llamar("GET", `/api/clientes/cartera/${cliente}`, { token })
+  const dc = (rCartera.json && rCartera.json.data) || {}
+  ok("la ficha del cliente tambien entrega el saldo neto y lo pendiente",
+    rCartera.status === 200 && n(dc.balance) >= 0 && cercano(n(dc.pendientePorAplicar), pendienteDespues) &&
+      n(dc.balanceNeto) <= n(dc.balance) && n(dc.balanceNeto) >= 0,
+    `balance ${n(dc.balance)} neto ${n(dc.balanceNeto)} pendiente ${n(dc.pendientePorAplicar)}`)
+
   if (recId) await pedidos.request().input("i", sql.Int, recId).query("DELETE FROM dbo.recaudos WHERE id=@i")
+
+  const rVuelta = await llamar("GET", `/api/clientes/${cliente}/documentos`, { token })
+  ok("al desaparecer el recaudo, la cartera vuelve al valor de SAP (no se resta dos veces)",
+    cercano(n(rVuelta.json && rVuelta.json.pendientePorAplicar), pendienteAntes) &&
+      cercano(n(rVuelta.json && rVuelta.json.saldoNeto), netoAntes),
+    `pendiente ${n(rVuelta.json && rVuelta.json.pendientePorAplicar)} · neto ${n(rVuelta.json && rVuelta.json.saldoNeto)}`)
   const quedan = recId ? (await pedidos.request().input("i", sql.Int, recId)
     .query("SELECT (SELECT COUNT(*) FROM dbo.recaudos WHERE id=@i) r, (SELECT COUNT(*) FROM dbo.recaudos_documentos WHERE recaudo_id=@i) d, (SELECT COUNT(*) FROM dbo.evidencias_archivos WHERE recaudo_id=@i) e")).recordset[0] : null
   ok("al borrar el recaudo no queda nada suelto", quedan && quedan.r === 0 && quedan.d === 0 && quedan.e === 0, quedan && `rec=${quedan.r} doc=${quedan.d} img=${quedan.e}`)

@@ -11,8 +11,11 @@ import '../services/rastreo/alerta_ubicacion_simulada.dart';
 import '../services/rastreo/estado_ubicacion_cliente.dart';
 import '../services/rastreo/rastreo_ubicacion.dart';
 import '../services/rastreo/ubicacion_dispositivo.dart';
+import '../utils/cartera_cliente.dart';
+import '../utils/tareas_visita.dart';
 import '../utils/theme.dart';
 import '../widgets/app_header.dart';
+import '../widgets/tarea_card.dart';
 import 'cartera_screen.dart';
 import 'encuesta_visita_screen.dart';
 import 'forma_pago_screen.dart';
@@ -64,6 +67,10 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
   int? _visitaId;
   EstadoUbicacionCliente? _ubicacionCliente;
   bool _ubicacionOcupada = false;
+
+  List<Map<String, dynamic>> _tareasCliente = [];
+  bool _guardandoTarea = false;
+  final TextEditingController _obsTarea = TextEditingController();
 
   Map<String, dynamic>? _pago;
   Map<String, dynamic>? _encuesta;
@@ -242,6 +249,8 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
   void dispose() {
     _timer?.cancel();
     _transcurrido.dispose();
+    _obsTarea.dispose();
+    _obsTarea.dispose();
     _visitaActiva?.setEnPantallaVisita(false);
     _obs.dispose();
     super.dispose();
@@ -273,7 +282,9 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
         .replaceFirst(RegExp(r'^visita\s+a\s+', caseSensitive: false), '');
   }
 
-  double get _totalCartera => ((_cartera?['balance'] ?? widget.cliente['balance']) as num?)?.toDouble() ?? 0;
+  double get _totalCartera => _cartera != null
+      ? CarteraCliente.neta(_cartera)
+      : ((widget.cliente['balance'] as num?)?.toDouble() ?? 0);
 
   Future<void> _cargar() async {
     if (_codigo.isEmpty) {
@@ -294,7 +305,142 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
           .toList();
       _cargando = false;
     });
+    _cargarTareasDelCliente();
     _recargarTotalPedidos();
+  }
+
+  Future<void> _cargarTareasDelCliente({bool forzar = false}) async {
+    if (_codigo.isEmpty) return;
+    final res = await _api.getTareas(cliente: _codigo, forzar: forzar);
+    if (!mounted) return;
+    setState(() {
+      _tareasCliente = (res['data'] as List<dynamic>? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    });
+  }
+
+  Future<void> _responderTarea(Map<String, dynamic> tarea) async {
+    if (_guardandoTarea) return;
+    HapticFeedback.selectionClick();
+    _obsTarea.text = '';
+    var cumplida = true;
+
+    final confirmado = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, actualizar) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Text((tarea['nombre'] ?? 'Tarea').toString(),
+              style: TextStyle(color: _textDark, fontSize: 17, fontWeight: FontWeight.w800)),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if ((tarea['descripcion'] ?? '').toString().trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(tarea['descripcion'].toString(),
+                    style: TextStyle(color: _textMuted, fontSize: 13, height: 1.35)),
+              ),
+            Text('¿Se cumplió en este cliente?',
+                style: TextStyle(color: _textDark, fontSize: 13.5, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(
+                child: RadioListTile<bool>(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  value: true,
+                  groupValue: cumplida,
+                  title: const Text('Sí', style: TextStyle(fontSize: 13.5)),
+                  onChanged: (v) => actualizar(() => cumplida = v ?? true),
+                ),
+              ),
+              Expanded(
+                child: RadioListTile<bool>(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  value: false,
+                  groupValue: cumplida,
+                  title: const Text('No', style: TextStyle(fontSize: 13.5)),
+                  onChanged: (v) => actualizar(() => cumplida = v ?? false),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 4),
+            TextField(
+              controller: _obsTarea,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 1000,
+              textCapitalization: TextCapitalization.sentences,
+              style: TextStyle(fontSize: 14, color: _textDark),
+              decoration: InputDecoration(
+                labelText: cumplida ? 'Observación (opcional)' : 'Motivo (obligatorio)',
+                hintText: cumplida ? 'Qué se hizo en el cliente…' : 'Por qué no se pudo cumplir…',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onChanged: (_) => actualizar(() {}),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
+            ElevatedButton(
+              onPressed: (cumplida || _obsTarea.text.trim().length >= 4)
+                  ? () => Navigator.of(ctx).pop(true)
+                  : null,
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmado != true || !mounted) return;
+    setState(() => _guardandoTarea = true);
+    final ok = await _api.responderTarea(
+      (tarea['id'] as num).toInt(),
+      clienteCodigo: _codigo,
+      visitaId: _visitaId,
+      cumplida: cumplida,
+      observacion: _obsTarea.text,
+    );
+    if (!mounted) return;
+    setState(() => _guardandoTarea = false);
+    if (ok) {
+      await _cargarTareasDelCliente(forzar: true);
+      if (mounted) _avisoInfo('Información de la tarea registrada');
+    } else {
+      _avisoInfo('No se pudo guardar la información de la tarea. Intenta de nuevo.');
+    }
+  }
+
+  Widget _seccionTareas() {
+    final faltan = TareasVisita.porResponder(_tareasCliente).length;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        _label('Tareas del cliente'),
+        const SizedBox(width: 8),
+        if (faltan > 0)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppTheme.errorColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text('$faltan por registrar',
+                style: const TextStyle(color: AppTheme.errorColor, fontSize: 11, fontWeight: FontWeight.w800)),
+          ),
+      ]),
+      const SizedBox(height: 8),
+      ..._tareasCliente.map((t) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: TareaCard(
+              tarea: t,
+              mostrarClientes: false,
+              onResponder: _guardandoTarea || _guardando ? null : () => _responderTarea(t),
+            ),
+          )),
+    ]);
   }
 
   static final RegExp _reProductosTarea = RegExp(r'(\d+)\s*PRODUCTO', caseSensitive: false);
@@ -382,6 +528,12 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
   Future<void> _finalizarVisita() async {
     if (_guardando) return;
     HapticFeedback.mediumImpact();
+
+    final bloqueoTareas = TareasVisita.mensajeBloqueo(_tareasCliente);
+    if (bloqueoTareas != null) {
+      _avisoInfo(bloqueoTareas);
+      return;
+    }
 
     final tieneMotivo = _motivo != null && _motivo!.isNotEmpty;
 
@@ -810,6 +962,10 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
                 _seccionObjetivos(),
                 const SizedBox(height: 10),
                 _seccionInformes(),
+                if (_tareasCliente.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _seccionTareas(),
+                ],
                 const SizedBox(height: 18),
                 _label('Motivos de no gestión'),
                 const SizedBox(height: 8),

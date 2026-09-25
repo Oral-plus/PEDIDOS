@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_easy_service.dart';
+import '../utils/cartera_cliente.dart';
 import '../utils/theme.dart';
 
 const Color _mInk = Color(0xFF1F2937);
@@ -129,8 +130,9 @@ class _CarteraSheetState extends State<CarteraSheet> {
   Widget build(BuildContext context) {
     final d = _data;
     final facturas = (d?['facturas'] as List<dynamic>?) ?? [];
-    final balance = d?['balance'] ?? 0;
-    final saldo = d?['saldoFacturas'] ?? 0;
+    final balance = CarteraCliente.neta(d);
+    final saldo = d?['saldoFacturasNeto'] ?? d?['saldoFacturas'] ?? 0;
+    final pendiente = CarteraCliente.pendientePorAplicar(d);
     final totalAbiertas = d?['totalFacturasAbiertas'] ?? 0;
     final vencidas = d?['facturasVencidas'] ?? 0;
 
@@ -160,10 +162,14 @@ class _CarteraSheetState extends State<CarteraSheet> {
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Row(children: [
-                      Expanded(child: _stat('Saldo SAP', _formatMoney(balance), _mInk, Icons.account_balance_rounded)),
+                      Expanded(child: _stat('Cartera', _formatMoney(balance), _mInk, Icons.account_balance_rounded)),
                       const SizedBox(width: 10),
                       Expanded(child: _stat('Saldo facturas', _formatMoney(saldo), _mGray, Icons.receipt_long_rounded)),
                     ]),
+                    if (pendiente > 0) ...[
+                      const SizedBox(height: 10),
+                      _stat('Pagos tuyos por aplicar en SAP', _formatMoney(pendiente), _mGray, Icons.hourglass_bottom_rounded),
+                    ],
                     const SizedBox(height: 10),
                     Row(children: [
                       Expanded(child: _stat('Abiertas', '$totalAbiertas', _mInk, Icons.folder_open_rounded)),

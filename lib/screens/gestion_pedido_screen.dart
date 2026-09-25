@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../services/api_easy_service.dart';
 import '../utils/app_assets.dart';
+import '../utils/cartera_cliente.dart';
 import '../utils/price_utils.dart';
 
 class GestionPedidoScreen extends StatefulWidget {
@@ -68,7 +69,7 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
   double get _total => (_subtotal - _descuentoMonto + _flete).clamp(0, double.infinity);
 
   double get _cupoAsignado => _n(widget.cartera?['limiteCredito']);
-  double get _saldoUsado => _n(widget.cartera?['balance']);
+  double get _saldoUsado => CarteraCliente.neta(widget.cartera);
   double get _cupoDisponible => _cupoAsignado - _saldoUsado;
   bool get _excedeCupo => _cupoAsignado > 0 && _total > _cupoDisponible;
 

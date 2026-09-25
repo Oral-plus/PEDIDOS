@@ -15,6 +15,8 @@ const talonarios = require("./modules/talonarios")
 const cuadres = require("./modules/cuadres")
 const indicadores = require("./modules/indicadores")
 const ubicaciones = require("./modules/ubicaciones")
+const cartera = require("./modules/cartera")
+const tareas = require("./modules/tareas")
 const cache = require("./modules/cache")
 const evidencias = require("./modules/evidencias")
 const multer = require("multer")
@@ -1167,12 +1169,20 @@ app.post("/api/clientes/:codigo/actualizar-datos", authenticateToken, async (req
   }
 })
 
+const carteraServicio = cartera.crear({
+  sql,
+  getSapPool: connectSAP,
+  getPedidosPool: () => pedidosPool,
+  env: process.env,
+  log: console,
+})
+
 app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => {
   try {
     const sap = await connectSAP()
     const cardCode = req.params.codigo
 
-    const [clientResult, factResult] = await Promise.all([
+    const [clientResult, factResult, neto] = await Promise.all([
       sap.request()
         .input("cardCode", sql.VarChar, cardCode)
         .query(`
@@ -1198,6 +1208,10 @@ app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => 
           WHERE T0.CardCode = @cardCode AND T0.DocStatus = 'O'
         `)
         .catch(() => null),
+      carteraServicio.saldoDe(cardCode, { incluirPagosSap: false }).catch((e) => {
+        console.error("No se pudo netear la cartera del cliente:", e.message)
+        return null
+      }),
     ])
 
     if (clientResult.recordset.length === 0) {
@@ -1236,6 +1250,10 @@ app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => 
       ultimaCompra = factResult.recordset[0].ultimaCompra
     }
 
+    const balance = Number.parseFloat(client.Balance) || 0
+    const pendientePorAplicar = neto ? neto.pendientePorAplicar : 0
+    const balanceNeto = Math.max(0, Math.round((balance - pendientePorAplicar) * 100) / 100)
+
     res.json({
       success: true,
       data: {
@@ -1244,7 +1262,12 @@ app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => 
         direccion: client.Address || "",
         telefono: client.Phone1 || "",
         correo: client.E_Mail || "",
-        balance: Number.parseFloat(client.Balance) || 0,
+        balance,
+        balanceNeto,
+        pendientePorAplicar,
+        recaudosPendientes: neto ? neto.pendientes : [],
+        saldoFacturas: neto ? neto.saldoSap : null,
+        saldoFacturasNeto: neto ? neto.saldoNeto : null,
         ciudad: client.City || "",
         vendedor: vendedorNombre,
         limiteCredito: Number.parseFloat(client.CreditLine) || 0,
@@ -1261,87 +1284,6 @@ app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => 
   } catch (error) {
     console.error("Error obteniendo cartera:", error.message)
     res.status(500).json({ success: false, message: "Error al obtener cartera" })
-  }
-})
-
-app.get("/api/clientes/:codigo/documentos", authenticateToken, async (req, res) => {
-  try {
-    const sap = await connectSAP()
-    const cardCode = req.params.codigo
-    const limite = limiteDesdeQuery(req.query.limit, 500, 2000)
-    const [result, pagosResult] = await Promise.all([
-      sap.request()
-        .input("cardCode", sql.VarChar, cardCode)
-        .input("limite", sql.Int, limite)
-        .query(`
-      SELECT TOP (@limite) T0.DocEntry, T0.DocNum, T0.NumAtCard,
-             CONVERT(VARCHAR(10), T0.DocDate, 120)     AS docDate,
-             CONVERT(VARCHAR(10), T0.DocDueDate, 120)  AS dueDate,
-             T0.DocTotal, T0.PaidToDate,
-             (T0.DocTotal - T0.PaidToDate)             AS saldo,
-             DATEDIFF(day, GETDATE(), T0.DocDueDate)   AS diasVencimiento
-      FROM OINV T0
-      WHERE T0.CardCode = @cardCode AND T0.DocStatus = 'O'
-        AND (T0.DocTotal - T0.PaidToDate) > 0
-      ORDER BY T0.DocDueDate ASC
-    `),
-      sap.request()
-        .input("cardCode", sql.VarChar, cardCode)
-        .input("limite", sql.Int, limite)
-        .query(`
-      SELECT TOP (@limite) T.TransId, T.Line_ID, R.DocEntry, R.DocNum,
-             CONVERT(VARCHAR(10), ISNULL(R.DocDate, T.RefDate), 120) AS fecha,
-             T.Credit                                  AS valor,
-             T.BalDueCred                              AS saldo,
-             DATEDIFF(day, ISNULL(R.DocDate, T.RefDate), GETDATE()) AS antiguedad,
-             R.CashSum, R.TrsfrSum, R.CheckSum, R.Comments
-      FROM JDT1 T
-      LEFT JOIN ORCT R ON R.TransId = T.TransId AND R.Canceled = 'N'
-      WHERE T.ShortName = @cardCode AND T.TransType = 24 AND T.BalDueCred > 0
-      ORDER BY ISNULL(R.DocDate, T.RefDate) DESC
-    `).catch(() => null),
-    ])
-    const documentos = result.recordset.map((d) => ({
-      docEntry: d.DocEntry,
-      docNum: d.DocNum,
-      numFactura: (d.NumAtCard || `${d.DocNum}`).toString(),
-      docDate: d.docDate,
-      dueDate: d.dueDate,
-      total: Number.parseFloat(d.DocTotal) || 0,
-      pagado: Number.parseFloat(d.PaidToDate) || 0,
-      saldo: Number.parseFloat(d.saldo) || 0,
-      diasVencimiento: d.diasVencimiento || 0,
-      vencida: (d.diasVencimiento || 0) < 0,
-    }))
-    const totalSaldo = documentos.reduce((a, d) => a + d.saldo, 0)
-
-    const medioPago = (p) => {
-      if (Number.parseFloat(p.CashSum) > 0) return "Efectivo"
-      if (Number.parseFloat(p.TrsfrSum) > 0) return "Transferencia"
-      if (Number.parseFloat(p.CheckSum) > 0) return "Cheque"
-      return ""
-    }
-    const pagosSinAplicar = ((pagosResult && pagosResult.recordset) || []).map((p) => ({
-      transId: p.TransId,
-      lineId: p.Line_ID,
-      docEntry: p.DocEntry,
-      docNum: p.DocNum,
-      recibo: p.DocNum != null ? `${p.DocNum}` : "",
-      fecha: p.fecha,
-      valor: Number.parseFloat(p.valor) || 0,
-      saldo: Number.parseFloat(p.saldo) || 0,
-      aplicado: (Number.parseFloat(p.valor) || 0) - (Number.parseFloat(p.saldo) || 0),
-      antiguedad: p.antiguedad || 0,
-      medioPago: medioPago(p),
-      comentario: (p.Comments || "").toString().trim(),
-    }))
-    const totalSinAplicar = pagosSinAplicar.reduce((a, p) => a + p.saldo, 0)
-
-    console.log(`Documentos abiertos cliente ${cardCode}: ${documentos.length} (saldo ${totalSaldo}), pagos sin aplicar: ${pagosSinAplicar.length} (${totalSinAplicar})`)
-    res.json({ success: true, data: documentos, total: documentos.length, totalSaldo, pagosSinAplicar, totalSinAplicar })
-  } catch (error) {
-    console.error("Error obteniendo documentos:", error.message)
-    res.status(500).json({ success: false, message: "Error al obtener documentos", data: [] })
   }
 })
 
@@ -3549,6 +3491,10 @@ indicadores.registrarRutas(app, {
 })
 
 rastreo.registrarRutas(app, { requireAuth: authenticateToken, requireSoporte })
+
+carteraServicio.registrarRutas(app, { requireAuth: authenticateToken, limiteDesdeQuery })
+
+tareas.crear({ sql, getPedidosPool: () => pedidosPool, log: console }).registrarRutas(app, { requireAuth: authenticateToken })
 
 app.get("/api/usuarios", requireSoporte, async (req, res) => {
   try {

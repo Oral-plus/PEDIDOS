@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/session_provider.dart';
 import '../services/api_easy_service.dart';
+import '../utils/cartera_cliente.dart';
 import '../utils/theme.dart';
 import 'dashboard_screen.dart';
 import 'ruta_detalle_screen.dart';
@@ -61,7 +62,7 @@ class _RuteroScreenState extends State<RuteroScreen> {
       correo: '',
       vendedor: sap?['vendedor']?.toString() ?? '',
       ciudad: sap?['ciudad']?.toString() ?? '',
-      balance: (sap?['balance'] as num?)?.toDouble() ?? 0,
+      balance: CarteraCliente.neta(sap),
     );
 
     Navigator.of(context).push(
