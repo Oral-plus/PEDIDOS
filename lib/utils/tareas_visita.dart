@@ -1,3 +1,5 @@
+import '../models/tarea.dart';
+
 /// Reglas de las tareas dentro de una visita.
 ///
 /// Una visita no se puede cerrar mientras queden tareas del cliente sin
@@ -5,17 +7,17 @@
 class TareasVisita {
   const TareasVisita._();
 
-  static List<Map<String, dynamic>> porResponder(List<Map<String, dynamic>> tareas) =>
-      tareas.where((t) => t['pendiente'] == true && t['respondida'] != true).toList();
+  static List<Tarea> porResponder(List<Tarea> tareas) =>
+      tareas.where((t) => t.porResponder).toList();
 
-  static bool puedeCerrar(List<Map<String, dynamic>> tareas) => porResponder(tareas).isEmpty;
+  static bool puedeCerrar(List<Tarea> tareas) => porResponder(tareas).isEmpty;
 
   /// Mensaje para el gestor, o null si no hay nada que le impida cerrar.
-  static String? mensajeBloqueo(List<Map<String, dynamic>> tareas) {
+  static String? mensajeBloqueo(List<Tarea> tareas) {
     final faltan = porResponder(tareas);
     if (faltan.isEmpty) return null;
     if (faltan.length == 1) {
-      final nombre = (faltan.first['nombre'] ?? '').toString().trim();
+      final nombre = faltan.first.nombre;
       return nombre.isEmpty
           ? 'Registra la información de la tarea del cliente para finalizar la visita.'
           : 'Registra la información de la tarea "$nombre" para finalizar la visita.';

@@ -4,6 +4,7 @@ require(path.join(process.cwd(), "node_modules", "dotenv")).config({ path: path.
 const sql = require(path.join(process.cwd(), "node_modules", "mssql"))
 const jwt = require(path.join(process.cwd(), "node_modules", "jsonwebtoken"))
 const sesiones = require(path.join(process.cwd(), "modules", "sesiones"))
+const sharp = require(path.join(process.cwd(), "node_modules", "sharp"))
 
 const BASE = process.env.API_URL || "http://127.0.0.1:3000"
 const ts = Date.now()
@@ -13,11 +14,31 @@ const CLIENTE = "CLI-TAREA-PRUEBA"
 const OTRO_CLIENTE = "CLI-TAREA-OTRO"
 const MARCA = `PRUEBA AUTOMATICA ${ts}`
 
-function llamar(metodo, ruta, { token, body } = {}) {
+const FIN = "\r\n"
+function multipart(campos, archivos) {
+  const limite = "----tareas" + Math.random().toString(16).slice(2)
+  const partes = []
+  for (const [clave, valor] of Object.entries(campos)) {
+    partes.push(Buffer.from(`--${limite}${FIN}Content-Disposition: form-data; name="${clave}"${FIN}${FIN}${valor}${FIN}`))
+  }
+  for (const a of archivos) {
+    partes.push(Buffer.from(`--${limite}${FIN}Content-Disposition: form-data; name="fotos"; filename="${a.nombre}"${FIN}Content-Type: image/png${FIN}${FIN}`))
+    partes.push(a.contenido)
+    partes.push(Buffer.from(FIN))
+  }
+  partes.push(Buffer.from(`--${limite}--${FIN}`))
+  return { body: Buffer.concat(partes), headers: { "Content-Type": `multipart/form-data; boundary=${limite}` } }
+}
+
+const imagenPrueba = (color) => sharp({ create: { width: 900, height: 700, channels: 3, background: color } }).png().toBuffer()
+
+function llamar(metodo, ruta, { token, body, mp } = {}) {
   return new Promise((resolve, reject) => {
-    const datos = body !== undefined ? JSON.stringify(body) : null
+    const datos = mp ? mp.body : body !== undefined ? JSON.stringify(body) : null
     const h = { Accept: "application/json" }
-    if (datos) { h["Content-Type"] = "application/json"; h["Content-Length"] = Buffer.byteLength(datos) }
+    if (mp) Object.assign(h, mp.headers)
+    else if (datos) h["Content-Type"] = "application/json"
+    if (datos) h["Content-Length"] = Buffer.byteLength(datos)
     if (token) h.Authorization = `Bearer ${token}`
     const req = http.request(BASE + ruta, { method: metodo, headers: h }, (res) => {
       const t = []
@@ -47,6 +68,9 @@ const cfg = { server: process.env.DB_SERVER, database: process.env.PEDIDOS_DB_NA
 
   const limpiar = async () => {
     await pedidos.request().input("m", sql.NVarChar, `${MARCA}%`).query(`
+      DELETE e FROM dbo.evidencias_archivos e
+        JOIN dbo.tareas_respuestas r ON r.id = e.tarea_respuesta_id
+        WHERE r.cliente_codigo IN ('${CLIENTE}', '${OTRO_CLIENTE}');
       DELETE FROM dbo.tareas_respuestas WHERE cliente_codigo IN ('${CLIENTE}', '${OTRO_CLIENTE}');
       DELETE g FROM dbo.tareas_gestores g JOIN dbo.tareas t ON t.id = g.tarea_id WHERE t.nombre LIKE @m;
       DELETE c FROM dbo.tareas_clientes c JOIN dbo.tareas t ON t.id = c.tarea_id WHERE t.nombre LIKE @m;
@@ -136,14 +160,49 @@ const cfg = { server: process.env.DB_SERVER, database: process.env.PEDIDOS_DB_NA
   ok("responder NO altera la tarea original (la comparten otros gestores y clientes)",
     laTarea && laTarea.estado === "PENDIENTE", laTarea && laTarea.estado)
 
+  const fotos = [
+    { nombre: "gondola1.png", contenido: await imagenPrueba({ r: 200, g: 40, b: 40 }) },
+    { nombre: "gondola2.png", contenido: await imagenPrueba({ r: 40, g: 200, b: 40 }) },
+  ]
+  const conFotos = await llamar("POST", `/api/tareas/${tVencida}/respuesta`, {
+    token: yo.token,
+    mp: multipart({ clienteCodigo: CLIENTE, visitaId: "987654", cumplida: "true", observacion: "Exhibicion montada" }, fotos),
+  })
+  ok("se puede responder adjuntando fotos de la tarea",
+    conFotos.status === 200 && conFotos.json.data && conFotos.json.data.evidencias === 2,
+    conFotos.json && conFotos.json.data && `${conFotos.json.data.evidencias} foto(s)`)
+
+  const guardadas = (await pedidos.request().input("r", sql.Int, conFotos.json.data.id).query(`
+    SELECT origen, cliente_id, vendedor_id, tamano, ancho, DATALENGTH(contenido) bytes
+    FROM dbo.evidencias_archivos WHERE tarea_respuesta_id = @r`)).recordset
+  ok("BD: cada foto queda ligada a la respuesta, comprimida y con su cliente",
+    guardadas.length === 2 && guardadas.every((f) => f.origen === "tarea" && f.cliente_id === CLIENTE && Number(f.vendedor_id) === VEND && f.bytes > 0 && f.bytes < 100000 && f.ancho > 0),
+    guardadas.map((f) => `${f.ancho}px ${f.bytes}B`).join(" · "))
+
+  const conRespuesta = await llamar("GET", `/api/tareas?cliente=${encodeURIComponent(CLIENTE)}`, { token: yo.token })
+  const conEvidencia = ((conRespuesta.json && conRespuesta.json.data) || []).find((t) => t.id === tVencida)
+  ok("al volver a abrir la visita se ve cuantas fotos quedaron adjuntas",
+    conEvidencia && conEvidencia.respuesta && conEvidencia.respuesta.evidencias === 2 && conEvidencia.respuesta.cumplida === true,
+    conEvidencia && conEvidencia.respuesta && `${conEvidencia.respuesta.evidencias} foto(s)`)
+
+  const demasiadas = await llamar("POST", `/api/tareas/${tIndefinida}/respuesta`, {
+    token: yo.token,
+    mp: multipart({ clienteCodigo: CLIENTE, cumplida: "true" }, [...fotos, ...fotos]),
+  })
+  const huerfanas = (await pedidos.request().input("c", sql.NVarChar, CLIENTE).query(`
+    SELECT COUNT(*) n FROM dbo.tareas_respuestas WHERE tarea_id = ${tIndefinida} AND cliente_codigo = @c`)).recordset[0].n
+  ok("con mas fotos de las permitidas se rechaza entero, sin dejar la respuesta a medias",
+    demasiadas.status === 400 && huerfanas === 0, `${demasiadas.status}, ${huerfanas} respuesta(s)`)
+
   const ajena = await llamar("GET", "/api/tareas", { token: otro.token })
   const idsAjenos = ((ajena.json && ajena.json.data) || []).map((t) => t.id)
   ok("otro gestor no ve las tareas ajenas", idsAjenos.includes(tAjena) && !idsAjenos.includes(tPendiente))
 
   await limpiar()
-  const restos = (await pedidos.request().input("m", sql.NVarChar, `${MARCA}%`)
-    .query("SELECT COUNT(*) n FROM dbo.tareas WHERE nombre LIKE @m")).recordset[0].n
-  ok("limpieza: no quedan tareas de prueba", restos === 0, `restos=${restos}`)
+  const restos = (await pedidos.request().input("m", sql.NVarChar, `${MARCA}%`).input("c", sql.NVarChar, CLIENTE)
+    .query(`SELECT (SELECT COUNT(*) FROM dbo.tareas WHERE nombre LIKE @m) +
+                   (SELECT COUNT(*) FROM dbo.evidencias_archivos WHERE origen='tarea' AND cliente_id=@c) n`)).recordset[0].n
+  ok("limpieza: no quedan tareas ni fotos de prueba", restos === 0, `restos=${restos}`)
 
   for (const s of [yo, otro]) { try { await sesiones.cerrar(pedidos, sql, s.jti, "prueba") } catch (_) {} }
   await pedidos.close()

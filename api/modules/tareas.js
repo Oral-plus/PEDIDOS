@@ -1,5 +1,6 @@
 const TABLAS = ["tareas", "tareas_gestores", "tareas_clientes"]
 const LOTE_IDS = 400
+const MAX_FOTOS = 3
 
 function codigoDeSesion(decoded) {
   if (!decoded) return null
@@ -46,7 +47,7 @@ function resumen(tareas) {
   }
 }
 
-function crear({ sql, getPedidosPool, log }) {
+function crear({ sql, getPedidosPool, asegurarEvidencias, log }) {
   const logger = log || console
   let tablasDisponibles = null
   let respuestasListas = false
@@ -68,6 +69,20 @@ function crear({ sql, getPedidosPool, log }) {
       );
       IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_tarearesp_tarea_cliente' AND object_id = OBJECT_ID('dbo.tareas_respuestas'))
         CREATE INDEX IX_tarearesp_tarea_cliente ON dbo.tareas_respuestas(tarea_id, cliente_codigo, vendedor_codigo);
+    `)
+    // Las fotos se guardan en la tabla de evidencias, que es de otro modulo.
+    if (asegurarEvidencias) await asegurarEvidencias(getPedidosPool())
+    // La columna y su indice van en consultas aparte: SQL Server resuelve los
+    // nombres al compilar el lote, y el indice no veria una columna recien creada.
+    await getPedidosPool().request().query(`
+      IF OBJECT_ID('dbo.evidencias_archivos') IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name='tarea_respuesta_id' AND Object_ID=Object_ID('dbo.evidencias_archivos'))
+        ALTER TABLE dbo.evidencias_archivos ADD tarea_respuesta_id INT NULL;
+    `)
+    await getPedidosPool().request().query(`
+      IF EXISTS (SELECT 1 FROM sys.columns WHERE Name='tarea_respuesta_id' AND Object_ID=Object_ID('dbo.evidencias_archivos'))
+         AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_evid_tarea_respuesta' AND object_id = OBJECT_ID('dbo.evidencias_archivos'))
+        CREATE INDEX IX_evid_tarea_respuesta ON dbo.evidencias_archivos(tarea_respuesta_id);
     `)
     respuestasListas = true
   }
@@ -139,8 +154,9 @@ function crear({ sql, getPedidosPool, log }) {
         filtroCliente = "AND r.cliente_codigo = @cli"
       }
       const r = await req.query(`
-        SELECT r.tarea_id, r.cliente_codigo, r.cumplida, r.observacion,
-               CONVERT(VARCHAR(19), r.fecha, 120) AS fecha
+        SELECT r.id, r.tarea_id, r.cliente_codigo, r.cumplida, r.observacion,
+               CONVERT(VARCHAR(19), r.fecha, 120) AS fecha,
+               (SELECT COUNT(*) FROM dbo.evidencias_archivos e WHERE e.tarea_respuesta_id = r.id) AS evidencias
         FROM dbo.tareas_respuestas r
         WHERE r.tarea_id IN (${marcadores.join(",")}) AND r.vendedor_codigo = @vend ${filtroCliente}
         ORDER BY r.fecha DESC, r.id DESC
@@ -151,9 +167,11 @@ function crear({ sql, getPedidosPool, log }) {
       const clave = `${f.tarea_id}|${texto(f.cliente_codigo)}`
       if (mapa.has(clave)) continue
       mapa.set(clave, {
+        id: f.id,
         clienteCodigo: texto(f.cliente_codigo),
         cumplida: f.cumplida === true || f.cumplida === 1,
         observacion: texto(f.observacion),
+        evidencias: Number(f.evidencias) || 0,
         fecha: f.fecha,
       })
     }
@@ -200,27 +218,68 @@ function crear({ sql, getPedidosPool, log }) {
     })
   }
 
-  async function responder(vendedorCodigo, { tareaId, clienteCodigo, vendedorNombre, visitaId, cumplida, observacion }) {
+  // La respuesta y sus fotos entran juntas: si algo falla, no queda ni una cosa ni la otra.
+  async function responder(vendedorCodigo, { tareaId, clienteCodigo, vendedorNombre, visitaId, cumplida, observacion }, imagenes = []) {
     await asegurarRespuestas()
-    const r = await getPedidosPool()
-      .request()
-      .input("tarea", sql.Int, tareaId)
-      .input("cli", sql.NVarChar, clienteCodigo)
-      .input("vend", sql.Int, vendedorCodigo)
-      .input("vendNom", sql.NVarChar, texto(vendedorNombre) || null)
-      .input("visita", sql.Int, Number.isFinite(visitaId) ? visitaId : null)
-      .input("cumplida", sql.Bit, cumplida ? 1 : 0)
-      .input("obs", sql.NVarChar, texto(observacion).slice(0, 1000) || null)
-      .query(`
-        INSERT INTO dbo.tareas_respuestas
-          (tarea_id, cliente_codigo, vendedor_codigo, vendedor_nombre, visita_id, cumplida, observacion)
-        OUTPUT INSERTED.id, CONVERT(VARCHAR(19), INSERTED.fecha, 120) AS fecha
-        VALUES (@tarea, @cli, @vend, @vendNom, @visita, @cumplida, @obs)
-      `)
-    return r.recordset[0]
+    const transaccion = getPedidosPool().transaction()
+    await transaccion.begin()
+    try {
+      const r = await transaccion
+        .request()
+        .input("tarea", sql.Int, tareaId)
+        .input("cli", sql.NVarChar, clienteCodigo)
+        .input("vend", sql.Int, vendedorCodigo)
+        .input("vendNom", sql.NVarChar, texto(vendedorNombre) || null)
+        .input("visita", sql.Int, Number.isFinite(visitaId) ? visitaId : null)
+        .input("cumplida", sql.Bit, cumplida ? 1 : 0)
+        .input("obs", sql.NVarChar, texto(observacion).slice(0, 1000) || null)
+        .query(`
+          INSERT INTO dbo.tareas_respuestas
+            (tarea_id, cliente_codigo, vendedor_codigo, vendedor_nombre, visita_id, cumplida, observacion)
+          OUTPUT INSERTED.id, CONVERT(VARCHAR(19), INSERTED.fecha, 120) AS fecha
+          VALUES (@tarea, @cli, @vend, @vendNom, @visita, @cumplida, @obs)
+        `)
+      const fila = r.recordset[0]
+
+      for (const imagen of imagenes) {
+        await transaccion
+          .request()
+          .input("origen", sql.NVarChar, "tarea")
+          .input("cliente", sql.NVarChar, clienteCodigo)
+          .input("vendId", sql.Int, vendedorCodigo)
+          .input("vendNom", sql.NVarChar, texto(vendedorNombre) || null)
+          .input("respuesta", sql.Int, fila.id)
+          .input("contenido", sql.VarBinary(sql.MAX), imagen.contenido)
+          .input("tamano", sql.Int, imagen.contenido.length)
+          .input("ancho", sql.Int, imagen.ancho || null)
+          .input("alto", sql.Int, imagen.alto || null)
+          .query(`
+            INSERT INTO dbo.evidencias_archivos
+              (origen, cliente_id, vendedor_id, vendedor_nombre, tarea_respuesta_id, contenido, tamano, ancho, alto)
+            VALUES (@origen, @cliente, @vendId, @vendNom, @respuesta, @contenido, @tamano, @ancho, @alto)
+          `)
+      }
+
+      await transaccion.commit()
+      return { ...fila, evidencias: imagenes.length }
+    } catch (e) {
+      try { await transaccion.rollback() } catch (_) {}
+      throw e
+    }
   }
 
-  function registrarRutas(app, { requireAuth }) {
+  function registrarRutas(app, { requireAuth, subida, procesarImagen }) {
+    // Sin multer el modulo sigue funcionando, solo que sin fotos.
+    const recibirFotos = subida
+      ? (req, res, next) => {
+          subida.fields([{ name: "fotos", maxCount: MAX_FOTOS }])(req, res, (err) => {
+            if (!err) return next()
+            logger.error("Tareas: no se pudieron recibir las fotos:", err.message)
+            res.status(400).json({ success: false, message: `Adjunta maximo ${MAX_FOTOS} imagenes` })
+          })
+        }
+      : (req, res, next) => next()
+
     app.get("/api/tareas", requireAuth, async (req, res) => {
       try {
         const vendedor = codigoDeSesion(req.user)
@@ -243,7 +302,7 @@ function crear({ sql, getPedidosPool, log }) {
       }
     })
 
-    app.post("/api/tareas/:id/respuesta", requireAuth, async (req, res) => {
+    app.post("/api/tareas/:id/respuesta", requireAuth, recibirFotos, async (req, res) => {
       try {
         const tareaId = Number.parseInt(req.params.id, 10)
         const b = req.body || {}
@@ -251,17 +310,28 @@ function crear({ sql, getPedidosPool, log }) {
         if (!Number.isFinite(tareaId) || !clienteCodigo) {
           return res.status(400).json({ success: false, message: "Indica la tarea y el cliente" })
         }
+        const archivos = ((req.files && req.files.fotos) || []).slice(0, MAX_FOTOS)
+        const imagenes = procesarImagen
+          ? await Promise.all(archivos.map((f) => procesarImagen(f.buffer)))
+          : []
         const visitaId = Number.parseInt(b.visitaId, 10)
-        const fila = await responder(codigoDeSesion(req.user), {
-          tareaId,
-          clienteCodigo,
-          vendedorNombre: req.user && req.user.nombre,
-          visitaId,
-          cumplida: b.cumplida === true || b.cumplida === 1 || b.cumplida === "true",
-          observacion: b.observacion,
-        })
-        logger.log(`Tarea ${tareaId} respondida para ${clienteCodigo}: cumplida=${b.cumplida === true} visita=${Number.isFinite(visitaId) ? visitaId : "-"}`)
-        res.json({ success: true, data: { id: fila.id, fecha: fila.fecha, tareaId, clienteCodigo } })
+        const fila = await responder(
+          codigoDeSesion(req.user),
+          {
+            tareaId,
+            clienteCodigo,
+            vendedorNombre: req.user && req.user.nombre,
+            visitaId,
+            cumplida: b.cumplida === true || b.cumplida === 1 || b.cumplida === "true",
+            observacion: b.observacion,
+          },
+          imagenes,
+        )
+        logger.log(
+          `Tarea ${tareaId} respondida para ${clienteCodigo}: cumplida=${fila.cumplida === 1 || b.cumplida === true || b.cumplida === "true"} ` +
+            `fotos=${imagenes.length} visita=${Number.isFinite(visitaId) ? visitaId : "-"}`,
+        )
+        res.json({ success: true, data: { id: fila.id, fecha: fila.fecha, evidencias: fila.evidencias, tareaId, clienteCodigo } })
       } catch (error) {
         logger.error("Error registrando la respuesta de la tarea:", error.message)
         res.status(500).json({ success: false, message: "No se pudo guardar la información de la tarea" })

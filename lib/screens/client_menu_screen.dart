@@ -120,10 +120,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
   Future<void> _cargarTareasPendientes() async {
     final res = await _api.getTareas();
     if (!mounted) return;
-    final resumen = (res['resumen'] as Map?) ?? {};
-    setState(() {
-      _tareasPendientes = (resumen['pendientes'] as num?)?.toInt() ?? 0;
-    });
+    setState(() => _tareasPendientes = res.resumen.pendientes);
   }
 
   void _abrirTareas() async {

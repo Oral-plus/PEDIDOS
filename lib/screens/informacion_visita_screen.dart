@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/tarea.dart';
 import '../providers/session_provider.dart';
 import '../providers/visita_activa_provider.dart';
 import '../services/api_easy_service.dart';
@@ -15,6 +16,7 @@ import '../utils/cartera_cliente.dart';
 import '../utils/tareas_visita.dart';
 import '../utils/theme.dart';
 import '../widgets/app_header.dart';
+import '../widgets/responder_tarea.dart';
 import '../widgets/tarea_card.dart';
 import 'cartera_screen.dart';
 import 'encuesta_visita_screen.dart';
@@ -68,9 +70,8 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
   EstadoUbicacionCliente? _ubicacionCliente;
   bool _ubicacionOcupada = false;
 
-  List<Map<String, dynamic>> _tareasCliente = [];
+  List<Tarea> _tareasCliente = [];
   bool _guardandoTarea = false;
-  final TextEditingController _obsTarea = TextEditingController();
 
   Map<String, dynamic>? _pago;
   Map<String, dynamic>? _encuesta;
@@ -249,8 +250,6 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
   void dispose() {
     _timer?.cancel();
     _transcurrido.dispose();
-    _obsTarea.dispose();
-    _obsTarea.dispose();
     _visitaActiva?.setEnPantallaVisita(false);
     _obs.dispose();
     super.dispose();
@@ -313,105 +312,23 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     if (_codigo.isEmpty) return;
     final res = await _api.getTareas(cliente: _codigo, forzar: forzar);
     if (!mounted) return;
-    setState(() {
-      _tareasCliente = (res['data'] as List<dynamic>? ?? [])
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
-    });
+    setState(() => _tareasCliente = res.tareas);
   }
 
-  Future<void> _responderTarea(Map<String, dynamic> tarea) async {
+  /// El gestor responde la tarea sin salir de la visita: comentario y fotos.
+  Future<void> _responderTarea(Tarea tarea) async {
     if (_guardandoTarea) return;
-    HapticFeedback.selectionClick();
-    _obsTarea.text = '';
-    var cumplida = true;
-
-    final confirmado = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, actualizar) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: Text((tarea['nombre'] ?? 'Tarea').toString(),
-              style: TextStyle(color: _textDark, fontSize: 17, fontWeight: FontWeight.w800)),
-          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if ((tarea['descripcion'] ?? '').toString().trim().isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(tarea['descripcion'].toString(),
-                    style: TextStyle(color: _textMuted, fontSize: 13, height: 1.35)),
-              ),
-            Text('¿Se cumplió en este cliente?',
-                style: TextStyle(color: _textDark, fontSize: 13.5, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            Row(children: [
-              Expanded(
-                child: RadioListTile<bool>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  value: true,
-                  groupValue: cumplida,
-                  title: const Text('Sí', style: TextStyle(fontSize: 13.5)),
-                  onChanged: (v) => actualizar(() => cumplida = v ?? true),
-                ),
-              ),
-              Expanded(
-                child: RadioListTile<bool>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  value: false,
-                  groupValue: cumplida,
-                  title: const Text('No', style: TextStyle(fontSize: 13.5)),
-                  onChanged: (v) => actualizar(() => cumplida = v ?? false),
-                ),
-              ),
-            ]),
-            const SizedBox(height: 4),
-            TextField(
-              controller: _obsTarea,
-              minLines: 2,
-              maxLines: 4,
-              maxLength: 1000,
-              textCapitalization: TextCapitalization.sentences,
-              style: TextStyle(fontSize: 14, color: _textDark),
-              decoration: InputDecoration(
-                labelText: cumplida ? 'Observación (opcional)' : 'Motivo (obligatorio)',
-                hintText: cumplida ? 'Qué se hizo en el cliente…' : 'Por qué no se pudo cumplir…',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onChanged: (_) => actualizar(() {}),
-            ),
-          ]),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
-            ElevatedButton(
-              onPressed: (cumplida || _obsTarea.text.trim().length >= 4)
-                  ? () => Navigator.of(ctx).pop(true)
-                  : null,
-              child: const Text('Guardar'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (confirmado != true || !mounted) return;
-    setState(() => _guardandoTarea = true);
-    final ok = await _api.responderTarea(
-      (tarea['id'] as num).toInt(),
+    final respuesta = await ResponderTarea.mostrar(
+      context,
+      api: _api,
+      tarea: tarea,
       clienteCodigo: _codigo,
       visitaId: _visitaId,
-      cumplida: cumplida,
-      observacion: _obsTarea.text,
     );
-    if (!mounted) return;
-    setState(() => _guardandoTarea = false);
-    if (ok) {
-      await _cargarTareasDelCliente(forzar: true);
-      if (mounted) _avisoInfo('Información de la tarea registrada');
-    } else {
-      _avisoInfo('No se pudo guardar la información de la tarea. Intenta de nuevo.');
-    }
+    if (respuesta == null || !mounted) return;
+    setState(() => _guardandoTarea = true);
+    await _cargarTareasDelCliente(forzar: true);
+    if (mounted) setState(() => _guardandoTarea = false);
   }
 
   Widget _seccionTareas() {

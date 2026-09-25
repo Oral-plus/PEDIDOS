@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
+import '../models/tarea.dart';
 import 'api_client.dart';
 import 'cache_service.dart';
 import 'device_service.dart';
@@ -1720,21 +1721,21 @@ class ApiEasyService {
     }
   }
 
-  Future<Map<String, dynamic>> getTareas({String? cliente, bool forzar = false}) async {
-    if (_token == null || _token!.isEmpty) {
-      return {'success': false, 'data': <Map<String, dynamic>>[], 'resumen': <String, dynamic>{}};
-    }
-    final clave = cliente == null || cliente.isEmpty ? 'tareas' : 'tareas:$cliente';
-    final datos = await _cache.obtener<Map<String, dynamic>?>(
-      clave,
+  Future<ListadoTareas> getTareas({String? cliente, bool forzar = false}) async {
+    if (_token == null || _token!.isEmpty) return const ListadoTareas.fallo();
+    final datos = await _cache.obtener<ListadoTareas?>(
+      _claveTareas(cliente),
       const Duration(minutes: 2),
       () => _getTareasRed(cliente),
       forzar: forzar,
     );
-    return datos ?? {'success': false, 'data': <Map<String, dynamic>>[], 'resumen': <String, dynamic>{}};
+    return datos ?? const ListadoTareas.fallo();
   }
 
-  Future<Map<String, dynamic>?> _getTareasRed(String? cliente) async {
+  static String _claveTareas(String? cliente) =>
+      cliente == null || cliente.isEmpty ? 'tareas' : 'tareas:$cliente';
+
+  Future<ListadoTareas?> _getTareasRed(String? cliente) async {
     try {
       final filtro = cliente == null || cliente.isEmpty ? '' : '?cliente=${Uri.encodeQueryComponent(cliente)}';
       final res = await ApiClient.get(
@@ -1743,48 +1744,51 @@ class ApiEasyService {
         headers: _headers,
         timeout: const Duration(seconds: 20),
       );
-      if (res['success'] == true) {
-        return {
-          'success': true,
-          'data': (res['data'] as List<dynamic>? ?? [])
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList(),
-          'resumen': Map<String, dynamic>.from((res['resumen'] as Map?) ?? {}),
-          'pendientesPorResponder': (res['pendientesPorResponder'] as num?)?.toInt() ?? 0,
-        };
-      }
+      if (res['success'] == true) return ListadoTareas.fromJson(Map<String, dynamic>.from(res));
     } catch (_) {}
     return null;
   }
 
-  Future<bool> responderTarea(
+  /// Registra la información de una tarea en un cliente, con sus fotos.
+  /// Devuelve lo que quedó guardado, o null si no se pudo.
+  Future<RespuestaTarea?> responderTarea(
     int tareaId, {
     required String clienteCodigo,
     int? visitaId,
-    required bool cumplida,
-    String observacion = '',
+    required BorradorRespuestaTarea borrador,
   }) async {
-    if (_token == null || _token!.isEmpty) return false;
+    if (_token == null || _token!.isEmpty) return null;
     try {
-      final res = await ApiClient.post(
-        '/api/tareas/$tareaId/respuesta',
-        body: {
-          'clienteCodigo': clienteCodigo,
-          if (visitaId != null) 'visitaId': visitaId,
-          'cumplida': cumplida,
-          if (observacion.trim().isNotEmpty) 'observacion': observacion.trim(),
-        },
-        customBaseUrl: await _baseUrlForRequest(),
-        headers: _headers,
-        timeout: const Duration(seconds: 20),
-      );
-      if (res['success'] == true) {
-        _cache.invalidar('tareas');
-        _cache.invalidar('tareas:$clienteCodigo');
-        return true;
+      final base = await _baseUrlForRequest();
+      final req = http.MultipartRequest('POST', Uri.parse('$base/api/tareas/$tareaId/respuesta'));
+      req.headers['Authorization'] = 'Bearer $_token';
+      req.headers['Accept'] = 'application/json';
+      req.fields['clienteCodigo'] = clienteCodigo;
+      req.fields['cumplida'] = borrador.cumplida ? 'true' : 'false';
+      if (visitaId != null) req.fields['visitaId'] = '$visitaId';
+      if (borrador.observacion.trim().isNotEmpty) {
+        req.fields['observacion'] = borrador.observacion.trim();
       }
+      for (final ruta in borrador.fotos) {
+        req.files.add(await http.MultipartFile.fromPath('fotos', ruta));
+      }
+      final streamed = await SharedHttp.client.send(req).timeout(const Duration(seconds: 45));
+      final res = await http.Response.fromStream(streamed);
+      if (res.statusCode != 200 || !(res.headers['content-type'] ?? '').contains('application/json')) {
+        return null;
+      }
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      if (data is! Map || data['success'] != true || data['data'] is! Map) return null;
+      _cache.invalidar(_claveTareas(null));
+      _cache.invalidar(_claveTareas(clienteCodigo));
+      return RespuestaTarea.fromJson({
+        ...Map<String, dynamic>.from(data['data'] as Map),
+        'clienteCodigo': clienteCodigo,
+        'cumplida': borrador.cumplida,
+        'observacion': borrador.observacion.trim(),
+      });
     } catch (_) {}
-    return false;
+    return null;
   }
 
   Future<Map<String, dynamic>?> getVisitasHoy(String codigo) {

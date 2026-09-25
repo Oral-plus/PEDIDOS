@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../models/tarea.dart';
 import '../services/api_easy_service.dart';
+import '../widgets/responder_tarea.dart';
 import '../widgets/tarea_card.dart';
 
 class TareasScreen extends StatefulWidget {
@@ -23,8 +25,8 @@ class _TareasScreenState extends State<TareasScreen> {
   final ApiEasyService _api = ApiEasyService();
   bool _cargando = true;
   String? _error;
-  List<Map<String, dynamic>> _tareas = [];
-  Map<String, dynamic> _resumen = {};
+  List<Tarea> _tareas = [];
+  ResumenTareas _resumen = const ResumenTareas();
   bool _soloPendientes = true;
 
   @override
@@ -42,27 +44,22 @@ class _TareasScreenState extends State<TareasScreen> {
     if (!mounted) return;
     setState(() {
       _cargando = false;
-      if (res['success'] == true) {
-        _tareas = (res['data'] as List<dynamic>? ?? [])
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
-        _resumen = Map<String, dynamic>.from((res['resumen'] as Map?) ?? {});
-      } else {
-        _tareas = [];
-        _resumen = {};
-        _error = 'No se pudieron cargar las tareas';
-      }
+      _tareas = res.tareas;
+      _resumen = res.resumen;
+      _error = res.exito ? null : 'No se pudieron cargar las tareas';
     });
   }
 
-  List<Map<String, dynamic>> get _visibles =>
-      _soloPendientes ? _tareas.where((t) => t['pendiente'] == true).toList() : _tareas;
+  List<Tarea> get _visibles => _soloPendientes ? _tareas.where((t) => t.pendiente).toList() : _tareas;
 
-  int _entero(String clave) => (_resumen[clave] as num?)?.toInt() ?? 0;
+  Future<void> _responder(Tarea tarea) async {
+    final respuesta = await ResponderTarea.mostrar(context, api: _api, tarea: tarea);
+    if (respuesta != null) await _cargar(forzar: true);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final vencidas = _entero('vencidas');
+    final vencidas = _resumen.vencidas;
     return Scaffold(
       backgroundColor: _surface,
       appBar: AppBar(
@@ -91,13 +88,13 @@ class _TareasScreenState extends State<TareasScreen> {
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
           children: [
             Row(children: [
-              Expanded(child: _stat('Pendientes', '${_entero('pendientes')}', _inkDeep)),
+              Expanded(child: _stat('Pendientes', '${_resumen.pendientes}', _inkDeep)),
               const SizedBox(width: 8),
               Expanded(child: _stat('Vencidas', '$vencidas', vencidas > 0 ? _rojo : _gray)),
               const SizedBox(width: 8),
-              Expanded(child: _stat('Por vencer', '${_entero('porVencer')}', _ambar)),
+              Expanded(child: _stat('Por vencer', '${_resumen.porVencer}', _ambar)),
               const SizedBox(width: 8),
-              Expanded(child: _stat('Terminadas', '${_entero('terminadas')}', _verde)),
+              Expanded(child: _stat('Terminadas', '${_resumen.terminadas}', _verde)),
             ]),
             const SizedBox(height: 12),
             Row(children: [
@@ -116,7 +113,7 @@ class _TareasScreenState extends State<TareasScreen> {
             else
               ..._visibles.map((t) => Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: TareaCard(tarea: t),
+                    child: TareaCard(tarea: t, onResponder: () => _responder(t)),
                   )),
           ],
         ),
