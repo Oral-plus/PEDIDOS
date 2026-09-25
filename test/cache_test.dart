@@ -119,4 +119,32 @@ void main() {
       expect(cache.leer<int>('r0'), null);
     });
   });
+
+  group('Dos usos distintos con la misma clave', () {
+    test('lo guardado con otro tipo se descarta y se vuelve a pedir', () async {
+      cache.guardar('tareas:C1', {'total': 7}, const Duration(minutes: 5));
+      var llamadas = 0;
+      final lista = await cache.obtener<List<String>>(
+        'tareas:C1',
+        const Duration(minutes: 5),
+        () async {
+          llamadas++;
+          return ['a', 'b'];
+        },
+      );
+      expect(lista, ['a', 'b'], reason: 'no revienta con el valor del otro uso');
+      expect(llamadas, 1);
+      expect(await cache.obtener<List<String>>('tareas:C1', const Duration(minutes: 5), () async {
+        llamadas++;
+        return <String>[];
+      }), ['a', 'b'], reason: 'ya quedó guardado con el tipo correcto');
+      expect(llamadas, 1);
+    });
+
+    test('leer con un tipo que no corresponde devuelve null en vez de fallar', () {
+      cache.guardar('mezcla', {'a': 1}, const Duration(minutes: 5));
+      expect(cache.leer<List<int>>('mezcla'), isNull);
+      expect(cache.leer<Map<String, dynamic>>('mezcla'), isNotNull);
+    });
+  });
 }

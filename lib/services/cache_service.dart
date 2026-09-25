@@ -27,11 +27,19 @@ class CacheService {
     if (!forzar) {
       final e = _datos[clave];
       if (e != null && !e.vencida) {
-        _tocar(clave, e);
-        return e.valor as T;
+        // Si dos llamados distintos comparten clave, lo guardado puede ser de
+        // otro tipo: se pide de nuevo en vez de reventar, y no se borra lo que
+        // hay porque le sirve a quien sí lo guardó así.
+        if (e.valor is T) {
+          _tocar(clave, e);
+          return e.valor as T;
+        }
       }
       final pendiente = _enVuelo[clave];
-      if (pendiente != null) return await pendiente as T;
+      if (pendiente != null) {
+        final valor = await pendiente;
+        if (valor is T) return valor;
+      }
     }
 
     final futuro = cargar();
@@ -54,6 +62,7 @@ class CacheService {
       _datos.remove(clave);
       return null;
     }
+    if (e.valor is! T) return null;
     _tocar(clave, e);
     return e.valor as T;
   }

@@ -1732,8 +1732,10 @@ class ApiEasyService {
     return datos ?? const ListadoTareas.fallo();
   }
 
+  /// Clave propia: 'tareas:<cliente>' ya la usa getTareasCliente (objetivos del
+  /// rutero), y compartirla dejaba la visita sin tareas.
   static String _claveTareas(String? cliente) =>
-      cliente == null || cliente.isEmpty ? 'tareas' : 'tareas:$cliente';
+      cliente == null || cliente.isEmpty ? 'tareasGestor' : 'tareasGestor:$cliente';
 
   Future<ListadoTareas?> _getTareasRed(String? cliente) async {
     try {
