@@ -54,6 +54,23 @@ void main() {
       expect(TareasVisita.mensajeBloqueo(tareas), contains('2 tareas'));
     });
 
+    test('la barra fija muestra la tarea que falta, no otra', () {
+      final tareas = [tarea(nombre: 'Ya hecha', respondida: true), tarea(nombre: 'Falta esta'), tarea(nombre: 'Y esta')];
+      expect(TareasVisita.primeraPorResponder(tareas)!.nombre, 'Falta esta');
+      expect(TareasVisita.destacada(tareas)!.nombre, 'Falta esta');
+    });
+
+    test('cuando ya no falta ninguna, la barra deja a la vista lo registrado', () {
+      final tareas = [tarea(nombre: 'Exhibición', respondida: true)];
+      expect(TareasVisita.primeraPorResponder(tareas), isNull);
+      expect(TareasVisita.destacada(tareas)!.nombre, 'Exhibición');
+    });
+
+    test('sin tareas del cliente no hay barra que mostrar', () {
+      expect(TareasVisita.destacada(const []), isNull);
+      expect(TareasVisita.primeraPorResponder(const []), isNull);
+    });
+
     test('una tarea sin nombre igual bloquea, con un aviso genérico', () {
       final tareas = [tarea(nombre: '')];
       expect(TareasVisita.puedeCerrar(tareas), false);
@@ -176,6 +193,14 @@ void main() {
       expect(const BorradorRespuestaTarea(cumplida: false).completo, false);
       expect(const BorradorRespuestaTarea(cumplida: false, observacion: 'no ').completo, false);
       expect(const BorradorRespuestaTarea(cumplida: false, observacion: 'Sin espacio').completo, true);
+    });
+
+    test('la clave del envío identifica tarea y cliente, para que un reintento no duplique', () {
+      final clave = BorradorRespuestaTarea.nuevaClave(12, 'C901');
+      expect(clave, startsWith('tar-12-C901-'));
+      expect(const BorradorRespuestaTarea(cumplida: true).claveLocal, '',
+          reason: 'sin clave el servidor sigue aceptando el envío');
+      expect(BorradorRespuestaTarea(cumplida: true, claveLocal: clave).claveLocal, clave);
     });
 
     test('las fotos son opcionales en los dos casos', () {

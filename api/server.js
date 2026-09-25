@@ -3494,15 +3494,9 @@ rastreo.registrarRutas(app, { requireAuth: authenticateToken, requireSoporte })
 
 carteraServicio.registrarRutas(app, { requireAuth: authenticateToken, limiteDesdeQuery })
 
-tareas.crear({
-  sql,
-  getPedidosPool: () => pedidosPool,
-  asegurarEvidencias: evidencias.ensureTabla,
-  log: console,
-}).registrarRutas(app, {
+tareas.crear({ sql, getPedidosPool: () => pedidosPool, evidencias, log: console }).registrarRutas(app, {
   requireAuth: authenticateToken,
   subida: subidaEvidencias,
-  procesarImagen: evidencias.procesar,
 })
 
 app.get("/api/usuarios", requireSoporte, async (req, res) => {

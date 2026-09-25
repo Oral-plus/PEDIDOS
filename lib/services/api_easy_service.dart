@@ -1769,6 +1769,7 @@ class ApiEasyService {
       if (borrador.observacion.trim().isNotEmpty) {
         req.fields['observacion'] = borrador.observacion.trim();
       }
+      if (borrador.claveLocal.isNotEmpty) req.fields['claveLocal'] = borrador.claveLocal;
       for (final ruta in borrador.fotos) {
         req.files.add(await http.MultipartFile.fromPath('fotos', ruta));
       }

@@ -185,6 +185,24 @@ const cfg = { server: process.env.DB_SERVER, database: process.env.PEDIDOS_DB_NA
     conEvidencia && conEvidencia.respuesta && conEvidencia.respuesta.evidencias === 2 && conEvidencia.respuesta.cumplida === true,
     conEvidencia && conEvidencia.respuesta && `${conEvidencia.respuesta.evidencias} foto(s)`)
 
+  // Reintento del gestor cuando la red se cae despues de que el servidor ya guardo.
+  const clave = `clave-prueba-${ts}`
+  const envio = () => llamar("POST", `/api/tareas/${tHecha}/respuesta`, {
+    token: yo.token,
+    mp: multipart({ clienteCodigo: CLIENTE, cumplida: "true", observacion: "Reintento", claveLocal: clave }, fotos),
+  })
+  const primero = await envio()
+  const segundo = await envio()
+  const filas = (await pedidos.request().input("c", sql.NVarChar, clave)
+    .query("SELECT COUNT(*) n FROM dbo.tareas_respuestas WHERE clave_local = @c")).recordset[0].n
+  const fotosClave = (await pedidos.request().input("r", sql.Int, primero.json.data.id)
+    .query("SELECT COUNT(*) n FROM dbo.evidencias_archivos WHERE tarea_respuesta_id = @r")).recordset[0].n
+  ok("reenviar la misma respuesta no la duplica: devuelve la que ya estaba",
+    primero.status === 200 && segundo.status === 200 &&
+      segundo.json.data.id === primero.json.data.id && segundo.json.data.repetida === true &&
+      filas === 1 && fotosClave === 2,
+    `${filas} respuesta(s), ${fotosClave} foto(s)`)
+
   const demasiadas = await llamar("POST", `/api/tareas/${tIndefinida}/respuesta`, {
     token: yo.token,
     mp: multipart({ clienteCodigo: CLIENTE, cumplida: "true" }, [...fotos, ...fotos]),

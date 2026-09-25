@@ -360,6 +360,70 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     ]);
   }
 
+  /// Barra fija al pie de la visita con la tarea del cliente.
+  ///
+  /// Mientras falte por diligenciar no se puede cerrar la visita, asi que la
+  /// tarea queda siempre a la vista y se responde desde ahi, sin buscarla.
+  Widget? _barraTarea() {
+    if (_cargando) return null;
+    final tarea = TareasVisita.destacada(_tareasCliente);
+    if (tarea == null) return null;
+    final faltan = TareasVisita.porResponder(_tareasCliente).length;
+    final pendiente = faltan > 0;
+    final color = pendiente ? AppTheme.errorColor : AppTheme.successColor;
+    final ocupado = _guardando || _guardandoTarea;
+
+    return Material(
+      color: Colors.white,
+      elevation: 14,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+          child: Row(children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(11)),
+              child: Icon(pendiente ? Icons.assignment_late_rounded : Icons.task_alt_rounded, color: color, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(
+                  pendiente
+                      ? (faltan > 1 ? 'Tareas obligatorias · faltan $faltan' : 'Tarea obligatoria de la visita')
+                      : 'Tarea registrada',
+                  style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 2),
+                Text(tarea.nombre,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: _textDark, fontSize: 13.5, fontWeight: FontWeight.w700)),
+              ]),
+            ),
+            const SizedBox(width: 10),
+            if (pendiente)
+              ElevatedButton.icon(
+                onPressed: ocupado ? null : () => _responderTarea(tarea),
+                icon: const Icon(Icons.edit_note_rounded, size: 18),
+                label: const Text('Responder', style: TextStyle(fontWeight: FontWeight.w800)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.darkBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              )
+            else
+              Icon(Icons.check_circle_rounded, color: color, size: 26),
+          ]),
+        ),
+      ),
+    );
+  }
+
   static final RegExp _reProductosTarea = RegExp(r'(\d+)\s*PRODUCTO', caseSensitive: false);
 
   int _requeridoTarea(String texto) {
@@ -446,9 +510,12 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
     if (_guardando) return;
     HapticFeedback.mediumImpact();
 
-    final bloqueoTareas = TareasVisita.mensajeBloqueo(_tareasCliente);
-    if (bloqueoTareas != null) {
-      _avisoInfo(bloqueoTareas);
+    // La tarea del cliente es obligatoria: sin ella no se cierra la visita, y
+    // en vez de dejar al gestor buscandola se le abre el formulario.
+    final tareaPendiente = TareasVisita.primeraPorResponder(_tareasCliente);
+    if (tareaPendiente != null) {
+      _avisoInfo(TareasVisita.mensajeBloqueo(_tareasCliente)!);
+      await _responderTarea(tareaPendiente);
       return;
     }
 
@@ -903,6 +970,7 @@ class _InformacionVisitaScreenState extends State<InformacionVisitaScreen> {
                 _botonFinalizar(),
               ],
             ),
+      bottomNavigationBar: _barraTarea(),
     );
   }
 

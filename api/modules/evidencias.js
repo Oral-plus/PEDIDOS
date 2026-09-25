@@ -44,6 +44,49 @@ async function ensureTabla(pool) {
   tablaLista = true
 }
 
+// De donde viene la evidencia. Cada modulo llena solo lo suyo; lo que no
+// aplique se omite y no viaja a la consulta.
+const COLUMNAS = [
+  ["origen", "origen", "texto"],
+  ["numeroRecaudo", "numero_recaudo", "texto"],
+  ["numeroPedido", "numero_pedido", "texto"],
+  ["clienteId", "cliente_id", "texto"],
+  ["vendedorId", "vendedor_id", "entero"],
+  ["vendedorNombre", "vendedor_nombre", "texto"],
+  ["recaudoId", "recaudo_id", "entero"],
+  ["cuadreId", "cuadre_id", "entero"],
+  ["tareaRespuestaId", "tarea_respuesta_id", "entero"],
+]
+
+/// Unico sitio que escribe una evidencia. [ejecutor] es el pool o una
+/// transaccion, de modo que quien la llame decide si va suelta o atada a otra
+/// operacion. Devuelve el id de la fila.
+async function guardar(ejecutor, sql, datos, imagen) {
+  const req = ejecutor.request()
+  const columnas = ["contenido", "tamano", "ancho", "alto"]
+  const valores = ["@contenido", "@tamano", "@ancho", "@alto"]
+  req
+    .input("contenido", sql.VarBinary(sql.MAX), imagen.contenido)
+    .input("tamano", sql.Int, imagen.contenido.length)
+    .input("ancho", sql.Int, imagen.ancho || null)
+    .input("alto", sql.Int, imagen.alto || null)
+  let i = 0
+  for (const [clave, columna, tipo] of COLUMNAS) {
+    const valor = datos[clave]
+    if (valor === undefined || valor === null || valor === "") continue
+    const p = `d${i++}`
+    req.input(p, tipo === "entero" ? sql.Int : sql.NVarChar, valor)
+    columnas.push(columna)
+    valores.push(`@${p}`)
+  }
+  const r = await req.query(`
+    INSERT INTO dbo.evidencias_archivos (${columnas.join(", ")})
+    OUTPUT INSERTED.id
+    VALUES (${valores.join(", ")})
+  `)
+  return r.recordset[0].id
+}
+
 async function resolverRecaudoId(pool, sql, numeroRecaudo) {
   if (!numeroRecaudo) return null
   try {
@@ -87,32 +130,19 @@ function registrarRutas(app, { requireAuth, getPedidosPool, sql, log }) {
       const vendedorId = Number.isInteger(Number(req.user && req.user.userId)) ? Number(req.user.userId) : null
       const vendedorNombre = ((req.user && req.user.nombre) || "").toString().trim() || null
 
-      const { contenido, ancho, alto } = await procesar(req.file.buffer)
+      const imagen = await procesar(req.file.buffer)
+      req.file.buffer = null
+      const contenido = imagen.contenido
 
       const pool = getPedidosPool()
       await ensureTabla(pool)
       const recaudoId = await resolverRecaudoId(pool, sql, numeroRecaudo)
-      const r = await pool
-        .request()
-        .input("origen", sql.NVarChar, origen)
-        .input("numRec", sql.NVarChar, numeroRecaudo)
-        .input("numPed", sql.NVarChar, numeroPedido)
-        .input("cliente", sql.NVarChar, clienteId)
-        .input("vendId", sql.Int, vendedorId)
-        .input("vendNom", sql.NVarChar, vendedorNombre)
-        .input("recaudoId", sql.Int, recaudoId)
-        .input("contenido", sql.VarBinary(sql.MAX), contenido)
-        .input("tamano", sql.Int, contenido.length)
-        .input("ancho", sql.Int, ancho)
-        .input("alto", sql.Int, alto)
-        .query(`
-          INSERT INTO dbo.evidencias_archivos
-            (origen, numero_recaudo, numero_pedido, cliente_id, vendedor_id, vendedor_nombre, recaudo_id, contenido, tamano, ancho, alto)
-          OUTPUT INSERTED.id
-          VALUES (@origen, @numRec, @numPed, @cliente, @vendId, @vendNom, @recaudoId, @contenido, @tamano, @ancho, @alto)
-        `)
-
-      const id = r.recordset[0].id
+      const id = await guardar(
+        pool,
+        sql,
+        { origen, numeroRecaudo, numeroPedido, clienteId, vendedorId, vendedorNombre, recaudoId },
+        imagen,
+      )
       log.info(`Evidencia #${id} ${origen} cliente ${clienteId || "-"} recaudo ${numeroRecaudo || "-"}(id ${recaudoId != null ? recaudoId : "-"}) pedido ${numeroPedido || "-"} ${contenido.length} bytes vend ${vendedorId != null ? vendedorId : "-"}`)
       res.json({ success: true, message: "Evidencia guardada", data: { id, tamano: contenido.length } })
     } catch (error) {
@@ -185,4 +215,4 @@ function registrarRutas(app, { requireAuth, getPedidosPool, sql, log }) {
   })
 }
 
-module.exports = { registrarRutas, ensureTabla, procesar, resolverRecaudoId }
+module.exports = { registrarRutas, ensureTabla, procesar, guardar, resolverRecaudoId }

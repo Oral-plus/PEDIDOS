@@ -137,6 +137,11 @@ class _HojaRespuestaState extends State<_HojaRespuesta> {
   bool _guardando = false;
   String? _error;
 
+  /// Se calcula una sola vez: si el gestor reintenta tras un fallo de red, el
+  /// servidor reconoce el envío y no guarda la tarea dos veces.
+  late final String _claveLocal =
+      BorradorRespuestaTarea.nuevaClave(widget.tarea.id, widget.clienteCodigo);
+
   @override
   void dispose() {
     _observacion.dispose();
@@ -147,6 +152,7 @@ class _HojaRespuestaState extends State<_HojaRespuesta> {
         cumplida: _cumplida,
         observacion: _observacion.text,
         fotos: _fotos.map((f) => f.path).toList(),
+        claveLocal: _claveLocal,
       );
 
   Future<void> _guardar() async {

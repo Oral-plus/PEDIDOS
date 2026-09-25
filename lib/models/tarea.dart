@@ -63,16 +63,26 @@ class RespuestaTarea {
 }
 
 /// Lo que el gestor diligencia antes de enviar la respuesta.
+///
+/// [claveLocal] identifica este intento y no cambia entre reenvíos: si la red
+/// se cae después de que el servidor guardó, volver a enviar devuelve la misma
+/// respuesta en vez de duplicarla.
 class BorradorRespuestaTarea {
   final bool cumplida;
   final String observacion;
   final List<String> fotos;
+  final String claveLocal;
 
   const BorradorRespuestaTarea({
     required this.cumplida,
     this.observacion = '',
     this.fotos = const [],
+    this.claveLocal = '',
   });
+
+  /// Una clave estable por intento: tarea, cliente y el momento en que se abrió.
+  static String nuevaClave(int tareaId, String clienteCodigo) =>
+      'tar-$tareaId-$clienteCodigo-${DateTime.now().millisecondsSinceEpoch}';
 
   /// Si no se cumplió, hay que explicar por qué.
   bool get completo => cumplida || observacion.trim().length >= 4;

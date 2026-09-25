@@ -47,10 +47,17 @@ function resumen(tareas) {
   }
 }
 
-function crear({ sql, getPedidosPool, asegurarEvidencias, log }) {
+function crear({ sql, getPedidosPool, evidencias, log }) {
   const logger = log || console
   let tablasDisponibles = null
   let respuestasListas = false
+
+  // Las fotos son de evidencias: este modulo no sabe comprimir ni guardar
+  // imagenes, solo pide que se haga. Sin ese modulo, la tarea se responde
+  // igual pero sin fotos.
+  const hayFotos = !!(evidencias && evidencias.procesar && evidencias.guardar)
+  const procesarImagen = hayFotos ? evidencias.procesar : null
+  const guardarEvidencia = hayFotos ? evidencias.guardar : null
 
   async function asegurarRespuestas() {
     if (respuestasListas) return
@@ -70,10 +77,18 @@ function crear({ sql, getPedidosPool, asegurarEvidencias, log }) {
       IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_tarearesp_tarea_cliente' AND object_id = OBJECT_ID('dbo.tareas_respuestas'))
         CREATE INDEX IX_tarearesp_tarea_cliente ON dbo.tareas_respuestas(tarea_id, cliente_codigo, vendedor_codigo);
     `)
+    // Las columnas y sus indices van en consultas aparte: SQL Server resuelve
+    // los nombres al compilar el lote, y no veria una columna recien creada.
+    await getPedidosPool().request().query(`
+      IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name='clave_local' AND Object_ID=Object_ID('dbo.tareas_respuestas'))
+        ALTER TABLE dbo.tareas_respuestas ADD clave_local NVARCHAR(80) NULL;
+    `)
+    await getPedidosPool().request().query(`
+      IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_tarearesp_clave' AND object_id = OBJECT_ID('dbo.tareas_respuestas'))
+        CREATE UNIQUE INDEX UQ_tarearesp_clave ON dbo.tareas_respuestas(vendedor_codigo, clave_local) WHERE clave_local IS NOT NULL;
+    `)
     // Las fotos se guardan en la tabla de evidencias, que es de otro modulo.
-    if (asegurarEvidencias) await asegurarEvidencias(getPedidosPool())
-    // La columna y su indice van en consultas aparte: SQL Server resuelve los
-    // nombres al compilar el lote, y el indice no veria una columna recien creada.
+    if (evidencias && evidencias.ensureTabla) await evidencias.ensureTabla(getPedidosPool())
     await getPedidosPool().request().query(`
       IF OBJECT_ID('dbo.evidencias_archivos') IS NOT NULL
          AND NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name='tarea_respuesta_id' AND Object_ID=Object_ID('dbo.evidencias_archivos'))
@@ -218,9 +233,36 @@ function crear({ sql, getPedidosPool, asegurarEvidencias, log }) {
     })
   }
 
-  // La respuesta y sus fotos entran juntas: si algo falla, no queda ni una cosa ni la otra.
-  async function responder(vendedorCodigo, { tareaId, clienteCodigo, vendedorNombre, visitaId, cumplida, observacion }, imagenes = []) {
+  // Un reintento no puede duplicar la respuesta ni las fotos: el equipo manda
+  // una clave propia y esa clave manda. Mismo criterio que el recorrido GPS.
+  async function respuestaPorClave(vendedorCodigo, claveLocal) {
+    if (!claveLocal) return null
+    const r = await getPedidosPool()
+      .request()
+      .input("vend", sql.Int, vendedorCodigo)
+      .input("clave", sql.NVarChar, claveLocal)
+      .query(`
+        SELECT TOP 1 r.id, CONVERT(VARCHAR(19), r.fecha, 120) AS fecha,
+               (SELECT COUNT(*) FROM dbo.evidencias_archivos e WHERE e.tarea_respuesta_id = r.id) AS evidencias
+        FROM dbo.tareas_respuestas r
+        WHERE r.vendedor_codigo = @vend AND r.clave_local = @clave
+        ORDER BY r.id DESC`)
+    const f = r.recordset[0]
+    return f ? { id: f.id, fecha: f.fecha, evidencias: Number(f.evidencias) || 0, repetida: true } : null
+  }
+
+  const esClaveRepetida = (e) => e && (e.number === 2601 || e.number === 2627)
+
+  // La respuesta y sus fotos entran juntas: si algo falla, no queda ni una cosa
+  // ni la otra. Las fotos se procesan y se guardan de a una, para no sostener
+  // varias imagenes en memoria mientras dura la transaccion.
+  async function responder(vendedorCodigo, datos, archivos = []) {
+    const { tareaId, clienteCodigo, vendedorNombre, visitaId, cumplida, observacion, claveLocal } = datos
     await asegurarRespuestas()
+
+    const previa = await respuestaPorClave(vendedorCodigo, claveLocal)
+    if (previa) return previa
+
     const transaccion = getPedidosPool().transaction()
     await transaccion.begin()
     try {
@@ -233,44 +275,51 @@ function crear({ sql, getPedidosPool, asegurarEvidencias, log }) {
         .input("visita", sql.Int, Number.isFinite(visitaId) ? visitaId : null)
         .input("cumplida", sql.Bit, cumplida ? 1 : 0)
         .input("obs", sql.NVarChar, texto(observacion).slice(0, 1000) || null)
+        .input("clave", sql.NVarChar, texto(claveLocal).slice(0, 80) || null)
         .query(`
           INSERT INTO dbo.tareas_respuestas
-            (tarea_id, cliente_codigo, vendedor_codigo, vendedor_nombre, visita_id, cumplida, observacion)
+            (tarea_id, cliente_codigo, vendedor_codigo, vendedor_nombre, visita_id, cumplida, observacion, clave_local)
           OUTPUT INSERTED.id, CONVERT(VARCHAR(19), INSERTED.fecha, 120) AS fecha
-          VALUES (@tarea, @cli, @vend, @vendNom, @visita, @cumplida, @obs)
+          VALUES (@tarea, @cli, @vend, @vendNom, @visita, @cumplida, @obs, @clave)
         `)
       const fila = r.recordset[0]
 
-      for (const imagen of imagenes) {
-        await transaccion
-          .request()
-          .input("origen", sql.NVarChar, "tarea")
-          .input("cliente", sql.NVarChar, clienteCodigo)
-          .input("vendId", sql.Int, vendedorCodigo)
-          .input("vendNom", sql.NVarChar, texto(vendedorNombre) || null)
-          .input("respuesta", sql.Int, fila.id)
-          .input("contenido", sql.VarBinary(sql.MAX), imagen.contenido)
-          .input("tamano", sql.Int, imagen.contenido.length)
-          .input("ancho", sql.Int, imagen.ancho || null)
-          .input("alto", sql.Int, imagen.alto || null)
-          .query(`
-            INSERT INTO dbo.evidencias_archivos
-              (origen, cliente_id, vendedor_id, vendedor_nombre, tarea_respuesta_id, contenido, tamano, ancho, alto)
-            VALUES (@origen, @cliente, @vendId, @vendNom, @respuesta, @contenido, @tamano, @ancho, @alto)
-          `)
+      let guardadas = 0
+      for (const archivo of archivos) {
+        const imagen = await procesarImagen(archivo.buffer)
+        archivo.buffer = null
+        await guardarEvidencia(
+          transaccion,
+          sql,
+          {
+            origen: "tarea",
+            clienteId: clienteCodigo,
+            vendedorId: vendedorCodigo,
+            vendedorNombre: texto(vendedorNombre) || null,
+            tareaRespuestaId: fila.id,
+          },
+          imagen,
+        )
+        guardadas += 1
       }
 
       await transaccion.commit()
-      return { ...fila, evidencias: imagenes.length }
+      return { id: fila.id, fecha: fila.fecha, evidencias: guardadas, repetida: false }
     } catch (e) {
       try { await transaccion.rollback() } catch (_) {}
+      // Dos envios a la vez con la misma clave: gana el primero y el segundo
+      // devuelve lo que ya quedo guardado.
+      if (esClaveRepetida(e)) {
+        const existente = await respuestaPorClave(vendedorCodigo, claveLocal)
+        if (existente) return existente
+      }
       throw e
     }
   }
 
-  function registrarRutas(app, { requireAuth, subida, procesarImagen }) {
+  function registrarRutas(app, { requireAuth, subida }) {
     // Sin multer el modulo sigue funcionando, solo que sin fotos.
-    const recibirFotos = subida
+    const recibirFotos = subida && hayFotos
       ? (req, res, next) => {
           subida.fields([{ name: "fotos", maxCount: MAX_FOTOS }])(req, res, (err) => {
             if (!err) return next()
@@ -310,11 +359,9 @@ function crear({ sql, getPedidosPool, asegurarEvidencias, log }) {
         if (!Number.isFinite(tareaId) || !clienteCodigo) {
           return res.status(400).json({ success: false, message: "Indica la tarea y el cliente" })
         }
-        const archivos = ((req.files && req.files.fotos) || []).slice(0, MAX_FOTOS)
-        const imagenes = procesarImagen
-          ? await Promise.all(archivos.map((f) => procesarImagen(f.buffer)))
-          : []
+        const archivos = hayFotos ? ((req.files && req.files.fotos) || []).slice(0, MAX_FOTOS) : []
         const visitaId = Number.parseInt(b.visitaId, 10)
+        const cumplida = b.cumplida === true || b.cumplida === 1 || b.cumplida === "true"
         const fila = await responder(
           codigoDeSesion(req.user),
           {
@@ -322,16 +369,20 @@ function crear({ sql, getPedidosPool, asegurarEvidencias, log }) {
             clienteCodigo,
             vendedorNombre: req.user && req.user.nombre,
             visitaId,
-            cumplida: b.cumplida === true || b.cumplida === 1 || b.cumplida === "true",
+            cumplida,
             observacion: b.observacion,
+            claveLocal: texto(b.claveLocal),
           },
-          imagenes,
+          archivos,
         )
         logger.log(
-          `Tarea ${tareaId} respondida para ${clienteCodigo}: cumplida=${fila.cumplida === 1 || b.cumplida === true || b.cumplida === "true"} ` +
-            `fotos=${imagenes.length} visita=${Number.isFinite(visitaId) ? visitaId : "-"}`,
+          `Tarea ${tareaId} ${fila.repetida ? "reenviada (ya estaba)" : "respondida"} para ${clienteCodigo}: ` +
+            `cumplida=${cumplida} fotos=${fila.evidencias} visita=${Number.isFinite(visitaId) ? visitaId : "-"}`,
         )
-        res.json({ success: true, data: { id: fila.id, fecha: fila.fecha, evidencias: fila.evidencias, tareaId, clienteCodigo } })
+        res.json({
+          success: true,
+          data: { id: fila.id, fecha: fila.fecha, evidencias: fila.evidencias, repetida: fila.repetida, tareaId, clienteCodigo },
+        })
       } catch (error) {
         logger.error("Error registrando la respuesta de la tarea:", error.message)
         res.status(500).json({ success: false, message: "No se pudo guardar la información de la tarea" })
