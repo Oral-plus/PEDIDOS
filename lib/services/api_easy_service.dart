@@ -1909,4 +1909,36 @@ class ApiEasyService {
     } catch (_) {}
     return null;
   }
+
+  Future<Map<String, dynamic>?> getProductosCompradosCliente(String codigo, {int limite = 500}) async {
+    if (_token == null || _token!.isEmpty) return null;
+    try {
+      final res = await ApiClient.get(
+        '/api/clientes/$codigo/productos-comprados?limite=$limite',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 20),
+      );
+      if (res['success'] == true) {
+        return Map<String, dynamic>.from(res['data'] as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getListasPreciosProducto(String codigoProducto) async {
+    if (_token == null || _token!.isEmpty) return null;
+    try {
+      final res = await ApiClient.get(
+        '/api/productos/${Uri.encodeComponent(codigoProducto)}/listas-precios',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 15),
+      );
+      if (res['success'] == true) {
+        return Map<String, dynamic>.from(res['data'] as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
 }
