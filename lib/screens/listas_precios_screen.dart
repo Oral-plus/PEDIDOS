@@ -6,10 +6,11 @@ import '../services/api_easy_service.dart';
 import '../utils/descuento.dart';
 import '../utils/price_utils.dart';
 
-/// Módulo Producto: la lista de precios que el gestor elija, con sus productos.
+/// Módulo Producto: se busca un producto arriba y abajo salen sus precios en
+/// cada lista de precios que usan los clientes del gestor.
 ///
-/// El descuento de arriba no viaja al servidor: se escribe y los precios se
-/// recalculan al instante. Solo se vuelven a dibujar los precios, no la lista.
+/// El descuento no viaja al servidor: se escribe y los precios se recalculan al
+/// instante. Solo se vuelven a dibujar los precios, no la pantalla.
 class ListasPreciosScreen extends StatefulWidget {
   const ListasPreciosScreen({super.key});
 
@@ -31,17 +32,14 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
   final ApiEasyService _api = ApiEasyService();
 
   /// Lo único que cambia al teclear el descuento: escucharlo evita redibujar
-  /// la lista entera de productos.
+  /// la pantalla entera.
   final ValueNotifier<double> _descuento = ValueNotifier<double>(0);
   final TextEditingController _campoDescuento = TextEditingController();
-  final TextEditingController _campoBusqueda = TextEditingController();
 
   bool _cargando = true;
   String? _error;
   CatalogoListas _catalogo = const CatalogoListas.fallo();
-  int? _listaId;
-  String _busqueda = '';
-  String? _categoria;
+  String? _codigo;
 
   @override
   void initState() {
@@ -53,7 +51,6 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
   void dispose() {
     _descuento.dispose();
     _campoDescuento.dispose();
-    _campoBusqueda.dispose();
     super.dispose();
   }
 
@@ -68,17 +65,11 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
       _cargando = false;
       _catalogo = datos;
       _error = datos.exito ? null : 'No se pudieron cargar las listas de precios';
-      // Arranca en la lista que usan más clientes: es la que llega primero.
-      _listaId = datos.listas.isEmpty ? null : datos.listas.first.id;
-      _categoria = null;
+      _codigo = datos.productos.isEmpty ? null : datos.productos.first.codigo;
     });
   }
 
-  ListaPrecios? get _lista => _catalogo.listaPorId(_listaId);
-
-  List<ProductoListas> get _visibles => _lista == null
-      ? const []
-      : _catalogo.filtrar(busqueda: _busqueda, categoria: _categoria, lista: _lista!.id);
+  ProductoListas? get _producto => _catalogo.productoPorCodigo(_codigo);
 
   void _fijarDescuento(double pct) {
     final valor = Descuento.normalizar(pct);
@@ -90,20 +81,17 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
     }
   }
 
-  Future<void> _elegirLista() async {
+  Future<void> _elegirProducto() async {
     HapticFeedback.selectionClick();
-    final elegida = await showModalBottomSheet<int>(
+    final elegido = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-      builder: (_) => _SelectorListas(listas: _catalogo.listas, actual: _listaId),
+      builder: (_) => _SelectorProductos(catalogo: _catalogo, actual: _codigo),
     );
-    if (elegida == null || !mounted) return;
-    setState(() {
-      _listaId = elegida;
-      _categoria = null;
-    });
+    if (elegido == null || !mounted) return;
+    setState(() => _codigo = elegido);
   }
 
   @override
@@ -134,7 +122,7 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? _mensaje(Icons.cloud_off_rounded, _error!)
-              : _catalogo.vacio || _lista == null
+              : _catalogo.vacio || _producto == null
                   ? _mensaje(Icons.sell_outlined, 'Tus clientes no tienen listas de precios con productos')
                   : _contenido(),
     );
@@ -145,19 +133,17 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
           color: Colors.white,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(children: [
-            _selectorLista(),
+            _selectorProducto(),
             const SizedBox(height: 12),
             _simulador(),
-            const SizedBox(height: 10),
-            _buscador(),
           ]),
         ),
         const Divider(height: 1, color: _line),
-        Expanded(child: _listado()),
+        Expanded(child: _listados()),
       ]);
 
-  Widget _selectorLista() => InkWell(
-        onTap: _elegirLista,
+  Widget _selectorProducto() => InkWell(
+        onTap: _elegirProducto,
         borderRadius: BorderRadius.circular(14),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -167,18 +153,18 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
             border: Border.all(color: _line),
           ),
           child: Row(children: [
-            const Icon(Icons.sell_rounded, size: 20, color: _azul),
+            const Icon(Icons.search_rounded, size: 20, color: _azul),
             const SizedBox(width: 10),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('LISTA DE PRECIOS',
+                const Text('PRODUCTO',
                     style: TextStyle(color: _gray, fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.4)),
                 const SizedBox(height: 2),
-                Text(_lista!.nombre,
-                    maxLines: 1,
+                Text(_producto!.nombre,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: _inkDeep, fontSize: 15.5, fontWeight: FontWeight.w800)),
-                Text(_lista!.detalle,
+                Text(_detalleProducto(_producto!),
                     style: const TextStyle(color: _gray, fontSize: 11.5, fontWeight: FontWeight.w600)),
               ]),
             ),
@@ -186,6 +172,9 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
           ]),
         ),
       );
+
+  static String _detalleProducto(ProductoListas p) =>
+      p.categoria.isEmpty ? p.codigo : '${p.codigo} · ${p.categoria}';
 
   Widget _simulador() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -219,8 +208,8 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
           valueListenable: _descuento,
           builder: (_, pct, __) => Text(
             pct <= 0
-                ? 'Escribe un descuento y los precios de abajo lo muestran aplicado.'
-                : 'Simulando ${_pct(pct)} %: al lado de cada precio de lista va el precio con descuento.',
+                ? 'Escribe un descuento y cada lista muestra cómo quedaría este producto.'
+                : 'Simulando ${_pct(pct)} % sobre el precio de cada lista.',
             style: TextStyle(
               color: pct <= 0 ? _gray : _verde,
               fontSize: 12.5,
@@ -259,59 +248,13 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
         },
       );
 
-  Widget _buscador() {
-    final categorias = _catalogo.categoriasDe(_lista!.id);
-    return Row(children: [
-      Expanded(
-        child: TextField(
-          controller: _campoBusqueda,
-          style: const TextStyle(fontSize: 14, color: _ink),
-          decoration: InputDecoration(
-            hintText: 'Buscar producto o código',
-            prefixIcon: const Icon(Icons.search_rounded, size: 20, color: _gray),
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(vertical: 12),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            suffixIcon: _busqueda.isEmpty
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 18),
-                    onPressed: () {
-                      _campoBusqueda.clear();
-                      setState(() => _busqueda = '');
-                    },
-                  ),
-          ),
-          onChanged: (t) => setState(() => _busqueda = t.trim()),
-        ),
-      ),
-      if (categorias.length > 1) ...[
-        const SizedBox(width: 10),
-        DropdownButton<String?>(
-          value: _categoria,
-          underline: const SizedBox.shrink(),
-          hint: const Text('Categoría', style: TextStyle(fontSize: 13)),
-          items: [
-            const DropdownMenuItem<String?>(value: null, child: Text('Todas', style: TextStyle(fontSize: 13))),
-            for (final c in categorias)
-              DropdownMenuItem<String?>(value: c, child: Text(c, style: const TextStyle(fontSize: 13))),
-          ],
-          onChanged: (v) => setState(() => _categoria = v),
-        ),
-      ],
-    ]);
-  }
-
-  Widget _listado() {
-    final productos = _visibles;
-    if (productos.isEmpty) {
-      return _mensaje(Icons.search_off_rounded, 'Ningún producto coincide con la búsqueda');
-    }
+  Widget _listados() {
+    final listas = _catalogo.listas;
     return Column(children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
         child: Row(children: [
-          Text('${productos.length} producto(s)',
+          Text('${listas.length} lista(s) de precios',
               style: const TextStyle(color: _gray, fontSize: 11.5, fontWeight: FontWeight.w700)),
           const Spacer(),
           const Text('PRECIO',
@@ -321,43 +264,44 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
       Expanded(
         child: ListView.builder(
           padding: const EdgeInsets.only(bottom: 24),
-          itemCount: productos.length,
-          itemBuilder: (_, i) => _fila(productos[i], i.isOdd),
+          itemCount: listas.length,
+          itemBuilder: (_, i) => _fila(listas[i], i.isOdd),
         ),
       ),
     ]);
   }
 
-  Widget _fila(ProductoListas p, bool alterna) => Container(
+  Widget _fila(ListaPrecios lista, bool alterna) => Container(
         color: alterna ? const Color(0xFFFAFAFB) : Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(children: [
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(p.nombre,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: _ink, fontSize: 13.5, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 2),
-              Text('${p.codigo}${p.categoria.isEmpty ? '' : ' · ${p.categoria}'}',
+              Text(lista.nombre,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: _gray, fontSize: 11)),
+                  style: const TextStyle(color: _ink, fontSize: 14.5, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 2),
+              Text(lista.detalle, style: const TextStyle(color: _gray, fontSize: 11.5)),
             ]),
           ),
           const SizedBox(width: 12),
-          _precio(p),
+          _precio(lista),
         ]),
       );
 
-  Widget _precio(ProductoListas p) {
-    final base = p.precioEn(_lista!.id) ?? 0;
+  Widget _precio(ListaPrecios lista) {
+    final base = _producto!.precioEn(lista.id);
+    if (base == null) {
+      return const Text('Sin precio en esta lista',
+          style: TextStyle(color: _gray, fontSize: 12, fontWeight: FontWeight.w600));
+    }
     return ValueListenableBuilder<double>(
       valueListenable: _descuento,
       builder: (_, pct, __) {
         if (pct <= 0) {
           return Text('\$${PriceUtils.formatPrice(base)}',
-              style: const TextStyle(color: _inkDeep, fontSize: 15, fontWeight: FontWeight.w800));
+              style: const TextStyle(color: _inkDeep, fontSize: 16, fontWeight: FontWeight.w800));
         }
         return Row(mainAxisSize: MainAxisSize.min, children: [
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -375,10 +319,10 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
           const Icon(Icons.arrow_forward_rounded, size: 16, color: _gray),
           const SizedBox(width: 10),
           SizedBox(
-            width: 110,
-            child: Text('\$${PriceUtils.formatPrice(Descuento.aplicar(base, pct))}',
+            width: 120,
+            child: Text('\$${PriceUtils.formatPrice(_producto!.precioEnCon(lista.id, pct))}',
                 textAlign: TextAlign.right,
-                style: const TextStyle(color: _verde, fontSize: 16, fontWeight: FontWeight.w900)),
+                style: const TextStyle(color: _verde, fontSize: 17, fontWeight: FontWeight.w900)),
           ),
         ]);
       },
@@ -399,18 +343,18 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
       );
 }
 
-/// Buscador de listas de precios: el gestor escribe y elige la suya.
-class _SelectorListas extends StatefulWidget {
-  final List<ListaPrecios> listas;
-  final int? actual;
+/// Buscador de productos: el gestor escribe nombre o código y elige el suyo.
+class _SelectorProductos extends StatefulWidget {
+  final CatalogoListas catalogo;
+  final String? actual;
 
-  const _SelectorListas({required this.listas, this.actual});
+  const _SelectorProductos({required this.catalogo, this.actual});
 
   @override
-  State<_SelectorListas> createState() => _SelectorListasState();
+  State<_SelectorProductos> createState() => _SelectorProductosState();
 }
 
-class _SelectorListasState extends State<_SelectorListas> {
+class _SelectorProductosState extends State<_SelectorProductos> {
   final TextEditingController _busqueda = TextEditingController();
   String _texto = '';
 
@@ -420,83 +364,83 @@ class _SelectorListasState extends State<_SelectorListas> {
     super.dispose();
   }
 
-  List<ListaPrecios> get _visibles {
-    if (_texto.isEmpty) return widget.listas;
-    final q = _texto.toLowerCase();
-    return widget.listas.where((l) => l.nombre.toLowerCase().contains(q) || '${l.id}' == q).toList();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final visibles = _visibles;
+    final visibles = widget.catalogo.filtrar(busqueda: _texto);
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const SizedBox(height: 12),
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: _ListasPreciosScreenState._line,
-              borderRadius: BorderRadius.circular(3),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Lista de precios',
-                  style: TextStyle(
-                      color: _ListasPreciosScreenState._inkDeep, fontSize: 17, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _busqueda,
-                autofocus: widget.listas.length > 6,
-                decoration: InputDecoration(
-                  hintText: 'Buscar lista',
-                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                  isDense: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onChanged: (t) => setState(() => _texto = t.trim()),
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.75,
+          child: Column(children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: _ListasPreciosScreenState._line,
+                borderRadius: BorderRadius.circular(3),
               ),
-            ]),
-          ),
-          Flexible(
-            child: visibles.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 30),
-                    child: Text('Ninguna lista con ese nombre',
-                        style: TextStyle(color: _ListasPreciosScreenState._gray, fontWeight: FontWeight.w600)),
-                  )
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: visibles.length,
-                    itemBuilder: (_, i) {
-                      final l = visibles[i];
-                      final elegida = l.id == widget.actual;
-                      return ListTile(
-                        leading: Icon(
-                          elegida ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
-                          color: elegida
-                              ? _ListasPreciosScreenState._azul
-                              : _ListasPreciosScreenState._gray,
-                        ),
-                        title: Text(l.nombre,
-                            style: TextStyle(
-                              fontSize: 14.5,
-                              fontWeight: elegida ? FontWeight.w800 : FontWeight.w600,
-                              color: _ListasPreciosScreenState._ink,
-                            )),
-                        subtitle: Text(l.detalle,
-                            style: const TextStyle(fontSize: 12, color: _ListasPreciosScreenState._gray)),
-                        onTap: () => Navigator.of(context).pop(l.id),
-                      );
-                    },
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Buscar producto',
+                    style: TextStyle(
+                        color: _ListasPreciosScreenState._inkDeep, fontSize: 17, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _busqueda,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Nombre, código o categoría',
+                    prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-          ),
-          const SizedBox(height: 8),
-        ]),
+                  onChanged: (t) => setState(() => _texto = t.trim()),
+                ),
+                const SizedBox(height: 6),
+                Text('${visibles.length} producto(s)',
+                    style: const TextStyle(
+                        color: _ListasPreciosScreenState._gray, fontSize: 11.5, fontWeight: FontWeight.w700)),
+              ]),
+            ),
+            Expanded(
+              child: visibles.isEmpty
+                  ? const Center(
+                      child: Text('Ningún producto coincide',
+                          style: TextStyle(
+                              color: _ListasPreciosScreenState._gray, fontWeight: FontWeight.w600)),
+                    )
+                  : ListView.builder(
+                      itemCount: visibles.length,
+                      itemBuilder: (_, i) {
+                        final p = visibles[i];
+                        final elegido = p.codigo == widget.actual;
+                        return ListTile(
+                          leading: Icon(
+                            elegido ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+                            color: elegido
+                                ? _ListasPreciosScreenState._azul
+                                : _ListasPreciosScreenState._gray,
+                          ),
+                          title: Text(p.nombre,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: elegido ? FontWeight.w800 : FontWeight.w600,
+                                color: _ListasPreciosScreenState._ink,
+                              )),
+                          subtitle: Text(_ListasPreciosScreenState._detalleProducto(p),
+                              style: const TextStyle(
+                                  fontSize: 12, color: _ListasPreciosScreenState._gray)),
+                          onTap: () => Navigator.of(context).pop(p.codigo),
+                        );
+                      },
+                    ),
+            ),
+          ]),
+        ),
       ),
     );
   }

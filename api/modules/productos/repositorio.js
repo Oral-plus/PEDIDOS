@@ -223,19 +223,13 @@ class RepositorioProductos {
         const cfg = this.config.get(item.codigo)
         return !!(cfg && cfg.visible === false)
       },
-      proyectar: (item) => {
-        const cfg = this.config.get(item.codigo)
-        return {
-          codigo: item.codigo,
-          nombre: item.nombre,
-          categoria: this.categoriaDe(item, cfg),
-          grupoSap: item.grupoNombre,
-          imagenUrl: this.urlImagen(item.codigo),
-        }
-      },
+      proyectar: (item) => ({
+        codigo: item.codigo,
+        nombre: item.nombre,
+        categoria: this.categoriaDe(item, this.config.get(item.codigo)),
+      }),
     })
     datos.actualizado = new Date(catalogo.actualizado).toISOString()
-    datos.categorias = ordenarCategorias(new Set(datos.productos.map((p) => p.categoria)))
 
     this.listasVendedor.set(slpCode, { datos, vence: Date.now() + 10 * 60 * 1000 })
     return datos

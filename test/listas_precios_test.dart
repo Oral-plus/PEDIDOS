@@ -59,7 +59,6 @@ void main() {
     final json = {
       'success': true,
       'actualizado': '2026-10-01T15:00:00.000Z',
-      'categorias': ['Cepillos', 'Cremas'],
       'listas': [
         {'id': 1, 'nombre': 'General', 'clientes': 30, 'productos': 2},
         {'id': 2, 'nombre': 'Mayorista', 'clientes': 1, 'productos': 1},
@@ -69,8 +68,6 @@ void main() {
           'codigo': 'A1',
           'nombre': 'Cepillo Medio',
           'categoria': 'Cepillos',
-          'grupoSap': 'PT-CEPILLOS NACIONAL',
-          'imagenUrl': '/api/productos/imagen/A1',
           'precios': {'1': 5000, '2': 4200},
         },
         {
@@ -114,31 +111,18 @@ void main() {
       expect(c.filtrar().length, 2, reason: 'sin búsqueda salen todos');
     });
 
-    test('la categoría filtra junto con la búsqueda', () {
+    test('el selector arranca en el primer producto y tolera un código que ya no existe', () {
       final c = CatalogoListas.fromJson(json);
-      expect(c.filtrar(categoria: 'Cremas').single.codigo, 'B2');
-      expect(c.filtrar(categoria: 'Cremas', busqueda: 'cepillo'), isEmpty);
+      expect(c.productoPorCodigo('B2')!.nombre, 'Crema Dental');
+      expect(c.productoPorCodigo('NO-EXISTE')!.codigo, 'A1', reason: 'cae en el primero');
+      expect(c.productoPorCodigo(null)!.codigo, 'A1');
+      expect(const CatalogoListas.fallo().productoPorCodigo('A1'), isNull);
     });
 
-    test('al elegir una lista solo salen sus productos', () {
-      final c = CatalogoListas.fromJson(json);
-      expect(c.filtrar(lista: 1).map((p) => p.codigo), ['A1', 'B2']);
-      expect(c.filtrar(lista: 2).single.codigo, 'A1', reason: 'la crema no está en mayorista');
-      expect(c.filtrar(lista: 9), isEmpty);
-    });
-
-    test('las categorías del filtro son las de esa lista, no las de todas', () {
-      final c = CatalogoListas.fromJson(json);
-      expect(c.categoriasDe(1), ['Cepillos', 'Cremas']);
-      expect(c.categoriasDe(2), ['Cepillos']);
-    });
-
-    test('el selector arranca en la primera lista y tolera un id que ya no existe', () {
-      final c = CatalogoListas.fromJson(json);
-      expect(c.listaPorId(2)!.nombre, 'Mayorista');
-      expect(c.listaPorId(99)!.nombre, 'General', reason: 'cae en la primera');
-      expect(c.listaPorId(null)!.nombre, 'General');
-      expect(const CatalogoListas.fallo().listaPorId(1), isNull);
+    test('un producto muestra en qué listas tiene precio y en cuáles no', () {
+      final crema = CatalogoListas.fromJson(json).productoPorCodigo('B2')!;
+      expect(crema.precioEn(1), 9000);
+      expect(crema.precioEn(2), isNull, reason: 'la crema no está en mayorista');
     });
 
     test('una respuesta vacía o mal formada no rompe la pantalla', () {

@@ -40,8 +40,6 @@ class ProductoListas {
   final String codigo;
   final String nombre;
   final String categoria;
-  final String grupoSap;
-  final String? imagenUrl;
 
   /// Precio de lista por id de lista. Solo trae las listas donde tiene precio.
   final Map<int, double> precios;
@@ -50,8 +48,6 @@ class ProductoListas {
     required this.codigo,
     required this.nombre,
     this.categoria = '',
-    this.grupoSap = '',
-    this.imagenUrl,
     this.precios = const {},
   });
 
@@ -69,8 +65,6 @@ class ProductoListas {
       codigo: _texto(j['codigo']),
       nombre: _texto(j['nombre']),
       categoria: _texto(j['categoria']),
-      grupoSap: _texto(j['grupoSap']),
-      imagenUrl: _texto(j['imagenUrl']).isEmpty ? null : _texto(j['imagenUrl']),
       precios: precios,
     );
   }
@@ -96,14 +90,12 @@ class CatalogoListas {
   final bool exito;
   final List<ListaPrecios> listas;
   final List<ProductoListas> productos;
-  final List<String> categorias;
   final String actualizado;
 
   const CatalogoListas({
     required this.exito,
     this.listas = const [],
     this.productos = const [],
-    this.categorias = const [],
     this.actualizado = '',
   });
 
@@ -119,36 +111,21 @@ class CatalogoListas {
             .whereType<Map>()
             .map((e) => ProductoListas.fromJson(Map<String, dynamic>.from(e)))
             .toList(),
-        categorias: (j['categorias'] as List<dynamic>? ?? const [])
-            .map((e) => _texto(e))
-            .where((e) => e.isNotEmpty)
-            .toList(),
         actualizado: _texto(j['actualizado']),
       );
 
   bool get vacio => listas.isEmpty || productos.isEmpty;
 
-  /// Productos que pasan la búsqueda, la categoría y la lista elegidas.
-  ///
-  /// Con [lista], solo los que tienen precio en esa lista: es lo que se ve en
-  /// pantalla cuando el gestor elige una.
-  List<ProductoListas> filtrar({String busqueda = '', String? categoria, int? lista}) => productos
-      .where((p) =>
-          (categoria == null || p.categoria == categoria) &&
-          (lista == null || p.precioEn(lista) != null) &&
-          p.coincideCon(busqueda))
-      .toList();
+  /// Productos que coinciden con lo que el gestor escribe en el buscador.
+  List<ProductoListas> filtrar({String busqueda = ''}) =>
+      productos.where((p) => p.coincideCon(busqueda)).toList();
 
-  /// Las categorías que de verdad tienen productos en esa lista.
-  List<String> categoriasDe(int lista) {
-    final vistas = productos.where((p) => p.precioEn(lista) != null).map((p) => p.categoria);
-    return categorias.where(vistas.toSet().contains).toList();
-  }
-
-  ListaPrecios? listaPorId(int? id) {
-    for (final l in listas) {
-      if (l.id == id) return l;
+  /// El producto elegido. Si el código ya no existe, el primero: la pantalla
+  /// siempre muestra algo.
+  ProductoListas? productoPorCodigo(String? codigo) {
+    for (final p in productos) {
+      if (p.codigo == codigo) return p;
     }
-    return listas.isEmpty ? null : listas.first;
+    return productos.isEmpty ? null : productos.first;
   }
 }
