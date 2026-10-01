@@ -74,6 +74,28 @@ const vacio = armar({ items: [], listas: [], proyectar })
 ok("un gestor sin clientes no rompe la pantalla",
   vacio.listas.length === 0 && vacio.productos.length === 0 && vacio.total === 0)
 
+const soloComprados = armar({
+  items: catalogo,
+  listas: LISTAS,
+  proyectar,
+  ocultar: (i) => i.oculto === true,
+  comprados: new Set(["A", "C", "D", "E"]),
+})
+ok("solo salen las referencias que los clientes del gestor han comprado",
+  soloComprados.productos.map((p) => p.codigo).join() === "A,C",
+  soloComprados.productos.map((p) => p.codigo).join())
+
+ok("una referencia comprada sigue necesitando precio y no estar oculta",
+  !soloComprados.productos.some((p) => p.codigo === "D" || p.codigo === "E"))
+
+ok("las listas cuentan solo los productos comprados",
+  soloComprados.listas[0].productos === 1 && soloComprados.listas[1].productos === 2,
+  soloComprados.listas.map((l) => `${l.nombre}:${l.productos}`).join(" · "))
+
+const nadaComprado = armar({ items: catalogo, listas: LISTAS, proyectar, comprados: new Set() })
+ok("si los clientes no han comprado nada, no sale ningun producto ni lista",
+  nadaComprado.productos.length === 0 && nadaComprado.listas.length === 0)
+
 ok("preciosEn ignora nulos, textos y negativos",
   JSON.stringify(preciosEn({ precios: { 1: null, 2: "x", 3: -5, 4: 100 } }, [1, 2, 3, 4])) === '{"4":100}')
 

@@ -19,12 +19,14 @@ function preciosEn(item, ids) {
 /// [items] son los articulos del catalogo, [listas] las listas de precios a
 /// mostrar y [proyectar] decide como se ve un articulo (nombre, categoria,
 /// imagen): esa decision ya vive en el repositorio y no se repite aqui.
-/// [ocultar] dice si un articulo no debe salir.
-function armar({ items, listas, proyectar, ocultar }) {
+/// [ocultar] dice si un articulo no debe salir. [comprados], si llega, deja
+/// solo los articulos cuyo codigo esta en ese conjunto.
+function armar({ items, listas, proyectar, ocultar, comprados }) {
   const ids = listas.map((l) => l.id)
   const productos = []
 
   for (const item of items) {
+    if (comprados && !comprados.has(item.codigo)) continue
     if (ocultar && ocultar(item)) continue
     const precios = preciosEn(item, ids)
     if (Object.keys(precios).length === 0) continue

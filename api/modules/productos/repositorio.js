@@ -208,17 +208,22 @@ class RepositorioProductos {
   /// El catalogo con el precio en cada lista que usan los clientes del gestor.
   ///
   /// El simulador de descuento es cosa de la app: aqui solo viajan los precios
-  /// de lista, una sola vez por articulo.
+  /// de lista, una sola vez por articulo. Solo salen las referencias que los
+  /// clientes del gestor han comprado.
   async listasDeVendedor(slpCode) {
     const guardado = this.listasVendedor.get(slpCode)
     if (guardado && Date.now() < guardado.vence) return guardado.datos
 
     const [catalogo, pool] = await Promise.all([this.obtenerCatalogo(), this.getSapPool()])
-    const listas = await fuente.leerListasDeVendedor(pool, this.sql, slpCode)
+    const [listas, comprados] = await Promise.all([
+      fuente.leerListasDeVendedor(pool, this.sql, slpCode),
+      fuente.leerCompradosDeVendedor(pool, this.sql, slpCode),
+    ])
 
     const datos = listasPrecios.armar({
       items: [...catalogo.items.values()],
       listas,
+      comprados,
       ocultar: (item) => {
         const cfg = this.config.get(item.codigo)
         return !!(cfg && cfg.visible === false)

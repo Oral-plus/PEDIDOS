@@ -7,7 +7,8 @@ import '../utils/descuento.dart';
 import '../utils/price_utils.dart';
 
 /// Módulo Producto: se busca un producto arriba y abajo salen sus precios en
-/// cada lista de precios que usan los clientes del gestor.
+/// cada lista de precios que usan los clientes del gestor. Solo aparecen las
+/// referencias que esos clientes han comprado.
 ///
 /// El descuento no viaja al servidor: se escribe y los precios se recalculan al
 /// instante. Solo se vuelven a dibujar los precios, no la pantalla.
@@ -123,7 +124,7 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
           : _error != null
               ? _mensaje(Icons.cloud_off_rounded, _error!)
               : _catalogo.vacio || _producto == null
-                  ? _mensaje(Icons.sell_outlined, 'Tus clientes no tienen listas de precios con productos')
+                  ? _mensaje(Icons.sell_outlined, 'Tus clientes aún no han comprado productos con precio en sus listas')
                   : _contenido(),
     );
   }

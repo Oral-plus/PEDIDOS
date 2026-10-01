@@ -1190,12 +1190,13 @@ app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => 
             T0.CardCode, T0.CardName, T0.CardFName, T0.Address, T0.Phone1, T0.E_Mail,
             T0.Balance, T0.City, T0.SlpCode,
             T0.GroupCode, T0.U_CANAL_DISTRIBUCION, T0.ListNum,
-            T0.CreditLine, T0.Discount,
-            S.SlpName, G.GroupName, L.ListName
+            T0.CreditLine, T0.Discount, T0.U_MERCADERISTA,
+            S.SlpName, G.GroupName, L.ListName, M.Name AS MercaderistaName
           FROM OCRD T0
           LEFT JOIN OSLP S ON S.SlpCode = T0.SlpCode
           LEFT JOIN OCRG G ON G.GroupCode = T0.GroupCode
           LEFT JOIN OPLN L ON L.ListNum = T0.ListNum
+          LEFT JOIN [@MERCADERISTAS] M ON M.Code = T0.U_MERCADERISTA
           WHERE T0.CardCode = @cardCode
         `),
       sap.request()
@@ -1274,6 +1275,8 @@ app.get("/api/clientes/cartera/:codigo", authenticateToken, async (req, res) => 
         descuento: Number.parseFloat(client.Discount) || 0,
         canal: canalNombre,
         canalCodigo: canalCodigo,
+        mercaderista: (client.MercaderistaName || "").trim(),
+        mercaderistaCodigo: (client.U_MERCADERISTA || "").toString().trim() || null,
         listaPrecios: listaNombre,
         listaPreciosCodigo: listaCodigo,
         totalFacturasAbiertas: totalFacturas,

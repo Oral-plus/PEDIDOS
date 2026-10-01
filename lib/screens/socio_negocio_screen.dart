@@ -385,6 +385,9 @@ class _SocioNegocioScreenState extends State<SocioNegocioScreen> {
     final canal = (sap?['canal']?.toString().trim().isNotEmpty == true)
         ? sap!['canal'].toString()
         : (sap?['canalCodigo'] != null ? 'Grupo ${sap!['canalCodigo']}' : '—');
+    final mercaderista = (sap?['mercaderista']?.toString().trim().isNotEmpty == true)
+        ? sap!['mercaderista'].toString()
+        : (sap?['mercaderistaCodigo'] != null ? 'Mercaderista ${sap!['mercaderistaCodigo']}' : '—');
     final listaPrecios = (sap?['listaPrecios']?.toString().trim().isNotEmpty == true)
         ? sap!['listaPrecios'].toString()
         : (sap?['listaPreciosCodigo'] != null ? 'Lista ${sap!['listaPreciosCodigo']}' : '—');
@@ -471,6 +474,8 @@ class _SocioNegocioScreenState extends State<SocioNegocioScreen> {
         _detail(Icons.badge_rounded, 'Vendedor', vendedor),
         const SizedBox(height: 8),
         _detail(Icons.hub_rounded, 'Canal', canal),
+        const SizedBox(height: 8),
+        _detail(Icons.storefront_rounded, 'Mercaderista', mercaderista),
         const SizedBox(height: 8),
         _detail(Icons.price_change_rounded, 'Lista de precios', listaPrecios),
         const SizedBox(height: 16),

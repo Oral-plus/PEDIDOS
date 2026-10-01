@@ -111,4 +111,20 @@ async function leerListasDeVendedor(pool, sql, slpCode) {
   }))
 }
 
-module.exports = { leerPorServiceLayer, leerPorSql, leerListasDeVendedor }
+/// Codigos de los articulos que los clientes del gestor han comprado alguna vez,
+/// segun sus facturas no canceladas.
+async function leerCompradosDeVendedor(pool, sql, slpCode) {
+  const r = await pool
+    .request()
+    .input("slp", sql.Int, slpCode)
+    .query(`
+      SELECT DISTINCT T1.ItemCode AS codigo
+      FROM INV1 T1
+      INNER JOIN OINV T0 ON T0.DocEntry = T1.DocEntry
+      INNER JOIN OCRD C ON C.CardCode = T0.CardCode
+      WHERE C.CardType = 'C' AND C.SlpCode = @slp AND T0.CANCELED = 'N'
+    `)
+  return new Set(r.recordset.map((f) => String(f.codigo || "").trim()).filter(Boolean))
+}
+
+module.exports = { leerPorServiceLayer, leerPorSql, leerListasDeVendedor, leerCompradosDeVendedor }
