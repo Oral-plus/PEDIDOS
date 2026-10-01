@@ -2,6 +2,7 @@
 const crypto = require("crypto")
 const { ServiceLayer } = require("./serviceLayer")
 const fuente = require("./fuenteSap")
+const listasPrecios = require("./listas")
 
 const CATEGORIA_POR_GRUPO = {
   "PT-CEPILLOS NACIONAL": "Cepillos",
@@ -43,6 +44,7 @@ class RepositorioProductos {
     this.refrescando = null
     this.ultimoError = null
     this.listasCliente = new Map()
+    this.listasVendedor = new Map()
   }
 
   async ensureTabla() {
@@ -200,6 +202,42 @@ class RepositorioProductos {
       porArticulo,
     }
     this.descuentosCliente.set(cardCode, { datos, vence: Date.now() + 10 * 60 * 1000 })
+    return datos
+  }
+
+  /// El catalogo con el precio en cada lista que usan los clientes del gestor.
+  ///
+  /// El simulador de descuento es cosa de la app: aqui solo viajan los precios
+  /// de lista, una sola vez por articulo.
+  async listasDeVendedor(slpCode) {
+    const guardado = this.listasVendedor.get(slpCode)
+    if (guardado && Date.now() < guardado.vence) return guardado.datos
+
+    const [catalogo, pool] = await Promise.all([this.obtenerCatalogo(), this.getSapPool()])
+    const listas = await fuente.leerListasDeVendedor(pool, this.sql, slpCode)
+
+    const datos = listasPrecios.armar({
+      items: [...catalogo.items.values()],
+      listas,
+      ocultar: (item) => {
+        const cfg = this.config.get(item.codigo)
+        return !!(cfg && cfg.visible === false)
+      },
+      proyectar: (item) => {
+        const cfg = this.config.get(item.codigo)
+        return {
+          codigo: item.codigo,
+          nombre: item.nombre,
+          categoria: this.categoriaDe(item, cfg),
+          grupoSap: item.grupoNombre,
+          imagenUrl: this.urlImagen(item.codigo),
+        }
+      },
+    })
+    datos.actualizado = new Date(catalogo.actualizado).toISOString()
+    datos.categorias = ordenarCategorias(new Set(datos.productos.map((p) => p.categoria)))
+
+    this.listasVendedor.set(slpCode, { datos, vence: Date.now() + 10 * 60 * 1000 })
     return datos
   }
 

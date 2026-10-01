@@ -89,4 +89,26 @@ async function leerPorSql(pool, sql, { bodega }) {
   }))
 }
 
-module.exports = { leerPorServiceLayer, leerPorSql }
+/// Las listas de precios que usan los clientes del gestor, con cuantos las usan.
+async function leerListasDeVendedor(pool, sql, slpCode) {
+  const r = await pool
+    .request()
+    .input("slp", sql.Int, slpCode)
+    .query(`
+      SELECT ISNULL(C.ListNum, 1) AS id,
+             MAX(ISNULL(L.ListName, '')) AS nombre,
+             COUNT(*) AS clientes
+      FROM OCRD C
+      LEFT JOIN OPLN L ON L.ListNum = C.ListNum
+      WHERE C.CardType = 'C' AND C.SlpCode = @slp
+      GROUP BY ISNULL(C.ListNum, 1)
+      ORDER BY COUNT(*) DESC
+    `)
+  return r.recordset.map((f) => ({
+    id: Number(f.id),
+    nombre: (f.nombre || "").trim() || `Lista ${f.id}`,
+    clientes: Number(f.clientes) || 0,
+  }))
+}
+
+module.exports = { leerPorServiceLayer, leerPorSql, leerListasDeVendedor }

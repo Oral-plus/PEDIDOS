@@ -30,6 +30,24 @@ function registrarRutas(app, { repositorio, imagenes, requireAuth, requireSoport
     }
   })
 
+  app.get("/api/productos/listas-precios", requireAuth, async (req, res) => {
+    try {
+      const slpCode = Number.parseInt(req.user && req.user.userId, 10)
+      if (!Number.isFinite(slpCode)) {
+        return res.json({ success: true, listas: [], productos: [], total: 0 })
+      }
+      const datos = await repositorio.listasDeVendedor(slpCode)
+      const etag = `"listas-${slpCode}-${datos.listas.length}-${datos.total}-${datos.actualizado}"`
+      res.set("ETag", etag)
+      res.set("Cache-Control", "private, no-cache")
+      if (req.headers["if-none-match"] === etag) return res.status(304).end()
+      res.json({ success: true, ...datos })
+    } catch (e) {
+      console.error("Error entregando las listas de precios:", e.message)
+      res.status(503).json({ success: false, message: "Listas de precios no disponibles por ahora", listas: [], productos: [] })
+    }
+  })
+
   app.get("/api/productos/descuentos", requireAuth, async (req, res) => {
     try {
       const cliente = (req.query.cliente || "").toString().trim()

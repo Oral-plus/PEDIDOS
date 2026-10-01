@@ -1,5 +1,7 @@
 import 'package:intl/intl.dart';
 
+import '../utils/descuento.dart';
+
 class CartItem {
   final String id;
   final String title;
@@ -46,15 +48,15 @@ class CartItem {
     return double.tryParse(s) ?? 0.0;
   }
 
-  static double redondear(double v) => (v * 100).roundToDouble() / 100;
+  static double redondear(double v) => Descuento.redondear(v);
 
-  double get _pctAplicable => descuentoPct.clamp(0, 100).toDouble();
+  double get _pctAplicable => Descuento.normalizar(descuentoPct);
 
   bool get tieneDescuentoCliente => _pctAplicable > 0;
 
-  double get precioNeto => redondear(price * (1 - _pctAplicable / 100));
+  double get precioNeto => Descuento.aplicar(price, descuentoPct);
 
-  double get descuentoUnitario => redondear(price - precioNeto);
+  double get descuentoUnitario => Descuento.ahorro(price, descuentoPct);
 
   double get totalBruto => redondear(price * quantity);
 

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
+import '../models/lista_precios.dart';
 import '../models/tarea.dart';
 import 'api_client.dart';
 import 'cache_service.dart';
@@ -1719,6 +1720,32 @@ class ApiEasyService {
     } catch (e) {
       return {'success': false, 'message': 'No se pudieron cargar los usuarios', 'data': []};
     }
+  }
+
+  /// Las listas de precios de los clientes del gestor, con el precio de cada
+  /// producto en cada una. El descuento se simula en la app, no aquí.
+  Future<CatalogoListas> getListasPrecios({bool forzar = false}) async {
+    if (_token == null || _token!.isEmpty) return const CatalogoListas.fallo();
+    final datos = await _cache.obtener<CatalogoListas?>(
+      'listasPrecios',
+      const Duration(minutes: 10),
+      _getListasPreciosRed,
+      forzar: forzar,
+    );
+    return datos ?? const CatalogoListas.fallo();
+  }
+
+  Future<CatalogoListas?> _getListasPreciosRed() async {
+    try {
+      final res = await ApiClient.get(
+        '/api/productos/listas-precios',
+        customBaseUrl: await _baseUrlForRequest(),
+        headers: _headers,
+        timeout: const Duration(seconds: 40),
+      );
+      if (res['success'] == true) return CatalogoListas.fromJson(Map<String, dynamic>.from(res));
+    } catch (_) {}
+    return null;
   }
 
   Future<ListadoTareas> getTareas({String? cliente, bool forzar = false}) async {

@@ -16,6 +16,7 @@ import 'mis_rutas_screen.dart';
 import 'cuadre_caja_screen.dart';
 import 'indicadores_screen.dart';
 import 'tareas_screen.dart';
+import 'listas_precios_screen.dart';
 
 class ClientMenuScreen extends StatefulWidget {
   const ClientMenuScreen({super.key});
@@ -121,6 +122,13 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
     final res = await _api.getTareas();
     if (!mounted) return;
     setState(() => _tareasPendientes = res.resumen.pendientes);
+  }
+
+  void _abrirListasPrecios() {
+    HapticFeedback.selectionClick();
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ListasPreciosScreen()),
+    );
   }
 
   void _abrirTareas() async {
@@ -445,6 +453,17 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
         )),
         const SizedBox(width: 12),
         Expanded(child: _menuTile(
+          icon: Icons.sell_rounded,
+          title: 'Producto',
+          subtitle: 'Listas de precios y descuentos',
+          color: _blueLight,
+          active: true,
+          onTap: _abrirListasPrecios,
+        )),
+      ]),
+      const SizedBox(height: 12),
+      Row(children: [
+        Expanded(child: _menuTile(
           icon: Icons.insights_rounded,
           title: 'Indicadores',
           subtitle: 'Pagos y estado de pedidos',
@@ -452,9 +471,7 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
           active: true,
           onTap: _abrirIndicadores,
         )),
-      ]),
-      const SizedBox(height: 12),
-      Row(children: [
+        const SizedBox(width: 12),
         Expanded(child: _menuTile(
           icon: Icons.assignment_rounded,
           title: 'Tareas',
@@ -464,8 +481,6 @@ class _ClientMenuScreenState extends State<ClientMenuScreen>
           onTap: _abrirTareas,
           contador: _tareasPendientes > 0 ? _tareasPendientes : null,
         )),
-        const SizedBox(width: 12),
-        const Expanded(child: SizedBox.shrink()),
       ]),
     ]);
   }
