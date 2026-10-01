@@ -128,8 +128,27 @@ class CatalogoListas {
 
   bool get vacio => listas.isEmpty || productos.isEmpty;
 
-  /// Productos que pasan la búsqueda y la categoría elegida.
-  List<ProductoListas> filtrar({String busqueda = '', String? categoria}) => productos
-      .where((p) => (categoria == null || p.categoria == categoria) && p.coincideCon(busqueda))
+  /// Productos que pasan la búsqueda, la categoría y la lista elegidas.
+  ///
+  /// Con [lista], solo los que tienen precio en esa lista: es lo que se ve en
+  /// pantalla cuando el gestor elige una.
+  List<ProductoListas> filtrar({String busqueda = '', String? categoria, int? lista}) => productos
+      .where((p) =>
+          (categoria == null || p.categoria == categoria) &&
+          (lista == null || p.precioEn(lista) != null) &&
+          p.coincideCon(busqueda))
       .toList();
+
+  /// Las categorías que de verdad tienen productos en esa lista.
+  List<String> categoriasDe(int lista) {
+    final vistas = productos.where((p) => p.precioEn(lista) != null).map((p) => p.categoria);
+    return categorias.where(vistas.toSet().contains).toList();
+  }
+
+  ListaPrecios? listaPorId(int? id) {
+    for (final l in listas) {
+      if (l.id == id) return l;
+    }
+    return listas.isEmpty ? null : listas.first;
+  }
 }

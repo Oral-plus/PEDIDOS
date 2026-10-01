@@ -120,6 +120,27 @@ void main() {
       expect(c.filtrar(categoria: 'Cremas', busqueda: 'cepillo'), isEmpty);
     });
 
+    test('al elegir una lista solo salen sus productos', () {
+      final c = CatalogoListas.fromJson(json);
+      expect(c.filtrar(lista: 1).map((p) => p.codigo), ['A1', 'B2']);
+      expect(c.filtrar(lista: 2).single.codigo, 'A1', reason: 'la crema no está en mayorista');
+      expect(c.filtrar(lista: 9), isEmpty);
+    });
+
+    test('las categorías del filtro son las de esa lista, no las de todas', () {
+      final c = CatalogoListas.fromJson(json);
+      expect(c.categoriasDe(1), ['Cepillos', 'Cremas']);
+      expect(c.categoriasDe(2), ['Cepillos']);
+    });
+
+    test('el selector arranca en la primera lista y tolera un id que ya no existe', () {
+      final c = CatalogoListas.fromJson(json);
+      expect(c.listaPorId(2)!.nombre, 'Mayorista');
+      expect(c.listaPorId(99)!.nombre, 'General', reason: 'cae en la primera');
+      expect(c.listaPorId(null)!.nombre, 'General');
+      expect(const CatalogoListas.fallo().listaPorId(1), isNull);
+    });
+
     test('una respuesta vacía o mal formada no rompe la pantalla', () {
       final c = CatalogoListas.fromJson({'listas': null, 'productos': null});
       expect(c.vacio, true);
