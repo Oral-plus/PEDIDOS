@@ -5,6 +5,7 @@ import '../utils/app_assets.dart';
 import '../utils/cartera_cliente.dart';
 import '../utils/filtro_cliente.dart';
 import '../utils/price_utils.dart';
+import '../utils/recaudo_cruce.dart';
 
 class RecaudosScreen extends StatefulWidget {
   final String codigoCliente;
@@ -97,6 +98,18 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
   double get _totalRecaudo => double.tryParse(_recaudoCtrl.text.replaceAll('.', '')) ?? 0;
   double get _saldo => _totalRecaudo - _totalAplicado;
 
+  /// Plata recibida que todavía no se le ha asignado a ninguna factura.
+  double get _porRepartir =>
+      RecaudoCruce.porRepartir(recaudo: _totalRecaudo, aplicado: _totalAplicado);
+
+  /// Se está cruzando más de lo que el cliente entregó.
+  bool get _excedido =>
+      RecaudoCruce.excedido(recaudo: _totalRecaudo, aplicado: _totalAplicado);
+
+  /// Lo que se está cruzando por encima de lo recibido.
+  double get _exceso =>
+      RecaudoCruce.exceso(recaudo: _totalRecaudo, aplicado: _totalAplicado);
+
   String _pesos(num v) => PriceUtils.formatPriceDisplay(v.toDouble());
 
   String _miles(num v) {
@@ -184,6 +197,29 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
                 _totRow('Total recaudo', _totalRecaudo),
                 Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(height: 1, color: Colors.white.withOpacity(0.12))),
                 _totRow('Saldo', _saldo, destacado: true),
+                if (_excedido) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDC2626).withOpacity(0.20),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFFCA5A5).withOpacity(0.45)),
+                    ),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Icon(Icons.error_outline_rounded, size: 15, color: Color(0xFFFECACA)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Estás cruzando ${_pesos(_exceso)} más de lo que recibiste. '
+                          'Baja los abonos o corrige el valor recaudado.',
+                          style: const TextStyle(
+                              color: Color(0xFFFECACA), fontSize: 11.5, fontWeight: FontWeight.w600, height: 1.25),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ],
               ]),
             ),
           ]),
@@ -429,7 +465,12 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
             _menuItem(ctx, Icons.playlist_add_check_rounded, 'Cruzar documento', () {
               setState(() {
                 _cruzados.add(entry);
-                _abonos[entry] = CarteraCliente.disponibleDocumento(d);
+                // Nunca el saldo completo: solo lo que alcance con la plata
+                // que el cliente entregó.
+                _abonos[entry] = RecaudoCruce.abonoSugerido(
+                  disponible: CarteraCliente.disponibleDocumento(d),
+                  porRepartir: _porRepartir,
+                );
               });
             })
           else
@@ -490,7 +531,15 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
     // abono parcial, no se puede volver a cobrar la factura completa.
     final saldo = CarteraCliente.disponibleDocumento(d);
     final abonado = CarteraCliente.abonadoSinAplicar(d);
-    final ctrl = TextEditingController(text: _miles(_abonos[entry] ?? saldo));
+    final abonoActual = _abonos[entry] ?? 0;
+    // Dos topes: lo que falta por cobrarle a la factura y lo que quede del
+    // dinero recibido. El abono que ya tenía vuelve al bolsillo: se reemplaza.
+    final tope = RecaudoCruce.topeAbono(
+      disponible: saldo,
+      porRepartir: _porRepartir,
+      abonoActual: abonoActual,
+    );
+    final ctrl = TextEditingController(text: _miles(abonoActual > 0 ? abonoActual : tope));
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -505,9 +554,11 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
             inputFormatters: [_MilesFmt()],
             decoration: InputDecoration(
               prefixText: '\$ ',
-              helperText: abonado > 0
-                  ? 'Disponible: ${_pesos(saldo)} · ya abonaste ${_pesos(abonado)}'
-                  : 'Saldo: ${_pesos(saldo)}',
+              helperText: tope < saldo
+                  ? 'Máximo ${_pesos(tope)}: es lo que queda del recaudo'
+                  : abonado > 0
+                      ? 'Disponible: ${_pesos(saldo)} · ya abonaste ${_pesos(abonado)}'
+                      : 'Saldo: ${_pesos(saldo)}',
               border: const OutlineInputBorder(),
             ),
           ),
@@ -517,7 +568,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: _ink),
             onPressed: () {
-              final v = (double.tryParse(ctrl.text.replaceAll('.', '')) ?? 0).clamp(0, saldo).toDouble();
+              final v = (double.tryParse(ctrl.text.replaceAll('.', '')) ?? 0).clamp(0, tope).toDouble();
               setState(() => _abonos[entry] = v);
               Navigator.of(ctx).pop();
             },
@@ -607,7 +658,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
   }
 
   Widget _footer() {
-    final activo = _cruzados.isNotEmpty && !_guardando;
+    final activo = _cruzados.isNotEmpty && !_guardando && !_excedido;
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -635,9 +686,15 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
                     child: _guardando
                         ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
                         : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                            Icon(Icons.save_rounded, color: activo ? Colors.white : _gray, size: 20),
+                            Icon(_excedido ? Icons.error_outline_rounded : Icons.save_rounded,
+                                color: activo ? Colors.white : _gray, size: 20),
                             const SizedBox(width: 8),
-                            Text(_cruzados.isEmpty ? 'Cruza un documento' : 'Guardar recaudo (${_cruzados.length})',
+                            Text(
+                                _cruzados.isEmpty
+                                    ? 'Cruza un documento'
+                                    : _excedido
+                                        ? 'Cruzaste ${_pesos(_exceso)} de más'
+                                        : 'Guardar recaudo (${_cruzados.length})',
                                 style: TextStyle(color: activo ? Colors.white : _gray, fontSize: 15, fontWeight: FontWeight.w800)),
                           ]),
                   ),
@@ -747,6 +804,36 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
       return;
     }
 
+    if (_excedido) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Row(children: [
+            Icon(Icons.error_outline_rounded, color: Color(0xFFDC2626)),
+            SizedBox(width: 10),
+            Expanded(child: Text('Cruzaste más de lo que recibiste')),
+          ]),
+          content: Text(
+            'El cliente entregó ${_pesos(_totalRecaudo)} y estás aplicando ${_pesos(_totalAplicado)} '
+            'a la cartera: ${_pesos(_exceso)} de más.\n\n'
+            'Si se guarda así, esas facturas quedan marcadas como cobradas por una plata que no entró '
+            'y no te volverán a salir para el siguiente cobro.\n\n'
+            'Baja los abonos de los documentos, o corrige el valor recaudado si recibiste más.',
+            style: const TextStyle(fontSize: 14, height: 1.4),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              style: ElevatedButton.styleFrom(backgroundColor: _ink, foregroundColor: Colors.white),
+              child: const Text('Entendido'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     setState(() => _guardando = true);
     HapticFeedback.mediumImpact();
     final documentos = _docs.where((d) => _cruzados.contains(_docEntry(d))).map((d) {
@@ -756,7 +843,9 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
         'docNum': '${d['docNum'] ?? ''}',
         'numFactura': '${d['numFactura'] ?? ''}',
         'saldo': _n(d['saldo']),
-        'abono': _abonos[entry] ?? _n(d['saldo']),
+        // Sin respaldo al saldo de SAP: un documento cruzado siempre trae su
+        // abono, y caer al saldo completo es justo lo que cobraba de mas.
+        'abono': _abonos[entry] ?? 0,
         'dueDate': '${d['dueDate'] ?? ''}',
       };
     }).toList();

@@ -63,6 +63,42 @@ function netear(documentos, abonos, { tolerancia = TOLERANCIA, diasAviso = 5 } =
   }
 }
 
+// Diferencias por debajo de un peso son redondeo, no plata cobrada de mas.
+const TOLERANCIA_CRUCE = 1
+
+const pesos = (v) => "$" + Math.round(v).toLocaleString("es-CO")
+
+/**
+ * Un recaudo no puede aplicar a la cartera mas plata de la que el cliente
+ * entrego. Si se aplica de mas, la factura queda registrada como cobrada por
+ * un dinero que nunca entro y deja de salir para el siguiente cobro: el gestor
+ * recibe el abono parcial y el saldo restante desaparece de la app.
+ *
+ * Funcion pura: decide con los numeros del cuerpo, sin tocar la base.
+ */
+function revisarCruce(cuerpo, { tolerancia = TOLERANCIA_CRUCE } = {}) {
+  const b = cuerpo || {}
+  const documentos = Array.isArray(b.documentos) ? b.documentos : []
+  const recaudo = redondear(numero(b.totalRecaudo))
+  const sumaAbonos = redondear(documentos.reduce((s, d) => s + numero(d && d.abono), 0))
+  // El mayor de los dos: ni la cabecera ni el detalle pueden pasarse.
+  const aplicado = Math.max(sumaAbonos, redondear(numero(b.totalAplicado)))
+  const exceso = redondear(aplicado - recaudo)
+
+  if (exceso > tolerancia) {
+    return {
+      ok: false,
+      recaudo,
+      aplicado,
+      exceso,
+      message:
+        `El recaudo es de ${pesos(recaudo)} y se estan cruzando ${pesos(aplicado)} de cartera: ` +
+        `${pesos(exceso)} de mas. Ajusta los abonos de los documentos o el valor recaudado.`,
+    }
+  }
+  return { ok: true, recaudo, aplicado, exceso: 0 }
+}
+
 function medioPago(p) {
   if (numero(p.CashSum) > 0) return "Efectivo"
   if (numero(p.TrsfrSum) > 0) return "Transferencia"
@@ -248,4 +284,4 @@ function crear({ sql, getSapPool, getPedidosPool, env, log }) {
   return { registrarRutas, saldoDe, documentosDe, pagosSinAplicarDe, pendientesPorCliente, diasAviso }
 }
 
-module.exports = { crear, netear, numero, redondear }
+module.exports = { crear, netear, revisarCruce, numero, redondear }

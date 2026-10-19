@@ -1398,6 +1398,16 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
     const totalRecaudo = num(b.totalRecaudo)
     const totalAplicado = num(b.totalAplicado)
 
+    // No se puede aplicar a la cartera mas plata de la que el cliente entrego:
+    // la factura quedaria marcada como cobrada y no volveria a salir para el
+    // siguiente cobro. 200 a proposito: el proxy descarta el cuerpo de los no-2xx
+    // y el gestor necesita leer el motivo.
+    const cruce = cartera.revisarCruce({ ...b, documentos: docs })
+    if (!cruce.ok) {
+      console.warn(`Recaudo ${(b.numeroRecaudo || "").toString().trim()} cliente ${clienteId} rechazado: aplica ${cruce.aplicado} sobre ${cruce.recaudo} recaudados`)
+      return res.json({ success: false, excedido: true, exceso: cruce.exceso, message: cruce.message })
+    }
+
     const numeroRecaudo = (b.numeroRecaudo || "").toString().trim() ||
       `REC-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`
 

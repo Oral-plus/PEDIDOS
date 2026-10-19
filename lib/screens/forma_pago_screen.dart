@@ -329,9 +329,10 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
     final previo = widget.numeroRecaudoPrevio ?? '';
     if (previo.isNotEmpty) {
       _numeroRecaudo = previo;
-      if (_tieneCartera && widget.valorRecaudoPrevio > 0) {
-        _pagoCartera.text = _miles(widget.valorRecaudoPrevio);
-      }
+      _recaudosVisita.add(previo);
+      _totalRecaudado = widget.valorRecaudoPrevio;
+      // El campo arranca en lo que FALTA, no en lo ya cobrado: al reabrir la
+      // visita, dineroFaltante ya viene descontado del abono anterior.
     }
     for (final c in [_pagoCartera, _pagoPedido, _valorCtrl]) {
       c.addListener(() => setState(() {}));
@@ -1140,7 +1141,9 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
                 : 'Saldo ${_pesos(widget.dineroFaltante)}',
             controller: _pagoCartera,
             maximo: widget.dineroFaltante,
-            bloqueado: _recaudoCruzado,
+            // No se bloquea aunque ya haya un recaudo: un abono parcial deja
+            // saldo, y el gestor tiene que poder cobrar el resto.
+            bloqueado: false,
           ),
           const SizedBox(height: 8),
           Align(
@@ -1154,13 +1157,15 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
                   Icon(_recaudoCruzado ? Icons.check_circle_rounded : Icons.playlist_add_check_rounded, size: 15, color: _ink),
                   const SizedBox(width: 6),
                   Text(
-                    _recaudoCruzado ? 'Documentos cruzados: recaudo $_numeroRecaudo' : 'Cruzar documentos (Recaudos)',
+                    // Sigue siendo una puerta abierta: si quedó saldo, hay que
+                    // poder volver a entrar a cobrarlo.
+                    _recaudoCruzado
+                        ? 'Cobrar el saldo restante · ya cruzaste $_numeroRecaudo'
+                        : 'Cruzar documentos (Recaudos)',
                     style: const TextStyle(color: _ink, fontSize: 12, fontWeight: FontWeight.w800),
                   ),
-                  if (!_recaudoCruzado) ...const [
-                    SizedBox(width: 4),
-                    Icon(Icons.chevron_right_rounded, size: 16, color: _ink),
-                  ],
+                  const SizedBox(width: 4),
+                  const Icon(Icons.chevron_right_rounded, size: 16, color: _ink),
                 ]),
               ),
             ),
