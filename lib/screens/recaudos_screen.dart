@@ -508,6 +508,8 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
           _detRow('Saldo en SAP', _pesos(CarteraCliente.saldoSapDocumento(d))),
           if (CarteraCliente.conAbonoPendiente(d))
             _detRow('Abonado sin aplicar', _pesos(CarteraCliente.abonadoSinAplicar(d))),
+          if (CarteraCliente.recaudadoDocumento(d) > 0)
+            _detRow('Recaudado en la app', _pesos(CarteraCliente.recaudadoDocumento(d))),
           _detRow('Disponible por cobrar', _pesos(CarteraCliente.disponibleDocumento(d))),
         ]),
         actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cerrar'))],

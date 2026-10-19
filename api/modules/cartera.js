@@ -24,8 +24,9 @@ function netear(documentos, abonos, { tolerancia = TOLERANCIA, diasAviso = 5 } =
   const pendientes = []
   const neteados = (documentos || []).map((d) => {
     const saldoSap = numero(d.saldo)
+    const abonosDelDoc = porDocumento.get(String(d.docEntry)) || []
     let pendienteDocumento = 0
-    for (const abono of porDocumento.get(String(d.docEntry)) || []) {
+    for (const abono of abonosDelDoc) {
       const aplicadoEnSap = Math.max(0, numero(abono.saldoAlRegistrar) - saldoSap)
       const pendiente = Math.max(0, numero(abono.abono) - aplicadoEnSap)
       if (pendiente <= tolerancia) continue
@@ -43,11 +44,27 @@ function netear(documentos, abonos, { tolerancia = TOLERANCIA, diasAviso = 5 } =
         demorado: (abono.dias || 0) > diasAviso,
       })
     }
+    // Lo que el gestor lleva recaudado de esta factura segun dbo.recaudos,
+    // sin ventana de tiempo: es lo que decide hasta cuando sigue cobrable.
+    const totalRecaudado = redondear(abonosDelDoc.reduce((a, x) => a + numero(x.abono), 0))
+    // La deuda mas alta que le hemos visto a la factura: la de hoy en SAP o la
+    // foto que guardo cada recaudo. Contra esa se mide lo recaudado, para que
+    // un pago que SAP ya aplico no haga reaparecer plata ya cobrada.
+    const deuda = abonosDelDoc.reduce((m, x) => Math.max(m, numero(x.saldoAlRegistrar)), saldoSap)
+    const porCobrar = Math.max(0, redondear(deuda - totalRecaudado))
+
     const aplicable = Math.min(pendienteDocumento, saldoSap)
+    let saldoNeto = redondear(saldoSap - aplicable)
+    // Nunca se ofrece mas de lo que falta por recaudar. La factura no se cierra
+    // antes de tiempo ni vuelve a abrirse por plata que ya se recibio.
+    if (saldoNeto - porCobrar > tolerancia) saldoNeto = porCobrar
+
     return {
       ...d,
-      pendientePorAplicar: redondear(aplicable),
-      saldoNeto: redondear(saldoSap - aplicable),
+      totalRecaudado,
+      porCobrar,
+      pendientePorAplicar: redondear(saldoSap - saldoNeto),
+      saldoNeto,
     }
   })
 
@@ -109,7 +126,6 @@ function medioPago(p) {
 function crear({ sql, getSapPool, getPedidosPool, env, log }) {
   const logger = log || console
   const variables = env || {}
-  const diasVentana = enteroEntre(variables.CARTERA_DIAS_PENDIENTES, 30, 1, 365)
   const diasAviso = enteroEntre(variables.CARTERA_DIAS_AVISO, 5, 1, 90)
 
   async function documentosDe(cardCode, limite = 500) {
@@ -182,7 +198,7 @@ function crear({ sql, getSapPool, getPedidosPool, env, log }) {
     const lista = (Array.isArray(codigos) ? codigos : [codigos]).filter(Boolean)
     const porCliente = new Map()
     if (lista.length === 0) return porCliente
-    const req = getPedidosPool().request().input("dias", sql.Int, diasVentana)
+    const req = getPedidosPool().request()
     const marcadores = lista.map((c, i) => {
       req.input(`c${i}`, sql.NVarChar, c)
       return `@c${i}`
@@ -195,7 +211,6 @@ function crear({ sql, getSapPool, getPedidosPool, env, log }) {
       FROM dbo.recaudos r
       JOIN dbo.recaudos_documentos d ON d.recaudo_id = r.id
       WHERE r.cliente_id IN (${marcadores.join(",")})
-        AND r.fecha >= DATEADD(day, -@dias, GETDATE())
         AND d.doc_entry IS NOT NULL
       ORDER BY r.fecha DESC
     `)

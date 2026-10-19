@@ -88,6 +88,39 @@ ok("el detalle dice que recaudo esta pendiente y por cuanto",
 ok("no se altera el saldo original de SAP que viaja al cliente",
   r1.documentos[0].saldo === 4000000 && r1.saldoSap === 4000000)
 
+// --- La factura sigue cobrable hasta que lo recaudado la cubra -------------
+// Lo recaudado sale de dbo.recaudos, sin ventana de tiempo.
+
+const n1 = netear([doc(1, 500000)], [abono(1, 200000, 500000, { dias: 90 })])
+ok("un recaudo de hace 3 meses sigue contando: la factura no se vuelve a ofrecer entera",
+  n1.documentos[0].totalRecaudado === 200000 && n1.documentos[0].saldoNeto === 300000,
+  `recaudado ${n1.documentos[0].totalRecaudado} neto ${n1.documentos[0].saldoNeto}`)
+
+const n2 = netear([doc(1, 500000)], [abono(1, 200000, 500000), abono(1, 150000, 500000)])
+ok("dos abonos parciales se suman y queda cobrable lo que falta",
+  n2.documentos[0].totalRecaudado === 350000 && n2.documentos[0].porCobrar === 150000 &&
+  n2.documentos[0].saldoNeto === 150000,
+  `recaudado ${n2.documentos[0].totalRecaudado} falta ${n2.documentos[0].porCobrar}`)
+
+const n3 = netear([doc(1, 500000)], [abono(1, 300000, 500000), abono(1, 200000, 500000)])
+ok("solo cuando lo recaudado iguala la factura deja de estar cobrable",
+  n3.documentos[0].totalRecaudado === 500000 && n3.documentos[0].porCobrar === 0 &&
+  n3.documentos[0].saldoNeto === 0)
+
+const n4 = netear([doc(1, 300000, { total: 1000000 })], [abono(1, 300000, 300000)])
+ok("si SAP ya traia parte pagada, basta recaudar lo que debia, no el total de la factura",
+  n4.documentos[0].porCobrar === 0 && n4.documentos[0].saldoNeto === 0,
+  `falta ${n4.documentos[0].porCobrar}`)
+
+const n5 = netear([doc(1, 450000)], [])
+ok("sin recaudos, no hay nada recaudado y se debe toda la factura",
+  n5.documentos[0].totalRecaudado === 0 && n5.documentos[0].porCobrar === 450000)
+
+const n6 = netear([doc(1, 100000)], [abono(1, 200000, 500000)])
+ok("si el cliente pago aparte, no reaparece como cobrable la plata ya recaudada",
+  n6.documentos[0].saldoNeto === 100000 && n6.documentos[0].totalRecaudado === 200000,
+  `neto ${n6.documentos[0].saldoNeto}`)
+
 // --- No se puede aplicar mas plata de la que el cliente entrego ------------
 // Todos los casos salen de recaudos reales que si se guardaron asi.
 

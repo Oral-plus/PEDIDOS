@@ -48,6 +48,22 @@ class CarteraCliente {
   static double abonadoSinAplicar(Map<String, dynamic>? documento) =>
       _aDouble(documento?['pendientePorAplicar']);
 
+  /// Lo que el gestor lleva recaudado de esa factura, según dbo.recaudos.
+  ///
+  /// No tiene ventana de tiempo: un abono de hace meses sigue contando, porque
+  /// esa plata ya la recibió el gestor.
+  static double recaudadoDocumento(Map<String, dynamic>? documento) =>
+      _aDouble(documento?['totalRecaudado']);
+
+  /// Lo que falta por recaudarle a esa factura.
+  ///
+  /// Lo calcula el servidor contra la tabla de recaudos. Si el backend es viejo
+  /// y no lo manda, se cae al neto, que nunca ofrece de más.
+  static double porCobrarDocumento(Map<String, dynamic>? documento) {
+    final v = documento?['porCobrar'];
+    return v != null ? _aDouble(v) : saldoNetoDocumento(documento);
+  }
+
   /// Lo que todavía se le puede cobrar a esa factura.
   ///
   /// Es el neto, nunca negativo: un abono parcial deja disponible el resto, y
@@ -62,9 +78,13 @@ class CarteraCliente {
   static bool conAbonoPendiente(Map<String, dynamic>? documento) =>
       abonadoSinAplicar(documento) > 0;
 
-  /// Ya se cubrió en la app y solo falta que SAP la aplique.
+  /// Ya se recaudó completa y solo falta que SAP la aplique.
   ///
+  /// La factura deja de estar cobrable únicamente cuando lo recaudado la cubre.
   /// No se oculta: el gestor tiene que verla para saber que ya la cobró.
-  static bool cubiertaEnApp(Map<String, dynamic>? documento) =>
-      conAbonoPendiente(documento) && disponibleDocumento(documento) <= 0;
+  static bool cubiertaEnApp(Map<String, dynamic>? documento) {
+    if (recaudadoDocumento(documento) > 0) return porCobrarDocumento(documento) <= 0;
+    // Backend viejo, sin lo recaudado: se decide con lo que SAP no ha aplicado.
+    return conAbonoPendiente(documento) && disponibleDocumento(documento) <= 0;
+  }
 }

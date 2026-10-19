@@ -590,7 +590,12 @@ class _CarteraScreenState extends State<CarteraScreen> {
           Text(_pesos(CarteraCliente.saldoNetoDocumento(f)),
               style: const TextStyle(color: _ink, fontWeight: FontWeight.w800, fontSize: 13.5)),
           const SizedBox(height: 2),
-          if (_n(f['pendientePorAplicar']) > 0)
+          // Lo ya recaudado manda: la factura se queda en el listado, con lo
+          // que falta, hasta que estos dos numeros se igualen.
+          if (CarteraCliente.recaudadoDocumento(f) > 0)
+            Text('Recaudado ${_pesos(CarteraCliente.recaudadoDocumento(f))}',
+                style: const TextStyle(color: _ambar, fontSize: 11, fontWeight: FontWeight.w700))
+          else if (_n(f['pendientePorAplicar']) > 0)
             Text('En SAP ${_pesos(f['saldo'])}',
                 style: const TextStyle(color: _ambar, fontSize: 11, fontWeight: FontWeight.w600))
           else

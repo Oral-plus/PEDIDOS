@@ -72,6 +72,37 @@ void main() {
       });
     });
 
+    group('La factura se queda hasta que lo recaudado la cubra', () {
+      // Lo recaudado sale de dbo.recaudos y lo manda el servidor por documento.
+      test('con un abono parcial sigue cobrable, por lo que falta', () {
+        final d = {'saldo': 500000, 'saldoNeto': 300000, 'totalRecaudado': 200000, 'porCobrar': 300000};
+        expect(CarteraCliente.recaudadoDocumento(d), 200000);
+        expect(CarteraCliente.porCobrarDocumento(d), 300000);
+        expect(CarteraCliente.cubiertaEnApp(d), false);
+        expect(CarteraCliente.disponibleDocumento(d), 300000);
+      });
+
+      test('solo deja de estar cobrable cuando lo recaudado la iguala', () {
+        final d = {'saldo': 500000, 'saldoNeto': 0, 'totalRecaudado': 500000, 'porCobrar': 0};
+        expect(CarteraCliente.cubiertaEnApp(d), true);
+        expect(CarteraCliente.saldoSapDocumento(d), 500000,
+            reason: 'SAP sigue mostrando la deuda hasta que aplique el pago');
+      });
+
+      test('sin recaudos no se marca como cobrada, aunque SAP la deba entera', () {
+        final d = {'saldo': 500000, 'totalRecaudado': 0, 'porCobrar': 500000};
+        expect(CarteraCliente.cubiertaEnApp(d), false);
+        expect(CarteraCliente.disponibleDocumento(d), 500000);
+      });
+
+      test('un backend viejo, sin lo recaudado, no cierra ninguna factura de más', () {
+        final d = {'saldo': 500000, 'saldoNeto': 300000, 'pendientePorAplicar': 200000};
+        expect(CarteraCliente.recaudadoDocumento(d), 0);
+        expect(CarteraCliente.porCobrarDocumento(d), 300000, reason: 'cae al neto');
+        expect(CarteraCliente.cubiertaEnApp(d), false);
+      });
+    });
+
     test('lista los recaudos pendientes y tolera una respuesta sin ellos', () {
       final cartera = {
         'recaudosPendientes': [
