@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_easy_service.dart';
 import '../utils/app_assets.dart';
+import '../utils/cartera_cliente.dart';
 import '../utils/filtro_cliente.dart';
 import '../utils/price_utils.dart';
 
@@ -35,6 +36,7 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
   static const Color _surface = Color(0xFFF3F4F6);
   static const Color _rojo = Color(0xFFDC2626);
   static const Color _verde = Color(0xFF16A34A);
+  static const Color _ambar = Color(0xFFB45309);
 
   List<Map<String, dynamic>> _docs = [];
   bool _cargando = true;
@@ -89,7 +91,8 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
   int _docEntry(Map<String, dynamic> d) => (d['docEntry'] is int) ? d['docEntry'] : int.tryParse('${d['docEntry']}') ?? 0;
 
   double get _totalDocumentos =>
-      _docs.where((d) => _cruzados.contains(_docEntry(d))).fold(0.0, (s, d) => s + _n(d['saldo']));
+      _docs.where((d) => _cruzados.contains(_docEntry(d)))
+          .fold(0.0, (s, d) => s + CarteraCliente.disponibleDocumento(d));
   double get _totalAplicado => _abonos.entries.where((e) => _cruzados.contains(e.key)).fold(0.0, (s, e) => s + e.value);
   double get _totalRecaudo => double.tryParse(_recaudoCtrl.text.replaceAll('.', '')) ?? 0;
   double get _saldo => _totalRecaudo - _totalAplicado;
@@ -276,7 +279,11 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
   Widget _docCard(Map<String, dynamic> d) {
     final entry = _docEntry(d);
     final cruzado = _cruzados.contains(entry);
-    final saldo = _n(d['saldo']);
+    // Lo que de verdad se le puede cobrar: el saldo de SAP menos lo que el
+    // gestor ya abonó y SAP aún no aplica.
+    final saldo = CarteraCliente.disponibleDocumento(d);
+    final abonado = CarteraCliente.abonadoSinAplicar(d);
+    final cubierta = CarteraCliente.cubiertaEnApp(d);
     final abono = _abonos[entry] ?? saldo;
     final dias = (d['diasVencimiento'] is num) ? (d['diasVencimiento'] as num).toInt() : 0;
     final vencida = d['vencida'] == true || dias < 0;
@@ -311,8 +318,44 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
                       style: const TextStyle(color: _ink, fontSize: 13.5, fontWeight: FontWeight.w800),
                       maxLines: 1, overflow: TextOverflow.ellipsis),
                 ),
-                Text(_pesos(saldo), style: const TextStyle(color: _ink, fontSize: 14, fontWeight: FontWeight.w900)),
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Text(_pesos(saldo),
+                      style: TextStyle(
+                          color: cubierta ? _gray : _ink, fontSize: 14, fontWeight: FontWeight.w900)),
+                  if (abonado > 0)
+                    Text('de ${_pesos(CarteraCliente.saldoSapDocumento(d))}',
+                        style: const TextStyle(
+                            color: _gray,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            decoration: TextDecoration.lineThrough)),
+                ]),
               ]),
+              // Un abono parcial no puede perderse de vista: la factura sigue
+              // ahí y se dice cuánto se le abonó y cuánto falta.
+              if (abonado > 0) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: _ambar.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.hourglass_bottom_rounded, size: 13, color: _ambar),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        cubierta
+                            ? 'Ya la cobraste completa (${_pesos(abonado)}). Falta que SAP la aplique.'
+                            : 'Ya abonaste ${_pesos(abonado)} · quedan ${_pesos(saldo)} por cobrar',
+                        style: const TextStyle(color: _ambar, fontSize: 11, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ]),
+                ),
+              ],
               const SizedBox(height: 10),
               Wrap(spacing: 8, runSpacing: 6, children: [
                 _chip(Icons.event_rounded, 'F.D. ${d['docDate'] ?? '—'}'),
@@ -374,9 +417,20 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
           const SizedBox(height: 12),
           const Text('Seleccione', style: TextStyle(color: _ink, fontSize: 15, fontWeight: FontWeight.w800)),
           const SizedBox(height: 6),
-          if (!cruzado)
+          if (CarteraCliente.cubiertaEnApp(d))
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              child: Text(
+                'Esta factura ya la cobraste completa y está pendiente de aplicarse en SAP.',
+                style: TextStyle(color: _gray, fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+            )
+          else if (!cruzado)
             _menuItem(ctx, Icons.playlist_add_check_rounded, 'Cruzar documento', () {
-              setState(() { _cruzados.add(entry); _abonos[entry] = _n(d['saldo']); });
+              setState(() {
+                _cruzados.add(entry);
+                _abonos[entry] = CarteraCliente.disponibleDocumento(d);
+              });
             })
           else
             _menuItem(ctx, Icons.remove_circle_outline_rounded, 'Quitar documento', () {
@@ -410,7 +464,10 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
           _detRow('Fecha vencimiento', '${d['dueDate'] ?? '—'}'),
           _detRow('Total factura', _pesos(_n(d['total']))),
           _detRow('Pagado', _pesos(_n(d['pagado']))),
-          _detRow('Saldo', _pesos(_n(d['saldo']))),
+          _detRow('Saldo en SAP', _pesos(CarteraCliente.saldoSapDocumento(d))),
+          if (CarteraCliente.conAbonoPendiente(d))
+            _detRow('Abonado sin aplicar', _pesos(CarteraCliente.abonadoSinAplicar(d))),
+          _detRow('Disponible por cobrar', _pesos(CarteraCliente.disponibleDocumento(d))),
         ]),
         actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cerrar'))],
       ),
@@ -429,22 +486,30 @@ class _RecaudosScreenState extends State<RecaudosScreen> {
 
   Future<void> _editarAbono(Map<String, dynamic> d) async {
     final entry = _docEntry(d);
-    final saldo = _n(d['saldo']);
+    // El tope es lo que queda por cobrar, no el saldo de SAP: si ya hubo un
+    // abono parcial, no se puede volver a cobrar la factura completa.
+    final saldo = CarteraCliente.disponibleDocumento(d);
+    final abonado = CarteraCliente.abonadoSinAplicar(d);
     final ctrl = TextEditingController(text: _miles(_abonos[entry] ?? saldo));
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: const Text('Abono al documento', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          inputFormatters: [_MilesFmt()],
-          decoration: InputDecoration(
-            prefixText: '\$ ',
-            helperText: 'Saldo: ${_pesos(saldo)}',
-            border: const OutlineInputBorder(),
+        // En scroll: con el teclado abierto el diálogo encoge y el campo sigue a la vista.
+        content: SingleChildScrollView(
+          child: TextField(
+            controller: ctrl,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            inputFormatters: [_MilesFmt()],
+            decoration: InputDecoration(
+              prefixText: '\$ ',
+              helperText: abonado > 0
+                  ? 'Disponible: ${_pesos(saldo)} · ya abonaste ${_pesos(abonado)}'
+                  : 'Saldo: ${_pesos(saldo)}',
+              border: const OutlineInputBorder(),
+            ),
           ),
         ),
         actions: [

@@ -800,14 +800,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       child: Column(
         children: [
           if (r.tieneDescuento) ...[
-            _filaResumen('Subtotal', PriceUtils.formatPriceDisplay(r.subtotalBruto)),
+            _filaResumen('Subtotal sin descuento', PriceUtils.formatPriceDisplay(r.subtotalBruto)),
             if (r.descuentoLineas > 0)
               _filaResumen('Descuento por referencia', '- ${PriceUtils.formatPriceDisplay(r.descuentoLineas)}'),
             if (r.descuentoPie > 0)
               _filaResumen('Descuento pie de página (${_pct(r.descuentoPiePct)})',
                   '- ${PriceUtils.formatPriceDisplay(r.descuentoPie)}'),
-            const Divider(height: 20),
           ],
+          _filaResumen('Subtotal', PriceUtils.formatPriceDisplay(r.subtotal)),
+          _filaResumen(r.etiquetaImpuesto, PriceUtils.formatPriceDisplay(r.impuesto)),
+          const Divider(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [

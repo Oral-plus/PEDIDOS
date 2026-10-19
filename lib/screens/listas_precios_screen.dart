@@ -5,6 +5,7 @@ import '../models/lista_precios.dart';
 import '../services/api_easy_service.dart';
 import '../utils/descuento.dart';
 import '../utils/price_utils.dart';
+import '../widgets/hoja_modal.dart';
 
 /// Módulo Producto: se busca un producto arriba y abajo salen sus precios en
 /// cada lista de precios que usan los clientes del gestor. Solo aparecen las
@@ -84,12 +85,10 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
 
   Future<void> _elegirProducto() async {
     HapticFeedback.selectionClick();
-    final elegido = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-      builder: (_) => _SelectorProductos(catalogo: _catalogo, actual: _codigo),
+    final elegido = await mostrarHoja<String>(
+      context,
+      fondo: Colors.white,
+      constructor: (_) => _SelectorProductos(catalogo: _catalogo, actual: _codigo),
     );
     if (elegido == null || !mounted) return;
     setState(() => _codigo = elegido);
@@ -368,11 +367,11 @@ class _SelectorProductosState extends State<_SelectorProductos> {
   @override
   Widget build(BuildContext context) {
     final visibles = widget.catalogo.filtrar(busqueda: _texto);
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+    return Material(
+      color: Colors.white,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
       child: SafeArea(
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.75,
+        child: SizedBox.expand(
           child: Column(children: [
             const SizedBox(height: 12),
             Container(

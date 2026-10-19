@@ -2,6 +2,7 @@ import 'dart:collection';
 import 'package:flutter/material.dart';
 import '../models/cart_item.dart';
 
+import '../utils/impuesto.dart';
 import '../utils/price_utils.dart';
 
 class ResumenCarrito {
@@ -10,6 +11,13 @@ class ResumenCarrito {
   final double subtotalNeto;
   final double descuentoPiePct;
   final double descuentoPie;
+
+  /// Base gravable: lo que queda tras los descuentos, antes del IVA.
+  final double subtotal;
+  final double impuestoPct;
+  final double impuesto;
+
+  /// Lo que paga el cliente: subtotal más IVA.
   final double total;
 
   const ResumenCarrito({
@@ -18,12 +26,19 @@ class ResumenCarrito {
     required this.subtotalNeto,
     required this.descuentoPiePct,
     required this.descuentoPie,
+    required this.subtotal,
+    required this.impuestoPct,
+    required this.impuesto,
     required this.total,
   });
 
   double get descuentoTotal => CartItem.redondear(descuentoLineas + descuentoPie);
 
   bool get tieneDescuento => descuentoTotal > 0;
+
+  bool get tieneImpuesto => impuesto > 0;
+
+  String get etiquetaImpuesto => Impuesto.etiqueta(impuestoPct);
 }
 
 class CartProvider extends ChangeNotifier {
@@ -39,6 +54,9 @@ class CartProvider extends ChangeNotifier {
     subtotalNeto: 0,
     descuentoPiePct: 0,
     descuentoPie: 0,
+    subtotal: 0,
+    impuestoPct: Impuesto.ivaPct,
+    impuesto: 0,
     total: 0,
   );
 
@@ -67,13 +85,18 @@ class CartProvider extends ChangeNotifier {
     neto = CartItem.redondear(neto);
     final pie = _descuentoPiePct.clamp(0, 100).toDouble();
     final descuentoPie = CartItem.redondear(neto * pie / 100);
+    final subtotal = CartItem.redondear(neto - descuentoPie);
+    final impuesto = Impuesto.de(subtotal);
     return ResumenCarrito(
       subtotalBruto: bruto,
       descuentoLineas: CartItem.redondear(bruto - neto),
       subtotalNeto: neto,
       descuentoPiePct: pie,
       descuentoPie: descuentoPie,
-      total: CartItem.redondear(neto - descuentoPie),
+      subtotal: subtotal,
+      impuestoPct: Impuesto.ivaPct,
+      impuesto: impuesto,
+      total: CartItem.redondear(subtotal + impuesto),
     );
   }
 

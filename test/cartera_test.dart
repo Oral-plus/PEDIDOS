@@ -35,6 +35,43 @@ void main() {
       expect(CarteraCliente.saldoNetoDocumento(null), 0);
     });
 
+    group('Abonos parciales: la factura sigue cobrable por lo que falta', () {
+      // Factura de 4M en SAP, el gestor ya le abonó 1M que SAP no ha aplicado.
+      final parcial = {'saldo': 4000000, 'pendientePorAplicar': 1000000, 'saldoNeto': 3000000};
+
+      test('lo que se le puede cobrar es lo que falta, no el saldo de SAP', () {
+        expect(CarteraCliente.disponibleDocumento(parcial), 3000000);
+        expect(CarteraCliente.saldoSapDocumento(parcial), 4000000);
+        expect(CarteraCliente.abonadoSinAplicar(parcial), 1000000);
+      });
+
+      test('el abono del gestor no se pierde de vista', () {
+        expect(CarteraCliente.conAbonoPendiente(parcial), true);
+        expect(CarteraCliente.cubiertaEnApp(parcial), false,
+            reason: 'todavía queda por cobrar: la factura sigue disponible');
+      });
+
+      test('una factura ya cubierta en la app queda en cero, pero se sigue viendo', () {
+        final cubierta = {'saldo': 4000000, 'pendientePorAplicar': 4000000, 'saldoNeto': 0};
+        expect(CarteraCliente.disponibleDocumento(cubierta), 0);
+        expect(CarteraCliente.cubiertaEnApp(cubierta), true);
+        expect(CarteraCliente.saldoSapDocumento(cubierta), 4000000,
+            reason: 'SAP sigue mostrando la deuda hasta que aplique el pago');
+      });
+
+      test('nunca se ofrece un disponible negativo', () {
+        final pasada = {'saldo': 1000000, 'pendientePorAplicar': 1500000, 'saldoNeto': -500000};
+        expect(CarteraCliente.disponibleDocumento(pasada), 0);
+      });
+
+      test('sin abonos, lo disponible es el saldo de SAP tal cual', () {
+        final limpia = {'saldo': 2500000};
+        expect(CarteraCliente.disponibleDocumento(limpia), 2500000);
+        expect(CarteraCliente.conAbonoPendiente(limpia), false);
+        expect(CarteraCliente.cubiertaEnApp(limpia), false);
+      });
+    });
+
     test('lista los recaudos pendientes y tolera una respuesta sin ellos', () {
       final cartera = {
         'recaudosPendientes': [

@@ -7,6 +7,7 @@ import '../services/api_easy_service.dart';
 import '../utils/app_assets.dart';
 import '../utils/cartera_cliente.dart';
 import '../utils/price_utils.dart';
+import '../widgets/aviso_pedido_reciente.dart';
 
 class GestionPedidoScreen extends StatefulWidget {
   final Map<String, dynamic> cliente;
@@ -686,6 +687,12 @@ class _GestionPedidoScreenState extends State<GestionPedidoScreen> {
       Navigator.of(context).pop(true);
     } else {
       setState(() => _guardando = false);
+      // El servidor rechaza el pedido repetido: eso se explica en una ventana,
+      // no en un aviso que se va solo.
+      if (res['codigo'] == codigoPedidoReciente) {
+        await mostrarAvisoPedidoReciente(context, res);
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text((res['message'] ?? 'No se pudo guardar el pedido').toString()),
         backgroundColor: const Color(0xFFB91C1C),

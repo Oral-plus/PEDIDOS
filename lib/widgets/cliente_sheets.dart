@@ -22,12 +22,10 @@ class SheetWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    final maxH = media.size.height * 0.85;
+    // El alto y el margen del teclado los decide HojaSegura, en un solo sitio.
     return SafeArea(
       top: false,
       child: Container(
-        constraints: BoxConstraints(maxHeight: maxH),
         decoration: BoxDecoration(
           color: AppTheme.backgroundColor,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -354,14 +352,17 @@ class _ComentariosSheetState extends State<ComentariosSheet> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Texto SAP (Free_Text)', style: TextStyle(fontWeight: FontWeight.w700)),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 320, minWidth: 320),
-          child: TextField(
-            controller: editCtrl,
-            minLines: 6, maxLines: 12, maxLength: 2000,
-            decoration: InputDecoration(
-              hintText: 'Editar texto que se guarda en OCRD.Free_Text...',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        // En scroll: con el teclado abierto el diálogo encoge y el campo sigue a la vista.
+        content: SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320, minWidth: 320),
+            child: TextField(
+              controller: editCtrl,
+              minLines: 6, maxLines: 12, maxLength: 2000,
+              decoration: InputDecoration(
+                hintText: 'Editar texto que se guarda en OCRD.Free_Text...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
             ),
           ),
         ),

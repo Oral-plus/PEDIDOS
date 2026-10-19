@@ -69,7 +69,7 @@ void main() {
       cart.addItem(_producto());
       expect(cart.items.length, 1);
       expect(cart.itemCount, 1);
-      expect(cart.totalAmount, 1500.0);
+      expect(cart.resumen.subtotal, 1500.0);
     });
 
     test('addItem del mismo producto incrementa cantidad, no duplica', () {
@@ -79,7 +79,7 @@ void main() {
       cart.addItem(_producto());
       expect(cart.items.length, 1);
       expect(cart.itemCount, 3);
-      expect(cart.totalAmount, 4500.0);
+      expect(cart.resumen.subtotal, 4500.0);
     });
 
     test('misma referencia con distinta textura son lineas separadas', () {
@@ -124,7 +124,7 @@ void main() {
       final id = cart.items.first.id;
       cart.updateQuantity(id, 4);
       expect(cart.itemCount, 4);
-      expect(cart.totalAmount, 8000.0);
+      expect(cart.resumen.subtotal, 8000.0);
     });
 
     test('removeItem quita la linea y clearCart vacia', () {
@@ -143,7 +143,7 @@ void main() {
       cart.addItem(_producto(codigoSap: 'A', title: 'A', price: 1500));
       cart.addItem(_producto(codigoSap: 'A', title: 'A', price: 1500));
       cart.addItem(_producto(codigoSap: 'B', title: 'B', price: 3000));
-      expect(cart.totalAmount, 1500 * 2 + 3000);
+      expect(cart.resumen.subtotal, 1500 * 2 + 3000);
       expect(cart.itemCount, 3);
     });
   });
@@ -164,7 +164,7 @@ void main() {
       expect(item.precioNeto, 8500.0);
       expect(item.totalBruto, 30000.0);
       expect(item.totalPrice, 25500.0);
-      expect(cart.totalAmount, 25500.0);
+      expect(cart.resumen.subtotal, 25500.0);
     });
 
     test('el pie de pagina se aplica sobre el subtotal neto, igual que SAP', () {
@@ -177,17 +177,19 @@ void main() {
       expect(r.descuentoLineas, 1000.0);
       expect(r.subtotalNeto, 11000.0);
       expect(r.descuentoPie, 550.0);
-      expect(r.total, 10450.0);
-      expect(cart.totalAmount, 10450.0);
+      expect(r.subtotal, 10450.0, reason: 'base gravable, tras los descuentos');
+      expect(r.impuesto, 1985.5);
+      expect(r.total, 12435.5, reason: 'el total ya incluye el IVA');
+      expect(cart.totalAmount, 12435.5);
     });
 
     test('aplicarDescuentos reprecia lo que ya estaba en el carrito', () {
       final cart = CartProvider();
       cart.addItem(_producto(codigoSap: 'A', title: 'A', price: 1000));
-      expect(cart.totalAmount, 1000.0);
+      expect(cart.resumen.subtotal, 1000.0);
       cart.aplicarDescuentos('C1', const {'A': 20}, 10);
       expect(cart.items.first.descuentoPct, 20.0);
-      expect(cart.totalAmount, 720.0);
+      expect(cart.resumen.subtotal, 720.0);
     });
 
     test('sin descuentos el carrito se comporta igual que antes', () {
@@ -196,7 +198,8 @@ void main() {
       cart.addItem(_producto(price: 1500));
       expect(cart.resumen.descuentoLineas, 0.0);
       expect(cart.resumen.descuentoPie, 0.0);
-      expect(cart.totalAmount, 3000.0);
+      expect(cart.resumen.subtotal, 3000.0);
+      expect(cart.totalAmount, 3570.0, reason: 'el total que paga el cliente lleva el IVA');
     });
   });
 

@@ -76,6 +76,12 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
   final TextEditingController _obsCancelacion = TextEditingController();
 
   String? _numeroRecaudo;
+
+  /// Los recaudos registrados en esta visita y lo cobrado entre todos.
+  /// Un abono parcial no cierra la cartera: puede haber más de uno.
+  final List<String> _recaudosVisita = [];
+  double _totalRecaudado = 0;
+
   bool get _recaudoCruzado => _numeroRecaudo != null && _numeroRecaudo!.isNotEmpty;
 
   static const List<Map<String, dynamic>> _metodos = [
@@ -1051,10 +1057,9 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
       _aviso('Indica la referencia / N° de comprobante antes de cruzar la cartera');
       return;
     }
-    if (_recaudoCruzado) {
-      _aviso('El recaudo $_numeroRecaudo ya quedó registrado en esta visita');
-      return;
-    }
+    // Un abono parcial deja la factura viva: se puede registrar otro recaudo.
+    // Lo ya cobrado viaja en el saldo de cada documento, así que la pantalla
+    // de cruce solo ofrecerá lo que todavía falta por cobrar.
     final resultado = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => RecaudosScreen(
@@ -1078,7 +1083,11 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
       final aplicado = (resultado['totalAplicado'] as num?)?.toDouble() ?? 0;
       final guardadas = (resultado['evidencias'] as num?)?.toInt() ?? 0;
       if (numero.isEmpty) return;
-      widget.onRecaudoGuardado?.call(numero, aplicado);
+      // Puede haber varios recaudos en una visita (abonos parciales): lo que
+      // se reporta es el acumulado, no solo el último.
+      _totalRecaudado += aplicado;
+      if (!_recaudosVisita.contains(numero)) _recaudosVisita.add(numero);
+      widget.onRecaudoGuardado?.call(numero, _totalRecaudado);
       if (mounted) {
         setState(() {
           _numeroRecaudo = numero;
@@ -1125,7 +1134,9 @@ class _FormaPagoScreenState extends State<FormaPagoScreen> {
             icon: Icons.account_balance_wallet_rounded,
             label: 'Cartera pendiente',
             referencia: _recaudoCruzado
-                ? 'Recaudo $_numeroRecaudo registrado'
+                ? (_recaudosVisita.length > 1
+                    ? '${_recaudosVisita.length} recaudos · ${_pesos(_totalRecaudado)} cobrado'
+                    : 'Recaudo $_numeroRecaudo registrado')
                 : 'Saldo ${_pesos(widget.dineroFaltante)}',
             controller: _pagoCartera,
             maximo: widget.dineroFaltante,

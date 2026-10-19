@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models/tarea.dart';
 import '../services/api_easy_service.dart';
+import 'hoja_modal.dart';
 import 'selector_fotos.dart';
 
 /// Responder una tarea: comentario, fotos y el aviso de que quedó registrada.
@@ -36,12 +37,10 @@ class ResponderTarea {
     final cliente = await _resolverCliente(context, tarea, clienteCodigo);
     if (cliente == null || !context.mounted) return null;
 
-    final respuesta = await showModalBottomSheet<RespuestaTarea>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-      builder: (_) => _HojaRespuesta(api: api, tarea: tarea, clienteCodigo: cliente, visitaId: visitaId),
+    final respuesta = await mostrarHoja<RespuestaTarea>(
+      context,
+      fondo: Colors.white,
+      constructor: (_) => _HojaRespuesta(api: api, tarea: tarea, clienteCodigo: cliente, visitaId: visitaId),
     );
     if (respuesta == null || !context.mounted) return respuesta;
 
@@ -182,8 +181,9 @@ class _HojaRespuestaState extends State<_HojaRespuesta> {
   Widget build(BuildContext context) {
     final t = widget.tarea;
     final completo = _borrador.completo;
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+    return Material(
+      color: Colors.white,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
       child: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),

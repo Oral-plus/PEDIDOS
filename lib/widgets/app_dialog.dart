@@ -35,12 +35,21 @@ Future<T?> showAppDialog<T>(
               ),
             ),
           ),
-          Center(
-            child: Opacity(
-              opacity: t,
-              child: Transform.translate(
-                offset: Offset(0, (1 - t) * 22),
-                child: Transform.scale(scale: 0.95 + 0.05 * t, child: c),
+          // El teclado no empuja un diálogo: hay que apartarlo a mano. Se
+          // centra en el espacio que queda libre y, si no cabe, se desplaza,
+          // para que nunca tape lo que el gestor está escribiendo.
+          Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Opacity(
+                  opacity: t,
+                  child: Transform.translate(
+                    offset: Offset(0, (1 - t) * 22),
+                    child: Transform.scale(scale: 0.95 + 0.05 * t, child: c),
+                  ),
+                ),
               ),
             ),
           ),

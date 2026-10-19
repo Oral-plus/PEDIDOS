@@ -17,6 +17,8 @@ const indicadores = require("./modules/indicadores")
 const ubicaciones = require("./modules/ubicaciones")
 const cartera = require("./modules/cartera")
 const tareas = require("./modules/tareas")
+const pedidosRecientes = require("./modules/pedidos_recientes")
+const clientesSap = require("./modules/clientes_sap")
 const cache = require("./modules/cache")
 const evidencias = require("./modules/evidencias")
 const multer = require("multer")
@@ -1019,6 +1021,7 @@ app.get("/api/clientes", authenticateToken, async (req, res) => {
           T0.City      AS ciudad
         FROM OCRD T0
         WHERE T0.CardType = 'C' AND T0.SlpCode = @slpCode
+          AND T0.validFor = 'Y'
         ORDER BY T0.CardName
       `)
 
@@ -2121,7 +2124,12 @@ app.get("/api/rutas/mias", authenticateToken, async (req, res) => {
       ORDER BY r.fecha_programada DESC, r.hora_visita ASC
     `)
 
-    const rutas = result.recordset.map(mapRuta)
+    // El nombre y la direccion del cliente estan en SAP, no en la base Ruta:
+    // se traen de una sola vez para todo el listado.
+    const base = result.recordset.map(mapRuta)
+    const datosCliente = await clientesSap.datosDe(connectSAP, sql, base.map((r) => r.clienteId))
+    const rutas = clientesSap.enriquecer(base, datosCliente)
+
     const completadas = rutas.filter((r) => esCompletada(r.estado)).length
     const canceladas = rutas.filter((r) => esCancelada(r.estado)).length
     const clientesUnicos = new Set(rutas.map((r) => r.clienteId).filter(Boolean)).size
@@ -2836,6 +2844,35 @@ app.post("/api/pedidos/gestion", authenticateToken, async (req, res) => {
     }
 
     await ensurePedidosGestionTabla()
+
+    // Ventana de seguridad: el mismo gestor no le registra dos pedidos seguidos
+    // al mismo cliente. Responde 200 a proposito: en produccion el proxy
+    // reemplaza el cuerpo de cualquier respuesta que no sea 2xx y la app se
+    // quedaria sin saber cuanto debe esperar.
+    const ventanaMin = pedidosRecientes.ventanaMinutos(process.env)
+    const previo = await pedidosPool
+      .request()
+      .input("cli", sql.NVarChar, clienteId)
+      .input("vend", sql.Int, slpCode)
+      .query(`
+        SELECT TOP 1 numero_pedido, total, fecha, CONVERT(VARCHAR(19), fecha, 120) AS fecha_texto
+        FROM dbo.pedidos_gestion
+        WHERE cliente_id = @cli AND vendedor_id = @vend
+        ORDER BY fecha DESC, id DESC`)
+    const fila = previo.recordset[0]
+    const veredicto = pedidosRecientes.evaluar({
+      ultimo: fila
+        ? { fecha: fila.fecha, fechaTexto: fila.fecha_texto, numeroPedido: fila.numero_pedido, total: fila.total }
+        : null,
+      minutos: ventanaMin,
+    })
+    if (veredicto.bloquea) {
+      console.log(
+        `Pedido duplicado evitado: cliente ${clienteId} vendedor ${slpCode}, ` +
+          `faltan ${veredicto.segundosRestantes}s (previo ${veredicto.pedidoPrevio.numeroPedido || "-"})`,
+      )
+      return res.json({ success: false, ...veredicto })
+    }
 
     const numRecGestion = (b.numeroRecaudo || "").toString().trim() || null
     const recaudoIdGestion = await resolverRecaudoIdPedidos(numRecGestion)

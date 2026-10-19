@@ -39,4 +39,32 @@ class CarteraCliente {
     final neto = documento['saldoNeto'];
     return neto != null ? _aDouble(neto) : _aDouble(documento['saldo']);
   }
+
+  /// Saldo de la factura en SAP, sin descontar lo que el gestor ya abonó.
+  static double saldoSapDocumento(Map<String, dynamic>? documento) =>
+      _aDouble(documento?['saldo']);
+
+  /// Lo ya abonado a esa factura que SAP todavía no aplica.
+  static double abonadoSinAplicar(Map<String, dynamic>? documento) =>
+      _aDouble(documento?['pendientePorAplicar']);
+
+  /// Lo que todavía se le puede cobrar a esa factura.
+  ///
+  /// Es el neto, nunca negativo: un abono parcial deja disponible el resto, y
+  /// una factura ya cubierta en la app queda en cero aunque SAP no se haya
+  /// enterado. Es el tope de un abono nuevo.
+  static double disponibleDocumento(Map<String, dynamic>? documento) {
+    final neto = saldoNetoDocumento(documento);
+    return neto > 0 ? neto : 0;
+  }
+
+  /// La factura ya tiene abonos que SAP no ha aplicado.
+  static bool conAbonoPendiente(Map<String, dynamic>? documento) =>
+      abonadoSinAplicar(documento) > 0;
+
+  /// Ya se cubrió en la app y solo falta que SAP la aplique.
+  ///
+  /// No se oculta: el gestor tiene que verla para saber que ya la cobró.
+  static bool cubiertaEnApp(Map<String, dynamic>? documento) =>
+      conAbonoPendiente(documento) && disponibleDocumento(documento) <= 0;
 }

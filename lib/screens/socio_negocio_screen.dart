@@ -4,6 +4,7 @@ import '../services/api_easy_service.dart';
 import '../utils/theme.dart';
 import '../utils/filtro_cliente.dart';
 import '../widgets/cliente_sheets.dart';
+import '../widgets/hoja_modal.dart';
 
 class SocioNegocioScreen extends StatefulWidget {
   final ApiEasyService api;
@@ -118,11 +119,9 @@ class _SocioNegocioScreenState extends State<SocioNegocioScreen> {
     HapticFeedback.selectionClick();
     final codigo = _seleccionado?['id']?.toString() ?? '';
     if (codigo.isEmpty) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => CarteraSheet(
+    mostrarHoja(
+      context,
+      constructor: (_) => CarteraSheet(
         codigo: codigo,
         api: widget.api,
         initialData: _detalle,
@@ -140,11 +139,9 @@ class _SocioNegocioScreenState extends State<SocioNegocioScreen> {
             _seleccionado!['nombre1'] ??
             '')
         .toString();
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => ComentariosSheet(
+    mostrarHoja(
+      context,
+      constructor: (_) => ComentariosSheet(
         codigo: codigo,
         nombreCliente: nombre,
         api: widget.api,

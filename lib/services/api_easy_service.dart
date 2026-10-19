@@ -793,6 +793,13 @@ class ApiEasyService {
         'success': res['success'] == true,
         'message': res['message']?.toString() ?? '',
         'id': (res['data'] is Map) ? res['data']['id'] : null,
+        // El servidor puede rechazar el pedido por repetido: lo que explica el
+        // motivo viaja aparte para que la pantalla lo muestre como es debido.
+        if (res['codigo'] != null) 'codigo': res['codigo'].toString(),
+        if (res['segundosRestantes'] != null)
+          'segundosRestantes': (res['segundosRestantes'] as num).toInt(),
+        if (res['pedidoPrevio'] is Map)
+          'pedidoPrevio': Map<String, dynamic>.from(res['pedidoPrevio'] as Map),
       };
     } catch (e) {
       if (_esSesionExpirada(e)) {

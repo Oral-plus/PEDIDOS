@@ -8,6 +8,7 @@ import '../screens/checkout_screen.dart';
 import '../utils/theme.dart';
 import '../utils/responsive_utils.dart';
 import '../utils/price_utils.dart';
+import 'cantidad_dialog.dart';
 import 'producto_imagen.dart';
 
 class CartBottomSheet extends StatefulWidget {
@@ -544,55 +545,16 @@ class _CartBottomSheetState extends State<CartBottomSheet>
     );
   }
 
-  void _showEditQuantityDialog(CartProvider cartProvider, CartItem item) {
-    final controller = TextEditingController(text: '${item.quantity}');
-    controller.selection = TextSelection(
-      baseOffset: 0,
-      extentOffset: controller.text.length,
+  /// Usa el mismo diálogo de cantidad que el resto de la app, en vez de uno
+  /// propio: así hereda el manejo del teclado y se comporta igual en todas
+  /// las pantallas.
+  Future<void> _showEditQuantityDialog(CartProvider cartProvider, CartItem item) async {
+    final cantidad = await showCantidadDialog(
+      context,
+      producto: item.title,
+      cantidadInicial: item.quantity,
     );
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cantidad'),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Ej: 1, 400',
-            border: OutlineInputBorder(),
-          ),
-          inputFormatters: [
-            FilteringTextInputFormatter.digitsOnly,
-            LengthLimitingTextInputFormatter(6),
-          ],
-          onSubmitted: (value) {
-            final q = int.tryParse(value);
-            if (q != null && q >= 1 && q <= 999999) {
-              cartProvider.updateQuantity(item.id, q);
-              Navigator.of(context).pop();
-            }
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar', style: TextStyle(color: AppTheme.textSecondary)),
-          ),
-          FilledButton(
-            onPressed: () {
-              final q = int.tryParse(controller.text);
-              if (q != null && q >= 1 && q <= 999999) {
-                cartProvider.updateQuantity(item.id, q);
-                Navigator.of(context).pop();
-              }
-            },
-            style: FilledButton.styleFrom(backgroundColor: AppTheme.primaryBlue),
-            child: const Text('Aceptar'),
-          ),
-        ],
-      ),
-    ).then((_) => controller.dispose());
+    if (cantidad != null) cartProvider.updateQuantity(item.id, cantidad);
   }
 
   Widget _buildQuantityButton(IconData icon, VoidCallback onTap) {
@@ -641,7 +603,8 @@ class _CartBottomSheetState extends State<CartBottomSheet>
             child: Column(
               children: [
                 if (cartProvider.resumen.tieneDescuento) ...[
-                  _footerPriceRow('Subtotal', PriceUtils.formatPriceDisplay(cartProvider.resumen.subtotalBruto), false),
+                  _footerPriceRow('Subtotal sin descuento',
+                      PriceUtils.formatPriceDisplay(cartProvider.resumen.subtotalBruto), false),
                   if (cartProvider.resumen.descuentoLineas > 0) ...[
                     const SizedBox(height: 4),
                     _footerPriceRow('Descuento por referencia',
@@ -655,6 +618,12 @@ class _CartBottomSheetState extends State<CartBottomSheet>
                   ],
                   const SizedBox(height: 8),
                 ],
+                _footerPriceRow(
+                    'Subtotal', PriceUtils.formatPriceDisplay(cartProvider.resumen.subtotal), false),
+                const SizedBox(height: 4),
+                _footerPriceRow(cartProvider.resumen.etiquetaImpuesto,
+                    PriceUtils.formatPriceDisplay(cartProvider.resumen.impuesto), false),
+                const SizedBox(height: 8),
                 _footerPriceRow('Total', PriceUtils.formatPriceDisplay(cartProvider.totalAmount), true, animate: true),
               ],
             ),

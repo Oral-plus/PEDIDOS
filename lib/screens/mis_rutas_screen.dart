@@ -75,6 +75,22 @@ class _MisRutasScreenState extends State<MisRutasScreen> {
     }
   }
 
+  /// El nombre del cliente, cuando aporta algo que el título no dice ya.
+  ///
+  /// El título de la ruta ya es "Visita a" más el cliente, así que repetirlo
+  /// solo ocuparía espacio; se muestra el comercial si existe, o el de SAP si
+  /// difiere del que trae el título.
+  static String _nombreCliente(Map<String, dynamic> r, String titulo) {
+    final comercial = (r['clienteNombreComercial'] ?? '').toString().trim();
+    final sap = (r['clienteNombre'] ?? '').toString().trim();
+    final delTitulo = titulo.replaceFirst(RegExp(r'^visita\s+a\s+', caseSensitive: false), '').trim();
+
+    bool sirve(String v) => v.isNotEmpty && v.toLowerCase() != delTitulo.toLowerCase();
+    if (sirve(comercial)) return comercial;
+    if (sirve(sap)) return sap;
+    return '';
+  }
+
   String _formatFecha(dynamic v, {bool soloFecha = false}) {
     if (v == null) return '—';
     try {
@@ -238,6 +254,10 @@ class _MisRutasScreenState extends State<MisRutasScreen> {
     final nombre = (r['nombre'] ?? 'Ruta').toString();
     final ciudad = (r['ciudad'] ?? '').toString();
     final clienteId = (r['clienteId'] ?? '').toString();
+    final direccion = (r['direccion'] ?? '').toString().trim();
+    // El título ya dice "Visita a <cliente>": el nombre solo se repite si aporta
+    // algo, como el nombre comercial o uno que el título dejó cortado.
+    final clienteNombre = _nombreCliente(r, nombre);
     final fechaProgramada = r['fechaProgramada'];
     final hora = r['horaVisita']?.toString() ?? '';
     final visitado = r['visitadoHoy'] == true;
@@ -297,6 +317,12 @@ class _MisRutasScreenState extends State<MisRutasScreen> {
                   Text(nombre,
                       style: TextStyle(color: _textDark, fontSize: 13, fontWeight: FontWeight.w800),
                       maxLines: 2, overflow: TextOverflow.ellipsis),
+                  if (clienteNombre.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(clienteNombre,
+                        style: TextStyle(color: _textDark, fontSize: 11.5, fontWeight: FontWeight.w600),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
                   const SizedBox(height: 2),
                   Text('#${r['id']}${clienteId.isNotEmpty ? ' · $clienteId' : ''}',
                       style: TextStyle(color: _textMuted, fontSize: 10, fontWeight: FontWeight.w600)),
@@ -342,6 +368,18 @@ class _MisRutasScreenState extends State<MisRutasScreen> {
                         style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.4)),
                   ),
               ]),
+              if (direccion.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(Icons.place_rounded, size: 13, color: _textMuted),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(direccion,
+                        style: TextStyle(color: _textMuted, fontSize: 11, fontWeight: FontWeight.w600),
+                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                  ),
+                ]),
+              ],
               const SizedBox(height: 10),
               Wrap(spacing: 8, runSpacing: 6, children: [
                 if (fechaProgramada != null)
