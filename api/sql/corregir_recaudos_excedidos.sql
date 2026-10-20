@@ -1,4 +1,20 @@
 /* ===========================================================================
+   EJECUTADO el 2026-10-20. Ya no hay que volver a correrlo.
+
+   Se corrigieron 26 recaudos (19.423.326 de exceso, 24 clientes). Los datos
+   originales quedaron en:
+       dbo.recaudos_resp_20261020             (26 filas)
+       dbo.recaudos_documentos_resp_20261020  (26 filas)
+   Esas dos tablas se pueden borrar cuando Contabilidad confirme en campo.
+
+   Comprobado despues de aplicar: 0 recaudos aplican de mas, 0 descuadres
+   entre cabecera y detalle, 0 abonos negativos. La factura 40083557 de
+   VERSONI volvio a quedar cobrable por 298.828.
+
+   Queda aqui como referencia de QUE se hizo y como deshacerlo.
+   =========================================================================== */
+
+/* ===========================================================================
    Recaudos que aplicaron a la cartera mas plata de la que el cliente entrego.
 
    Que paso: al cruzar una factura, la app ponia como abono el SALDO COMPLETO
@@ -102,3 +118,18 @@ GO
 
    Las tablas _resp_20261019 se pueden borrar cuando se confirme en campo.
    ------------------------------------------------------------------------- */
+
+/* --- 6. COMO DESHACERLO, si algo no cuadrara -----------------------------
+   Devuelve los 26 recaudos exactamente como estaban antes del 2026-10-20.
+   ------------------------------------------------------------------------- */
+-- BEGIN TRANSACTION;
+--
+-- UPDATE d SET d.abono = v.abono
+-- FROM   dbo.recaudos_documentos d
+-- JOIN   dbo.recaudos_documentos_resp_20261020 v ON v.id = d.id;
+--
+-- UPDATE r SET r.total_aplicado = v.total_aplicado, r.saldo = v.saldo
+-- FROM   dbo.recaudos r
+-- JOIN   dbo.recaudos_resp_20261020 v ON v.id = r.id;
+--
+-- COMMIT TRANSACTION;
