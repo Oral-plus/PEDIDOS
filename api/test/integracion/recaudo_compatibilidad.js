@@ -5,6 +5,7 @@
 // a la plata que de verdad entro. Si alguna vez esto empieza a fallar, un
 // gestor en campo recibe dinero y no puede registrarlo.
 const http = require("http")
+const https = require("https")
 const path = require("path")
 require(path.join(process.cwd(), "node_modules", "dotenv")).config({ path: path.join(process.cwd(), ".env") })
 const sql = require(path.join(process.cwd(), "node_modules", "mssql"))
@@ -21,7 +22,8 @@ function llamar(metodo, ruta, { body, token } = {}) {
     const h = { Accept: "application/json" }
     if (datos) { h["Content-Type"] = "application/json"; h["Content-Length"] = Buffer.byteLength(datos) }
     if (token) h.Authorization = `Bearer ${token}`
-    const req = http.request(BASE + ruta, { method: metodo, headers: h }, (res) => {
+    const cliente = BASE.startsWith("https") ? https : http
+    const req = cliente.request(BASE + ruta, { method: metodo, headers: h }, (res) => {
       const t = []
       res.on("data", (c) => t.push(c))
       res.on("end", () => { let j = null; try { j = JSON.parse(Buffer.concat(t).toString("utf8")) } catch (_) {} resolve({ status: res.statusCode, json: j }) })
