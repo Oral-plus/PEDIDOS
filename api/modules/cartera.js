@@ -83,37 +83,47 @@ function netear(documentos, abonos, { tolerancia = TOLERANCIA, diasAviso = 5 } =
 // Diferencias por debajo de un peso son redondeo, no plata cobrada de mas.
 const TOLERANCIA_CRUCE = 1
 
-const pesos = (v) => "$" + Math.round(v).toLocaleString("es-CO")
-
 /**
- * Un recaudo no puede aplicar a la cartera mas plata de la que el cliente
- * entrego. Si se aplica de mas, la factura queda registrada como cobrada por
- * un dinero que nunca entro y deja de salir para el siguiente cobro: el gestor
- * recibe el abono parcial y el saldo restante desaparece de la app.
+ * Acomoda los abonos de un recaudo dentro de la plata que el cliente entrego.
  *
- * Funcion pura: decide con los numeros del cuerpo, sin tocar la base.
+ * Un recaudo no puede aplicar a la cartera mas de lo que se recibio: la
+ * factura quedaria registrada como cobrada por un dinero que nunca entro y
+ * dejaria de salir para el siguiente cobro.
+ *
+ * No rechaza, ajusta. Las versiones viejas de la app mandan como abono el
+ * saldo completo de la factura aunque el cobro sea parcial; si el servidor las
+ * rechazara, el gestor recibiria la plata y no podria registrarla. En su lugar
+ * se reparten los abonos en la misma proporcion hasta que sumen lo recaudado,
+ * que es justo lo que habria mandado una version nueva.
+ *
+ * Funcion pura: no toca la base.
  */
-function revisarCruce(cuerpo, { tolerancia = TOLERANCIA_CRUCE } = {}) {
+function ajustarCruce(cuerpo, { tolerancia = TOLERANCIA_CRUCE } = {}) {
   const b = cuerpo || {}
   const documentos = Array.isArray(b.documentos) ? b.documentos : []
   const recaudo = redondear(numero(b.totalRecaudo))
-  const sumaAbonos = redondear(documentos.reduce((s, d) => s + numero(d && d.abono), 0))
+  const suma = redondear(documentos.reduce((a, d) => a + numero(d && d.abono), 0))
   // El mayor de los dos: ni la cabecera ni el detalle pueden pasarse.
-  const aplicado = Math.max(sumaAbonos, redondear(numero(b.totalAplicado)))
+  const aplicado = Math.max(suma, redondear(numero(b.totalAplicado)))
   const exceso = redondear(aplicado - recaudo)
 
-  if (exceso > tolerancia) {
-    return {
-      ok: false,
-      recaudo,
-      aplicado,
-      exceso,
-      message:
-        `El recaudo es de ${pesos(recaudo)} y se estan cruzando ${pesos(aplicado)} de cartera: ` +
-        `${pesos(exceso)} de mas. Ajusta los abonos de los documentos o el valor recaudado.`,
-    }
+  // Sin exceso, o sin un recaudo declarado contra el cual medir, se deja tal cual.
+  if (exceso <= tolerancia || recaudo <= 0 || suma <= 0) {
+    return { ajustado: false, documentos, totalAplicado: suma > 0 ? suma : aplicado, recaudo, exceso: 0 }
   }
-  return { ok: true, recaudo, aplicado, exceso: 0 }
+
+  const factor = recaudo / suma
+  let repartido = 0
+  const ajustados = documentos.map((d, i) => {
+    const ultimo = i === documentos.length - 1
+    // Al ultimo le toca el resto exacto, para que la suma cuadre con lo recibido.
+    const valor = ultimo ? redondear(recaudo - repartido) : redondear(numero(d && d.abono) * factor)
+    const abono = valor > 0 ? valor : 0
+    repartido = redondear(repartido + abono)
+    return { ...d, abono }
+  })
+
+  return { ajustado: true, documentos: ajustados, totalAplicado: repartido, recaudo, exceso }
 }
 
 function medioPago(p) {
@@ -299,4 +309,4 @@ function crear({ sql, getSapPool, getPedidosPool, env, log }) {
   return { registrarRutas, saldoDe, documentosDe, pagosSinAplicarDe, pendientesPorCliente, diasAviso }
 }
 
-module.exports = { crear, netear, revisarCruce, numero, redondear }
+module.exports = { crear, netear, ajustarCruce, numero, redondear }

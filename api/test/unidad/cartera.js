@@ -1,5 +1,5 @@
 const path = require("path")
-const { netear, revisarCruce } = require(path.join(process.cwd(), "modules", "cartera"))
+const { netear, ajustarCruce, redondear } = require(path.join(process.cwd(), "modules", "cartera"))
 
 const out = []
 const ok = (nombre, condicion, extra) => out.push([nombre + (extra ? `  [${extra}]` : ""), !!condicion])
@@ -121,54 +121,65 @@ ok("si el cliente pago aparte, no reaparece como cobrable la plata ya recaudada"
   n6.documentos[0].saldoNeto === 100000 && n6.documentos[0].totalRecaudado === 200000,
   `neto ${n6.documentos[0].saldoNeto}`)
 
-// --- No se puede aplicar mas plata de la que el cliente entrego ------------
-// Todos los casos salen de recaudos reales que si se guardaron asi.
+// --- Los abonos se acomodan a lo recibido, sin rechazar el recaudo ---------
+// Clave para compatibilidad: una app vieja manda como abono el saldo completo
+// de la factura aunque el cobro sea parcial. Si el servidor la rechazara, el
+// gestor recibiria la plata y no podria registrarla.
 
-const c1 = revisarCruce({ totalRecaudo: 200000, totalAplicado: 498828, documentos: [{ docEntry: 1, abono: 498828 }] })
-ok("el caso real: recibe 200.000 y cruza la factura completa de 498.828",
-  c1.ok === false && c1.exceso === 298828, `exceso ${c1.exceso}`)
+const a1 = ajustarCruce({ totalRecaudo: 200000, totalAplicado: 498828, documentos: [{ docEntry: 1, abono: 498828 }] })
+ok("app vieja, cobro parcial: se guarda igual, con el abono acomodado a lo recibido",
+  a1.ajustado === true && a1.documentos[0].abono === 200000 && a1.totalAplicado === 200000,
+  `abono ${a1.documentos[0].abono}`)
 
-const c2 = revisarCruce({ totalRecaudo: 200000, totalAplicado: 200000, documentos: [{ docEntry: 1, abono: 200000 }] })
-ok("un abono parcial bien hecho si pasa: aplica solo lo que recibio",
-  c2.ok === true && c2.exceso === 0)
+const a2 = ajustarCruce({ totalRecaudo: 200000, totalAplicado: 200000, documentos: [{ docEntry: 1, abono: 200000 }] })
+ok("app nueva, que ya manda bien: no se le toca nada",
+  a2.ajustado === false && a2.documentos[0].abono === 200000)
 
-const c3 = revisarCruce({ totalRecaudo: 498828, totalAplicado: 498828, documentos: [{ docEntry: 1, abono: 498828 }] })
-ok("pagar la factura completa sigue siendo valido", c3.ok === true)
+const a3 = ajustarCruce({ totalRecaudo: 498828, totalAplicado: 498828, documentos: [{ docEntry: 1, abono: 498828 }] })
+ok("pagar la factura completa sigue pasando sin cambios", a3.ajustado === false)
 
-const c4 = revisarCruce({ totalRecaudo: 200000, totalAplicado: 200000, documentos: [{ docEntry: 1, abono: 498828 }] })
-ok("si la cabecera cuadra pero el detalle se pasa, manda el detalle",
-  c4.ok === false && c4.aplicado === 498828, `aplicado ${c4.aplicado}`)
-
-const c5 = revisarCruce({ totalRecaudo: 200000, totalAplicado: 498828, documentos: [{ docEntry: 1, abono: 200000 }] })
-ok("si el detalle cuadra pero la cabecera se pasa, tampoco entra",
-  c5.ok === false && c5.aplicado === 498828)
-
-const c6 = revisarCruce({ totalRecaudo: 383008, totalAplicado: 383008.4, documentos: [{ docEntry: 1, abono: 383008.4 }] })
-ok("una diferencia de centavos es redondeo, no se bloquea", c6.ok === true)
-
-const c7 = revisarCruce({
-  totalRecaudo: 1581420,
-  totalAplicado: 1987774,
-  documentos: [{ docEntry: 1, abono: 987774 }, { docEntry: 2, abono: 1000000 }],
+const a4 = ajustarCruce({
+  totalRecaudo: 1000000,
+  totalAplicado: 1500000,
+  documentos: [{ docEntry: 1, abono: 600000 }, { docEntry: 2, abono: 900000 }],
 })
-ok("varias facturas que entre todas se pasan de lo recibido",
-  c7.ok === false && c7.exceso === 406354, `exceso ${c7.exceso}`)
+const suma4 = a4.documentos.reduce((s, d) => s + d.abono, 0)
+ok("varias facturas: se reparte en proporcion y suma exactamente lo recibido",
+  a4.ajustado === true && suma4 === 1000000 && a4.documentos[0].abono === 400000,
+  `${a4.documentos.map((d) => d.abono).join(" + ")} = ${suma4}`)
 
-const c8 = revisarCruce({ totalRecaudo: 0, totalAplicado: 0, documentos: [{ docEntry: 1, abono: 500000 }] })
-ok("sin declarar cuanto recibio no se puede aplicar nada", c8.ok === false)
+const a5 = ajustarCruce({
+  totalRecaudo: 100000,
+  totalAplicado: 999999,
+  documentos: [{ abono: 333333 }, { abono: 333333 }, { abono: 333333 }],
+})
+const suma5 = redondear(a5.documentos.reduce((s, d) => s + d.abono, 0))
+ok("el redondeo no se come ni un peso: el ultimo lleva el resto exacto",
+  suma5 === 100000, `suma ${suma5}`)
 
-const c9 = revisarCruce({ totalRecaudo: "200000", totalAplicado: "498828", documentos: [{ docEntry: 1, abono: "498828" }] })
+const a6 = ajustarCruce({ totalRecaudo: 200000, totalAplicado: 150000, documentos: [{ abono: 150000 }] })
+ok("si sobra plata del recaudo, eso es legitimo y no se ajusta", a6.ajustado === false)
+
+const a7 = ajustarCruce({ totalRecaudo: 383008, totalAplicado: 383008.4, documentos: [{ abono: 383008.4 }] })
+ok("una diferencia de centavos es redondeo, no se ajusta", a7.ajustado === false)
+
+const a8 = ajustarCruce({ totalRecaudo: 200000, totalAplicado: 200000, documentos: [{ abono: 498828 }] })
+ok("si la cabecera cuadra pero el detalle se pasa, manda el detalle",
+  a8.ajustado === true && a8.documentos[0].abono === 200000)
+
+const a9 = ajustarCruce({ totalRecaudo: 0, totalAplicado: 500000, documentos: [{ abono: 500000 }] })
+ok("sin un recaudo declarado no se inventan ceros: se deja como vino",
+  a9.ajustado === false && a9.documentos[0].abono === 500000)
+
+const a10 = ajustarCruce({})
+ok("un cuerpo vacio no revienta", a10.ajustado === false && a10.documentos.length === 0)
+
+const a11 = ajustarCruce({ totalRecaudo: 200000, totalAplicado: 498828, documentos: "no es una lista" })
+ok("documentos mal formados no revientan", a11.ajustado === false)
+
+const a12 = ajustarCruce({ totalRecaudo: "200000", totalAplicado: "498828", documentos: [{ abono: "498828" }] })
 ok("los importes en texto se leen igual (la app los manda asi)",
-  c9.ok === false && c9.exceso === 298828)
-
-const c10 = revisarCruce({ totalRecaudo: 200000, totalAplicado: 150000, documentos: [{ docEntry: 1, abono: 150000 }] })
-ok("sobra plata del recaudo: eso es legitimo, queda de saldo", c10.ok === true)
-
-const c11 = revisarCruce({})
-ok("un cuerpo vacio no revienta", c11.ok === true && c11.aplicado === 0)
-
-const c12 = revisarCruce({ totalRecaudo: 200000, totalAplicado: 498828, documentos: "no es una lista" })
-ok("documentos mal formados no abren la puerta", c12.ok === false)
+  a12.ajustado === true && a12.documentos[0].abono === 200000)
 
 for (const [nombre, bien] of out) process.stdout.write((bien ? "OK    " : "FALLA ") + nombre + "\n")
 const todo = out.every(([, bien]) => bien)

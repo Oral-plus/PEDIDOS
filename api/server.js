@@ -1396,17 +1396,19 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
 
     const formaPago = (b.formaPago || "").toString().trim()
     const totalRecaudo = num(b.totalRecaudo)
-    const totalAplicado = num(b.totalAplicado)
 
-    // No se puede aplicar a la cartera mas plata de la que el cliente entrego:
-    // la factura quedaria marcada como cobrada y no volveria a salir para el
-    // siguiente cobro. 200 a proposito: el proxy descarta el cuerpo de los no-2xx
-    // y el gestor necesita leer el motivo.
-    const cruce = cartera.revisarCruce({ ...b, documentos: docs })
-    if (!cruce.ok) {
-      console.warn(`Recaudo ${(b.numeroRecaudo || "").toString().trim()} cliente ${clienteId} rechazado: aplica ${cruce.aplicado} sobre ${cruce.recaudo} recaudados`)
-      return res.json({ success: false, excedido: true, exceso: cruce.exceso, message: cruce.message })
+    // Los abonos no pueden sumar mas de lo que el cliente entrego, o la factura
+    // queda marcada como cobrada por plata que no entro y no vuelve a salir.
+    // Se ajusta en vez de rechazar: las versiones viejas de la app mandan el
+    // saldo completo de la factura aunque el cobro sea parcial, y el gestor
+    // tiene que poder registrar siempre lo que recibio.
+    const cruce = cartera.ajustarCruce({ ...b, documentos: docs })
+    if (cruce.ajustado) {
+      console.warn(`Recaudo ${(b.numeroRecaudo || "").toString().trim()} cliente ${clienteId} ajustado: cruzaba ${cruce.exceso} de mas sobre ${cruce.recaudo} recaudados`)
+      docs = cruce.documentos
     }
+    const totalAplicado = cruce.totalAplicado
+    const saldoRecaudo = cartera.redondear(totalRecaudo - totalAplicado)
 
     const numeroRecaudo = (b.numeroRecaudo || "").toString().trim() ||
       `REC-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`
@@ -1451,7 +1453,7 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
       .input("totDocs", sql.Decimal(18, 2), num(b.totalDocumentos))
       .input("totApl", sql.Decimal(18, 2), totalAplicado)
       .input("totRec", sql.Decimal(18, 2), totalRecaudo)
-      .input("saldo", sql.Decimal(18, 2), num(b.saldo))
+      .input("saldo", sql.Decimal(18, 2), saldoRecaudo)
       .input("notas", sql.NVarChar, (b.notas || "").toString().trim() || null)
       .input("reciboCaja", sql.BigInt, reciboCaja)
       .input("reciboPref", sql.NVarChar, reciboPrefijo)
@@ -1511,10 +1513,12 @@ app.post("/api/recaudos", authenticateToken, subidaEvidencias.array("fotos", 10)
 
     if (reciboPrefijo) await talonarios.invalidarCache(reciboPrefijo)
 
-    console.log(`Recaudo ${numeroRecaudo} #${recaudoId} cliente ${clienteId}: ${docs.length} doc(s), ${imagenes.length} evidencia(s), aplicado ${num(b.totalAplicado)}`)
+    console.log(`Recaudo ${numeroRecaudo} #${recaudoId} cliente ${clienteId}: ${docs.length} doc(s), ${imagenes.length} evidencia(s), aplicado ${totalAplicado}${cruce.ajustado ? " (ajustado)" : ""}`)
     res.json({
       success: true,
       message: "Recaudo guardado correctamente",
+      ajustado: cruce.ajustado,
+      totalAplicado,
       data: { id: recaudoId, numeroRecaudo, evidencias: imagenes.length, reciboCaja, reciboPrefijo },
     })
   } catch (error) {
